@@ -1,0 +1,79 @@
+# Slack App Manifest for Decision Ledger
+#
+# This manifest defines the permissions and features for the Slack integration.
+# To install: Go to api.slack.com/apps -> Create New App -> From Manifest
+#
+# Required Environment Variables:
+#   SLACK_BOT_TOKEN - Bot User OAuth Token (xoxb-...)
+#   SLACK_SIGNING_SECRET - Used to verify requests from Slack
+#   SLACK_APP_TOKEN - For Socket Mode (xapp-...) [optional]
+#   APP_BASE_URL - Your app's base URL (e.g., https://ledger.app)
+
+display_information:
+  name: Decision Ledger
+  description: Search and track engineering decisions from Slack
+  background_color: "#4F46E5"
+  long_description: |
+    Decision Ledger is your team's System of Record for engineering and product decisions.
+
+    Features:
+    - Search decisions with /decision [query]
+    - Rich link previews when sharing decision URLs
+    - Automatic notifications when decisions expire
+    - View decision status, owner, and impact at a glance
+
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: false
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Decision Ledger
+    always_online: true
+  slash_commands:
+    - command: /decision
+      url: https://YOUR_DOMAIN/api/slack/commands
+      description: Search for decisions in the ledger
+      usage_hint: "[search query] - e.g., /decision database migration"
+      should_escape: false
+  unfurl_domains:
+    - ledger.app
+    - YOUR_DOMAIN
+
+oauth_config:
+  scopes:
+    bot:
+      # Core messaging
+      - chat:write           # Send messages
+      - chat:write.public    # Send to public channels without joining
+
+      # Commands
+      - commands             # Handle slash commands
+
+      # Link unfurling
+      - links:read           # Detect links in messages
+      - links:write          # Unfurl links with rich previews
+
+      # User lookup (for notifications)
+      - users:read           # Read user info
+      - users:read.email     # Read user emails (for matching)
+
+      # Direct messages
+      - im:write             # Send DMs to users
+
+      # App Home
+      - app_mentions:read    # Respond to @mentions
+
+settings:
+  event_subscriptions:
+    request_url: https://YOUR_DOMAIN/api/slack/events
+    bot_events:
+      - app_home_opened      # User opens App Home
+      - app_mention          # Bot is @mentioned
+      - link_shared          # Link is shared (for unfurling)
+  interactivity:
+    is_enabled: true
+    request_url: https://YOUR_DOMAIN/api/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
