@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Create async engine with connection pooling
+# Add SSL requirement for cloud databases (Supabase, Neon, etc.)
+connect_args = {}
+if "supabase" in str(settings.database_url) or "neon" in str(settings.database_url):
+    connect_args["ssl"] = "require"
+
 engine = create_async_engine(
     settings.database_url_async,
     pool_size=settings.database_pool_size,
@@ -34,6 +39,7 @@ engine = create_async_engine(
     echo=settings.database_echo,
     pool_pre_ping=True,  # Check connection health before use
     pool_recycle=3600,   # Recycle connections after 1 hour
+    connect_args=connect_args,
 )
 
 # Session factory - creates new sessions for each request
