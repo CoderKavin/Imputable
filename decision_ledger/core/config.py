@@ -25,7 +25,12 @@ class Settings(BaseSettings):
 
     # API
     api_prefix: str = "/api/v1"
-    allowed_origins: list[str] = Field(default=["http://localhost:3000"])
+    allowed_origins: list[str] = Field(default=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://imputable.vercel.app",
+        "https://*.vercel.app"
+    ])
 
     # Database
     database_url: PostgresDsn = Field(
