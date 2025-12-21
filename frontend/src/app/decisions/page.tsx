@@ -5,11 +5,13 @@
  *
  * Route: /decisions
  * Shows all active decisions with search and filters
+ * Protected route - requires authentication (handled by middleware)
  */
 
 import { useState } from "react";
 import Link from "next/link";
 import { useDecisionList } from "@/hooks/use-decisions";
+import { Navbar } from "@/components/navbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -197,8 +199,10 @@ export default function DecisionsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
+      <Navbar />
+
+      {/* Page Header */}
+      <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -232,7 +236,7 @@ export default function DecisionsPage() {
             </Button>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
