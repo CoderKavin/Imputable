@@ -351,52 +351,58 @@ async def list_decisions(
     status: str | None = Query(default=None, description="Filter by status"),
 ):
     """List all decisions with pagination."""
-    offset = (page - 1) * page_size
+    try:
+        offset = (page - 1) * page_size
 
-    # Parse status filter if provided
-    status_filter = None
-    if status:
-        try:
-            status_filter = DecisionStatus(status)
-        except ValueError:
-            pass  # Invalid status, ignore filter
+        # Parse status filter if provided
+        status_filter = None
+        if status:
+            try:
+                status_filter = DecisionStatus(status)
+            except ValueError:
+                pass  # Invalid status, ignore filter
 
-    decisions, total = await engine.list_decisions(
-        organization_id=current_user.organization_id,
-        limit=page_size,
-        offset=offset,
-        status_filter=status_filter,
-    )
-
-    items = [
-        DecisionSummaryResponse(
-            id=d.decision.id,
-            organization_id=d.decision.organization_id,
-            decision_number=d.decision.decision_number,
-            status=d.decision.status.value,
-            title=d.version.title,
-            impact_level=d.version.impact_level.value,
-            tags=d.version.tags or [],
-            created_by=UserRefResponse(
-                id=d.decision.creator.id,
-                name=d.decision.creator.name,
-                email=d.decision.creator.email,
-            ),
-            created_at=d.decision.created_at,
-            version_count=d.version_count,
+        decisions, total = await engine.list_decisions(
+            organization_id=current_user.organization_id,
+            limit=page_size,
+            offset=offset,
+            status_filter=status_filter,
         )
-        for d in decisions
-    ]
 
-    total_pages = (total + page_size - 1) // page_size
+        items = [
+            DecisionSummaryResponse(
+                id=d.decision.id,
+                organization_id=d.decision.organization_id,
+                decision_number=d.decision.decision_number,
+                status=d.decision.status.value,
+                title=d.version.title,
+                impact_level=d.version.impact_level.value,
+                tags=d.version.tags or [],
+                created_by=UserRefResponse(
+                    id=d.decision.creator.id,
+                    name=d.decision.creator.name,
+                    email=d.decision.creator.email,
+                ),
+                created_at=d.decision.created_at,
+                version_count=d.version_count,
+            )
+            for d in decisions
+        ]
 
-    return PaginatedDecisionsResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-    )
+        total_pages = (total + page_size - 1) // page_size
+
+        return PaginatedDecisionsResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing decisions: {str(e)}",
+        )
 
 
 @router.put(
