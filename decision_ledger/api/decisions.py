@@ -162,14 +162,27 @@ async def list_decisions(
     service: DecisionServiceDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str = Query(None, description="Search query to filter decisions by title, tags, or content"),
 ):
-    """List all current (non-superseded) decisions."""
+    """List all current (non-superseded) decisions. Optionally filter by search query."""
     offset = (page - 1) * page_size
-    decisions, total = await service.list_current_decisions(
-        organization_id=current_user.organization_id,
-        limit=page_size,
-        offset=offset,
-    )
+
+    if search and search.strip():
+        # Use search functionality
+        search_params = DecisionSearchParams(query=search.strip())
+        decisions, total = await service.search_decisions(
+            organization_id=current_user.organization_id,
+            params=search_params,
+            limit=page_size,
+            offset=offset,
+        )
+    else:
+        # List all current decisions
+        decisions, total = await service.list_current_decisions(
+            organization_id=current_user.organization_id,
+            limit=page_size,
+            offset=offset,
+        )
 
     return PaginatedResponse.create(
         items=[decision_to_summary(d) for d in decisions],

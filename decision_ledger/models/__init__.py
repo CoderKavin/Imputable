@@ -10,6 +10,7 @@ from .models import (
     NotificationStatus,
     NotificationType,
     RelationshipType,
+    SubscriptionTier,
     # Organization & User
     Organization,
     OrganizationMember,
@@ -46,6 +47,7 @@ __all__ = [
     "ApprovalStatus",
     "NotificationType",
     "NotificationStatus",
+    "SubscriptionTier",
     # Organization & User
     "Organization",
     "User",

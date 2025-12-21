@@ -57,7 +57,8 @@ export function SearchCommand({ className }: SearchCommandProps) {
       setLoading(true);
       try {
         const token = await getToken();
-        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+        const API_BASE =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
         const response = await fetch(
           `${API_BASE}/decisions?page=1&page_size=10&search=${encodeURIComponent(searchQuery)}`,
@@ -66,7 +67,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
               Authorization: `Bearer ${token}`,
               "X-Organization-ID": organization.id,
             },
-          }
+          },
         );
 
         if (response.ok) {
@@ -82,7 +83,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
         setLoading(false);
       }
     },
-    [getToken, organization?.id]
+    [getToken, organization?.id],
   );
 
   // Debounced search
@@ -134,7 +135,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
           "relative flex items-center gap-2 w-64 px-3 py-2 rounded-2xl",
           "border border-gray-200 bg-white text-sm text-gray-500",
           "hover:border-gray-300 transition-colors",
-          className
+          className,
         )}
       >
         <Search className="w-4 h-4 text-gray-400" />
@@ -146,15 +147,15 @@ export function SearchCommand({ className }: SearchCommandProps) {
 
       {/* Modal Overlay */}
       {open && (
-        <div className="fixed inset-0 z-50">
+        <>
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]"
             onClick={() => setOpen(false)}
           />
 
           {/* Dialog */}
-          <div className="relative flex items-start justify-center pt-[20vh]">
+          <div className="fixed inset-0 z-[101] flex items-start justify-center pt-[15vh] px-4">
             <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
               {/* Search Input */}
               <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
@@ -171,7 +172,9 @@ export function SearchCommand({ className }: SearchCommandProps) {
                   className="flex-1 text-base outline-none placeholder:text-gray-400"
                   autoFocus
                 />
-                {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                {loading && (
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                )}
                 <button
                   onClick={() => setOpen(false)}
                   className="p-1 rounded-lg hover:bg-gray-100"
@@ -198,7 +201,9 @@ export function SearchCommand({ className }: SearchCommandProps) {
                           onMouseEnter={() => setSelectedIndex(index)}
                           className={cn(
                             "w-full px-4 py-3 flex items-start gap-3 text-left transition-colors",
-                            selectedIndex === index ? "bg-indigo-50" : "hover:bg-gray-50"
+                            selectedIndex === index
+                              ? "bg-indigo-50"
+                              : "hover:bg-gray-50",
                           )}
                         >
                           <FileText className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -210,7 +215,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
                               <span
                                 className={cn(
                                   "px-2 py-0.5 rounded-full text-xs font-medium",
-                                  getStatusColor(result.status)
+                                  getStatusColor(result.status),
                                 )}
                               >
                                 {result.status.replace("_", " ")}
@@ -240,7 +245,9 @@ export function SearchCommand({ className }: SearchCommandProps) {
 
                 {!query && (
                   <div className="px-4 py-6 text-center text-gray-500">
-                    <p className="text-sm">Start typing to search decisions...</p>
+                    <p className="text-sm">
+                      Start typing to search decisions...
+                    </p>
                   </div>
                 )}
               </div>
@@ -248,22 +255,30 @@ export function SearchCommand({ className }: SearchCommandProps) {
               {/* Footer */}
               <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center gap-4 text-xs text-gray-500">
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">↑</kbd>
-                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">↓</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">
+                    ↑
+                  </kbd>
+                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">
+                    ↓
+                  </kbd>
                   to navigate
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">↵</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">
+                    ↵
+                  </kbd>
                   to select
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">esc</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded">
+                    esc
+                  </kbd>
                   to close
                 </span>
               </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </>
   );
