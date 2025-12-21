@@ -33,33 +33,12 @@ const tiers = [
     ],
   },
   {
-    name: "Starter",
-    description: "For growing teams",
-    price: "$29",
+    name: "Pro",
+    description: "For growing engineering teams",
+    price: "$49",
     period: "per month",
     cta: "Start Free Trial",
-    ctaHref: "/sign-up?plan=starter",
-    highlight: false,
-    features: [
-      { text: "Up to 100 decisions", included: true },
-      { text: "Up to 10 team members", included: true },
-      { text: "Full version history", included: true },
-      { text: "Advanced search & filters", included: true },
-      { text: "Email support", included: true },
-      { text: "API access", included: true },
-      { text: "Slack/Teams integration", included: false },
-      { text: "Risk dashboard", included: false },
-      { text: "Audit export", included: false },
-      { text: "SSO", included: false },
-    ],
-  },
-  {
-    name: "Professional",
-    description: "For scaling engineering orgs",
-    price: "$99",
-    period: "per month",
-    cta: "Start Free Trial",
-    ctaHref: "/sign-up?plan=professional",
+    ctaHref: "/sign-up?plan=pro",
     highlight: true,
     badge: "Most Popular",
     features: [
@@ -159,7 +138,7 @@ export default function PricingPage() {
         {/* Pricing Cards */}
         <section className="py-12 px-6">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {tiers.map((tier) => (
                 <div
                   key={tier.name}
