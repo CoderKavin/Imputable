@@ -149,8 +149,10 @@ def decode_clerk_token(token: str) -> ClerkTokenPayload | None:
         return None
 
     try:
+        logger.info("Attempting to get signing key from JWKS")
         # Get the signing key from JWKS
         signing_key = jwks_client.get_signing_key_from_jwt(token)
+        logger.info("Got signing key, decoding token")
 
         # Decode and verify the token
         payload = jwt.decode(
@@ -161,6 +163,7 @@ def decode_clerk_token(token: str) -> ClerkTokenPayload | None:
                 "verify_aud": False,  # Clerk doesn't always include audience
             }
         )
+        logger.info(f"Token decoded successfully, sub={payload.get('sub')}, org_id={payload.get('org_id')}")
 
         # Extract additional claims from session claims if present
         email = payload.get("email")
