@@ -95,10 +95,15 @@ async def get_or_create_clerk_organization(
     )
     org = result.scalar_one_or_none()
 
+    created_org = False
     if not org:
         # Create new organization
         # Slug must be lowercase alphanumeric with hyphens
         slug = (clerk_org_slug or f"org-{clerk_org_id[-8:]}").lower()
+        # Remove any invalid characters
+        import re
+        slug = re.sub(r'[^a-z0-9-]', '-', slug)
+
         # Ensure unique slug
         base_slug = slug
         counter = 1
@@ -120,16 +125,9 @@ async def get_or_create_clerk_organization(
             subscription_tier=SubscriptionTier.FREE,
         )
         session.add(org)
-        try:
-            await session.commit()
-            await session.refresh(org)
-            logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
-        except Exception as e:
-            logger.error(f"Failed to create organization: {e}")
-            await session.rollback()
-            raise
+        created_org = True
 
-    # Ensure user is a member of the organization
+    # Check membership
     result = await session.execute(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == org.id,
@@ -138,14 +136,14 @@ async def get_or_create_clerk_organization(
     )
     membership = result.scalar_one_or_none()
 
-    if not membership:
-        # Map Clerk roles to our roles
-        mapped_role = "member"
-        if role in ("org:admin", "admin"):
-            mapped_role = "admin"
-        elif role in ("org:owner", "owner"):
-            mapped_role = "owner"
+    # Map Clerk roles to our roles
+    mapped_role = "member"
+    if role in ("org:admin", "admin"):
+        mapped_role = "admin"
+    elif role in ("org:owner", "owner"):
+        mapped_role = "owner"
 
+    if not membership:
         logger.info(f"Adding user {user.id} to organization {org.id} as {mapped_role}")
         membership = OrganizationMember(
             id=uuid4(),
@@ -154,16 +152,19 @@ async def get_or_create_clerk_organization(
             role=mapped_role,
         )
         session.add(membership)
-        try:
-            await session.commit()
-            logger.info(f"Added user {user.id} to organization {org.id} as {mapped_role}")
-        except Exception as e:
-            logger.error(f"Failed to add user to organization: {e}")
-            await session.rollback()
-            raise
-        return org, mapped_role
 
-    return org, membership.role
+    # Single commit for all changes
+    try:
+        await session.commit()
+        if created_org:
+            await session.refresh(org)
+            logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
+    except Exception as e:
+        logger.error(f"Failed to save organization/membership: {e}")
+        await session.rollback()
+        raise
+
+    return org, membership.role if membership else mapped_role
 
 
 class CurrentUser:
