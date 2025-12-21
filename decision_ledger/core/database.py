@@ -29,15 +29,21 @@ settings = get_settings()
 # Create async engine with connection pooling
 # Add SSL requirement for cloud databases (Supabase, Neon, etc.)
 import ssl
+import os
 
 connect_args = {}
 db_url = str(settings.database_url)
-if "supabase" in db_url or "neon" in db_url or "pooler" in db_url:
+
+# Always use SSL for production/cloud databases
+if os.getenv("ENVIRONMENT") == "production" or "supabase" in db_url or "neon" in db_url or "pooler" in db_url:
     # Create SSL context for cloud databases
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     connect_args["ssl"] = ssl_context
+    logger.info(f"Using SSL for database connection")
+
+logger.info(f"Database URL (masked): {db_url[:30]}...")
 
 engine = create_async_engine(
     settings.database_url_async,

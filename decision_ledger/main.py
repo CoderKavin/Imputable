@@ -20,8 +20,15 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    # Startup - skip init_db in production (tables already exist)
     import os
+
+    # Debug: print config
+    db_url = str(settings.database_url) if hasattr(settings, 'database_url') else "NOT SET"
+    print(f"[STARTUP] ENVIRONMENT: {os.getenv('ENVIRONMENT')}")
+    print(f"[STARTUP] DATABASE_URL from env: {os.getenv('DATABASE_URL', 'NOT SET')[:50]}...")
+    print(f"[STARTUP] DATABASE_URL from settings: {db_url[:50]}...")
+
+    # Startup - skip init_db in production (tables already exist)
     if os.getenv("ENVIRONMENT") != "production":
         try:
             await init_db()

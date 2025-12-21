@@ -15,6 +15,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # This ensures env vars override defaults
+        env_nested_delimiter="__",
     )
 
     # Application
