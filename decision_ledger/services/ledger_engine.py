@@ -513,6 +513,77 @@ class LedgerEngine:
                 is_current=is_current,
             )
 
+    async def list_decisions(
+        self,
+        organization_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+        status_filter: DecisionStatus | None = None,
+    ) -> tuple[list[DecisionWithVersion], int]:
+        """
+        List decisions for an organization with pagination.
+
+        Args:
+            organization_id: The organization UUID
+            limit: Max number of decisions to return
+            offset: Number of decisions to skip
+            status_filter: Optional status filter
+
+        Returns:
+            Tuple of (list of decisions with versions, total count)
+        """
+        # Build base query
+        base_conditions = [
+            Decision.organization_id == organization_id,
+            Decision.deleted_at.is_(None),
+        ]
+
+        if status_filter:
+            base_conditions.append(Decision.status == status_filter)
+
+        # Get total count
+        count_query = select(func.count()).select_from(Decision).where(*base_conditions)
+        count_result = await self._session.execute(count_query)
+        total = count_result.scalar_one()
+
+        # Get decisions
+        query = (
+            select(Decision)
+            .where(*base_conditions)
+            .options(
+                selectinload(Decision.current_version).selectinload(DecisionVersion.creator),
+                selectinload(Decision.owner_team),
+                selectinload(Decision.creator),
+            )
+            .order_by(Decision.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        result = await self._session.execute(query)
+        decisions = result.scalars().all()
+
+        # Build response list
+        decisions_with_versions = []
+        for decision in decisions:
+            # Get version count for each decision
+            version_count_query = select(func.count()).where(
+                DecisionVersion.decision_id == decision.id
+            )
+            version_count_result = await self._session.execute(version_count_query)
+            version_count = version_count_result.scalar_one()
+
+            decisions_with_versions.append(
+                DecisionWithVersion(
+                    decision=decision,
+                    version=decision.current_version,
+                    version_count=version_count,
+                    is_current=True,
+                )
+            )
+
+        return decisions_with_versions, total
+
     async def get_version_history(
         self,
         decision_id: UUID,

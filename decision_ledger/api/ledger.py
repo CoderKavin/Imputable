@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from ..core import OrgContextDep, SessionDep
 from ..models import ImpactLevel
+from ..models import DecisionStatus
 from ..services.ledger_engine import (
     AmendDecisionInput,
     CreateDecisionInput,
@@ -196,6 +197,29 @@ class VersionCompareResponse(BaseModel):
     changes: dict
 
 
+class DecisionSummaryResponse(BaseModel):
+    """Summary response for decision lists."""
+    id: UUID
+    organization_id: UUID
+    decision_number: int
+    status: str
+    title: str
+    impact_level: str
+    tags: list[str]
+    created_by: UserRefResponse
+    created_at: datetime
+    version_count: int
+
+
+class PaginatedDecisionsResponse(BaseModel):
+    """Paginated list of decisions."""
+    items: list[DecisionSummaryResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 # =============================================================================
 # DEPENDENCIES
 # =============================================================================
@@ -304,6 +328,75 @@ async def create_decision(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
         )
+
+
+@router.get(
+    "",
+    response_model=PaginatedDecisionsResponse,
+    summary="List all decisions",
+    description="""
+    List all decisions for the current organization with pagination.
+
+    Query parameters:
+    - page: Page number (default: 1)
+    - page_size: Items per page (default: 20, max: 100)
+    - status: Optional status filter (draft, in_review, approved, deprecated, superseded)
+    """,
+)
+async def list_decisions(
+    current_user: OrgContextDep,
+    engine: LedgerEngineDep,
+    page: int = Query(default=1, ge=1, description="Page number"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    status: str | None = Query(default=None, description="Filter by status"),
+):
+    """List all decisions with pagination."""
+    offset = (page - 1) * page_size
+
+    # Parse status filter if provided
+    status_filter = None
+    if status:
+        try:
+            status_filter = DecisionStatus(status)
+        except ValueError:
+            pass  # Invalid status, ignore filter
+
+    decisions, total = await engine.list_decisions(
+        organization_id=current_user.organization_id,
+        limit=page_size,
+        offset=offset,
+        status_filter=status_filter,
+    )
+
+    items = [
+        DecisionSummaryResponse(
+            id=d.decision.id,
+            organization_id=d.decision.organization_id,
+            decision_number=d.decision.decision_number,
+            status=d.decision.status.value,
+            title=d.version.title,
+            impact_level=d.version.impact_level.value,
+            tags=d.version.tags or [],
+            created_by=UserRefResponse(
+                id=d.decision.creator.id,
+                name=d.decision.creator.name,
+                email=d.decision.creator.email,
+            ),
+            created_at=d.decision.created_at,
+            version_count=d.version_count,
+        )
+        for d in decisions
+    ]
+
+    total_pages = (total + page_size - 1) // page_size
+
+    return PaginatedDecisionsResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @router.put(
