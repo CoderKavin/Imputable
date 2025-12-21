@@ -4,7 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { api, DevUser } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { UserListSkeleton } from "@/components/ui/skeleton";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -57,8 +64,16 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Imputable</CardTitle>
+            <CardDescription>Loading available users...</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <UserListSkeleton count={3} />
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -98,7 +113,7 @@ export default function LoginPage() {
                       <div className="text-sm text-gray-500">{user.email}</div>
                       {user.organizations.length > 0 && (
                         <div className="text-xs text-gray-400 mt-1">
-                          {user.organizations.map(o => o.name).join(", ")}
+                          {user.organizations.map((o) => o.name).join(", ")}
                         </div>
                       )}
                     </div>

@@ -13,6 +13,7 @@ import { useDecisionList } from "@/hooks/use-decisions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DecisionListSkeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeTime, formatStatus } from "@/lib/utils";
 import type { DecisionSummary } from "@/types/decision";
 
@@ -236,9 +237,7 @@ export default function DecisionsPage() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <LoaderIcon className="h-6 w-6 text-indigo-600" />
-          </div>
+          <DecisionListSkeleton count={6} />
         ) : error ? (
           <div className="text-center py-12 text-red-600">
             Failed to load decisions
