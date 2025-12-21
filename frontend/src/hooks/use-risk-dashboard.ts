@@ -1,6 +1,8 @@
 /**
  * React Query Hooks for Risk Dashboard
  * Provides data fetching for tech debt tracking and executive views
+ *
+ * Uses Clerk authentication via useApiClient hook.
  */
 
 import {
@@ -9,6 +11,9 @@ import {
   useQueryClient,
   UseQueryOptions,
 } from "@tanstack/react-query";
+import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useApiClient } from "./use-api";
+import { useCallback, useMemo } from "react";
 
 // =============================================================================
 // TYPES
@@ -148,102 +153,142 @@ export interface UpdateRequest {
 }
 
 // =============================================================================
-// API CLIENT
+// AUTHENTICATED API HOOK
 // =============================================================================
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
+/**
+ * Hook for risk dashboard API calls with Clerk auth
+ */
+export function useRiskDashboardApi() {
+  const client = useApiClient();
 
-async function fetchApi<T>(
-  endpoint: string,
-  options?: RequestInit,
-): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
+  const getStats = useCallback(async (): Promise<RiskStats> => {
+    const response = await client.get<RiskStats>("/risk-dashboard/stats");
+    return response.data;
+  }, [client]);
+
+  const getExpiringDecisions = useCallback(
+    async (params?: {
+      status_filter?: string;
+      team_id?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<ExpiringDecisionsList> => {
+      const response = await client.get<ExpiringDecisionsList>(
+        "/risk-dashboard/expiring",
+        { params },
+      );
+      return response.data;
     },
-    credentials: "include",
-    ...options,
-  });
+    [client],
+  );
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `API error: ${response.status}`);
-  }
+  const getCalendar = useCallback(
+    async (startDate?: string, endDate?: string): Promise<CalendarData> => {
+      const response = await client.get<CalendarData>(
+        "/risk-dashboard/calendar",
+        {
+          params: { start_date: startDate, end_date: endDate },
+        },
+      );
+      return response.data;
+    },
+    [client],
+  );
 
-  return response.json();
+  const getHeatmap = useCallback(
+    async (months = 12): Promise<HeatmapData> => {
+      const response = await client.get<HeatmapData>(
+        "/risk-dashboard/heatmap",
+        {
+          params: { months },
+        },
+      );
+      return response.data;
+    },
+    [client],
+  );
+
+  const getTeamHeatmap = useCallback(async (): Promise<TeamHeatmapData> => {
+    const response = await client.get<TeamHeatmapData>(
+      "/risk-dashboard/heatmap/teams",
+    );
+    return response.data;
+  }, [client]);
+
+  const getTagHeatmap = useCallback(async (): Promise<TagHeatmapData> => {
+    const response = await client.get<TagHeatmapData>(
+      "/risk-dashboard/heatmap/tags",
+    );
+    return response.data;
+  }, [client]);
+
+  const snoozeDecision = useCallback(
+    async (
+      decisionId: string,
+      data: SnoozeRequest,
+    ): Promise<SnoozeResponse> => {
+      const response = await client.post<SnoozeResponse>(
+        `/risk-dashboard/decisions/${decisionId}/snooze`,
+        data,
+      );
+      return response.data;
+    },
+    [client],
+  );
+
+  const requestUpdate = useCallback(
+    async (
+      decisionId: string,
+      data: RequestUpdateRequest,
+    ): Promise<RequestUpdateResponse> => {
+      const response = await client.post<RequestUpdateResponse>(
+        `/risk-dashboard/decisions/${decisionId}/request-update`,
+        data,
+      );
+      return response.data;
+    },
+    [client],
+  );
+
+  const resolveDecision = useCallback(
+    async (
+      decisionId: string,
+      data: ResolveRequest,
+    ): Promise<ResolveResponse> => {
+      const response = await client.post<ResolveResponse>(
+        `/risk-dashboard/decisions/${decisionId}/resolve`,
+        data,
+      );
+      return response.data;
+    },
+    [client],
+  );
+
+  const getUpdateRequests = useCallback(
+    async (myDecisionsOnly = false): Promise<UpdateRequest[]> => {
+      const response = await client.get<UpdateRequest[]>(
+        "/risk-dashboard/update-requests",
+        { params: { my_decisions_only: myDecisionsOnly } },
+      );
+      return response.data;
+    },
+    [client],
+  );
+
+  return {
+    getStats,
+    getExpiringDecisions,
+    getCalendar,
+    getHeatmap,
+    getTeamHeatmap,
+    getTagHeatmap,
+    snoozeDecision,
+    requestUpdate,
+    resolveDecision,
+    getUpdateRequests,
+  };
 }
-
-const riskApi = {
-  getStats: () => fetchApi<RiskStats>("/risk-dashboard/stats"),
-
-  getExpiringDecisions: (params?: {
-    status_filter?: string;
-    team_id?: string;
-    limit?: number;
-    offset?: number;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params?.status_filter)
-      searchParams.set("status_filter", params.status_filter);
-    if (params?.team_id) searchParams.set("team_id", params.team_id);
-    if (params?.limit) searchParams.set("limit", String(params.limit));
-    if (params?.offset) searchParams.set("offset", String(params.offset));
-
-    const query = searchParams.toString();
-    return fetchApi<ExpiringDecisionsList>(
-      `/risk-dashboard/expiring${query ? `?${query}` : ""}`,
-    );
-  },
-
-  getCalendar: (startDate?: string, endDate?: string) => {
-    const searchParams = new URLSearchParams();
-    if (startDate) searchParams.set("start_date", startDate);
-    if (endDate) searchParams.set("end_date", endDate);
-
-    const query = searchParams.toString();
-    return fetchApi<CalendarData>(
-      `/risk-dashboard/calendar${query ? `?${query}` : ""}`,
-    );
-  },
-
-  getHeatmap: (months = 12) =>
-    fetchApi<HeatmapData>(`/risk-dashboard/heatmap?months=${months}`),
-
-  getTeamHeatmap: () =>
-    fetchApi<TeamHeatmapData>("/risk-dashboard/heatmap/teams"),
-
-  getTagHeatmap: () => fetchApi<TagHeatmapData>("/risk-dashboard/heatmap/tags"),
-
-  snoozeDecision: (decisionId: string, data: SnoozeRequest) =>
-    fetchApi<SnoozeResponse>(`/risk-dashboard/decisions/${decisionId}/snooze`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  requestUpdate: (decisionId: string, data: RequestUpdateRequest) =>
-    fetchApi<RequestUpdateResponse>(
-      `/risk-dashboard/decisions/${decisionId}/request-update`,
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-    ),
-
-  resolveDecision: (decisionId: string, data: ResolveRequest) =>
-    fetchApi<ResolveResponse>(
-      `/risk-dashboard/decisions/${decisionId}/resolve`,
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-    ),
-
-  getUpdateRequests: (myDecisionsOnly = false) =>
-    fetchApi<UpdateRequest[]>(
-      `/risk-dashboard/update-requests?my_decisions_only=${myDecisionsOnly}`,
-    ),
-};
 
 // =============================================================================
 // QUERY KEYS
@@ -274,11 +319,16 @@ export const riskDashboardKeys = {
 export function useRiskStats(
   options?: Omit<UseQueryOptions<RiskStats>, "queryKey" | "queryFn">,
 ) {
+  const { getStats } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.stats(),
-    queryFn: riskApi.getStats,
+    queryKey: [...riskDashboardKeys.stats(), organization?.id],
+    queryFn: getStats,
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // Refresh every minute
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -298,10 +348,15 @@ export function useExpiringDecisions(
     "queryKey" | "queryFn"
   >,
 ) {
+  const { getExpiringDecisions } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.expiring(filters),
-    queryFn: () => riskApi.getExpiringDecisions(filters),
+    queryKey: [...riskDashboardKeys.expiring(filters), organization?.id],
+    queryFn: () => getExpiringDecisions(filters),
     staleTime: 30 * 1000,
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -314,10 +369,18 @@ export function useCalendarData(
   endDate?: string,
   options?: Omit<UseQueryOptions<CalendarData>, "queryKey" | "queryFn">,
 ) {
+  const { getCalendar } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.calendar(startDate, endDate),
-    queryFn: () => riskApi.getCalendar(startDate, endDate),
+    queryKey: [
+      ...riskDashboardKeys.calendar(startDate, endDate),
+      organization?.id,
+    ],
+    queryFn: () => getCalendar(startDate, endDate),
     staleTime: 60 * 1000,
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -329,10 +392,15 @@ export function useHeatmapData(
   months = 12,
   options?: Omit<UseQueryOptions<HeatmapData>, "queryKey" | "queryFn">,
 ) {
+  const { getHeatmap } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.heatmap(months),
-    queryFn: () => riskApi.getHeatmap(months),
+    queryKey: [...riskDashboardKeys.heatmap(months), organization?.id],
+    queryFn: () => getHeatmap(months),
     staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -343,10 +411,15 @@ export function useHeatmapData(
 export function useTeamHeatmap(
   options?: Omit<UseQueryOptions<TeamHeatmapData>, "queryKey" | "queryFn">,
 ) {
+  const { getTeamHeatmap } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.teamHeatmap(),
-    queryFn: riskApi.getTeamHeatmap,
+    queryKey: [...riskDashboardKeys.teamHeatmap(), organization?.id],
+    queryFn: getTeamHeatmap,
     staleTime: 60 * 1000, // 1 minute
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -357,10 +430,15 @@ export function useTeamHeatmap(
 export function useTagHeatmap(
   options?: Omit<UseQueryOptions<TagHeatmapData>, "queryKey" | "queryFn">,
 ) {
+  const { getTagHeatmap } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.tagHeatmap(),
-    queryFn: riskApi.getTagHeatmap,
+    queryKey: [...riskDashboardKeys.tagHeatmap(), organization?.id],
+    queryFn: getTagHeatmap,
     staleTime: 60 * 1000, // 1 minute
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -372,10 +450,18 @@ export function useUpdateRequests(
   myDecisionsOnly = false,
   options?: Omit<UseQueryOptions<UpdateRequest[]>, "queryKey" | "queryFn">,
 ) {
+  const { getUpdateRequests } = useRiskDashboardApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: riskDashboardKeys.updateRequests(myDecisionsOnly),
-    queryFn: () => riskApi.getUpdateRequests(myDecisionsOnly),
+    queryKey: [
+      ...riskDashboardKeys.updateRequests(myDecisionsOnly),
+      organization?.id,
+    ],
+    queryFn: () => getUpdateRequests(myDecisionsOnly),
     staleTime: 30 * 1000,
+    enabled: isSignedIn && !!organization?.id,
     ...options,
   });
 }
@@ -389,6 +475,7 @@ export function useUpdateRequests(
  */
 export function useSnoozeDecision() {
   const queryClient = useQueryClient();
+  const { snoozeDecision } = useRiskDashboardApi();
 
   return useMutation({
     mutationFn: ({
@@ -397,7 +484,7 @@ export function useSnoozeDecision() {
     }: {
       decisionId: string;
       data: SnoozeRequest;
-    }) => riskApi.snoozeDecision(decisionId, data),
+    }) => snoozeDecision(decisionId, data),
     onSuccess: () => {
       // Invalidate all risk dashboard data
       queryClient.invalidateQueries({ queryKey: riskDashboardKeys.all });
@@ -410,6 +497,7 @@ export function useSnoozeDecision() {
  */
 export function useRequestUpdate() {
   const queryClient = useQueryClient();
+  const { requestUpdate } = useRiskDashboardApi();
 
   return useMutation({
     mutationFn: ({
@@ -418,7 +506,7 @@ export function useRequestUpdate() {
     }: {
       decisionId: string;
       data: RequestUpdateRequest;
-    }) => riskApi.requestUpdate(decisionId, data),
+    }) => requestUpdate(decisionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: riskDashboardKeys.updateRequests(false),
@@ -435,6 +523,7 @@ export function useRequestUpdate() {
  */
 export function useResolveDecision() {
   const queryClient = useQueryClient();
+  const { resolveDecision } = useRiskDashboardApi();
 
   return useMutation({
     mutationFn: ({
@@ -443,7 +532,7 @@ export function useResolveDecision() {
     }: {
       decisionId: string;
       data: ResolveRequest;
-    }) => riskApi.resolveDecision(decisionId, data),
+    }) => resolveDecision(decisionId, data),
     onSuccess: () => {
       // Invalidate all risk dashboard data
       queryClient.invalidateQueries({ queryKey: riskDashboardKeys.all });

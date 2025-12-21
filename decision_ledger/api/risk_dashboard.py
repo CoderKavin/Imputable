@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from ..core import OrgContextDep, SessionDep
+from ..core.billing import RiskDashboardDep
 from ..services.expiry_engine import (
     ExpiryConfig,
     ExpiryEngine,
@@ -194,11 +195,14 @@ ExpiryEngineDep = Annotated[ExpiryEngine, Depends(get_expiry_engine)]
 
     Returns counts of expired and at-risk decisions,
     broken down by team and impact level.
+
+    **Requires Professional subscription or higher.**
     """,
 )
 async def get_risk_stats(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
 ):
     """Get aggregated risk statistics."""
     stats = await engine.get_expiry_stats(current_user.organization_id)
@@ -227,6 +231,7 @@ async def get_risk_stats(
 async def get_expiring_decisions(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
     status_filter: str | None = Query(
         default=None,
         description="Filter by status: expired, at_risk, or all",
@@ -296,6 +301,7 @@ async def get_expiring_decisions(
 async def get_calendar_data(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
     start_date: datetime | None = Query(
         default=None,
         description="Start of date range (default: today)",
@@ -347,6 +353,7 @@ async def get_calendar_data(
 async def get_heatmap_data(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
     months: int = Query(
         default=12,
         ge=1,
@@ -424,6 +431,7 @@ class TagHeatmapResponse(BaseModel):
 async def get_team_heatmap(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
 ):
     """Get team-based heatmap data."""
     teams_data = await engine.get_team_heatmap_data(
@@ -449,6 +457,7 @@ async def get_team_heatmap(
 async def get_tag_heatmap(
     current_user: OrgContextDep,
     engine: ExpiryEngineDep,
+    subscription: RiskDashboardDep,  # PAYWALL: Requires Pro tier
 ):
     """Get tag-based heatmap data."""
     tags_data = await engine.get_tag_heatmap_data(

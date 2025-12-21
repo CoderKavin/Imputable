@@ -31,6 +31,14 @@ from .base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 # =============================================================================
 
 
+class SubscriptionTier(str, PyEnum):
+    """Subscription tiers for billing."""
+    FREE = "free"
+    STARTER = "starter"
+    PROFESSIONAL = "professional"
+    ENTERPRISE = "enterprise"
+
+
 class DecisionStatus(str, PyEnum):
     DRAFT = "draft"
     PENDING_REVIEW = "pending_review"
@@ -93,6 +101,76 @@ class Organization(Base, UUIDMixin, SoftDeleteMixin):
     settings: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
+    )
+
+    # Billing fields
+    subscription_tier: Mapped[SubscriptionTier] = mapped_column(
+        Enum(SubscriptionTier, name="subscription_tier", values_callable=lambda x: [e.value for e in x]),
+        default=SubscriptionTier.FREE,
+        nullable=False,
+    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Stripe customer ID for billing"
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Active Stripe subscription ID"
+    )
+
+    # Slack Integration (OAuth - SaaS Mode)
+    slack_access_token: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Encrypted Slack OAuth access token"
+    )
+    slack_team_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack workspace/team ID"
+    )
+    slack_team_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Slack workspace name for display"
+    )
+    slack_channel_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Default Slack channel ID for notifications"
+    )
+    slack_channel_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Default Slack channel name for display"
+    )
+    slack_bot_user_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack bot user ID"
+    )
+    slack_installed_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        comment="When Slack integration was installed"
+    )
+
+    # Microsoft Teams Integration (Webhook - Enterprise Mode)
+    teams_webhook_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Microsoft Teams Incoming Webhook URL"
+    )
+    teams_channel_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Teams channel name for display"
+    )
+    teams_installed_at: Mapped[datetime | None] = mapped_column(
+        nullable=True,
+        comment="When Teams integration was configured"
     )
 
     # Relationships

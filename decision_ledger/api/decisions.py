@@ -212,7 +212,12 @@ async def get_decision(
     audit: AuditServiceDep,
 ):
     """Get a decision by ID with full version history."""
-    decision = await service.get_decision(decision_id, include_versions=True)
+    # SECURITY: Pass org_id to enforce tenant isolation
+    decision = await service.get_decision(
+        decision_id,
+        organization_id=current_user.organization_id,
+        include_versions=True,
+    )
     if not decision:
         raise HTTPException(status_code=404, detail="Decision not found")
 
@@ -272,8 +277,10 @@ async def update_decision(
 ):
     """Update a decision by creating a new version."""
     try:
+        # SECURITY: Pass org_id to enforce tenant isolation
         version = await service.update_decision(
             decision_id=decision_id,
+            organization_id=current_user.organization_id,
             data=data,
             user_id=current_user.id,
         )
@@ -325,7 +332,8 @@ async def submit_for_review(
 ):
     """Submit a draft decision for review."""
     try:
-        decision = await service.submit_for_review(decision_id)
+        # SECURITY: Pass org_id to enforce tenant isolation
+        decision = await service.submit_for_review(decision_id, organization_id=current_user.organization_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -341,7 +349,8 @@ async def deprecate_decision(
 ):
     """Deprecate a decision."""
     try:
-        decision = await service.deprecate_decision(decision_id)
+        # SECURITY: Pass org_id to enforce tenant isolation
+        decision = await service.deprecate_decision(decision_id, organization_id=current_user.organization_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -464,7 +473,8 @@ async def get_decision_lineage(
     service: DecisionServiceDep,
 ):
     """Get the supersession chain for a decision."""
-    decision = await service.get_decision(decision_id)
+    # SECURITY: Pass org_id to enforce tenant isolation
+    decision = await service.get_decision(decision_id, organization_id=current_user.organization_id)
     if not decision:
         raise HTTPException(status_code=404, detail="Decision not found")
 
@@ -497,8 +507,16 @@ async def get_current_version(
     service: DecisionServiceDep,
 ):
     """Get the current (non-superseded) decision in a chain."""
+    # SECURITY: First verify the original decision belongs to this org
+    original = await service.get_decision(decision_id, organization_id=current_user.organization_id)
+    if not original:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
     current_id = await service.get_current_decision(decision_id)
-    decision = await service.get_decision(current_id)
+    decision = await service.get_decision(current_id, organization_id=current_user.organization_id)
+
+    if not decision:
+        raise HTTPException(status_code=404, detail="Decision not found")
 
     return decision_to_response(decision)
 

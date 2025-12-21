@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_session
 from ..core.dependencies import CurrentUser, require_org_context
+from ..core.billing import AuditExportDep, SubscriptionContext
 from ..models import Organization
 from ..services.audit_export import AuditExportService
 
@@ -201,6 +202,7 @@ async def generate_audit_export(
     request: AuditExportRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[CurrentUser, Depends(require_org_context)],
+    subscription: AuditExportDep,  # PAYWALL: Requires Enterprise subscription
 ) -> StreamingResponse:
     """
     Generate the official audit export PDF.

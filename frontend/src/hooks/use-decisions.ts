@@ -109,6 +109,9 @@ export function useVersionComparison(
   });
 }
 
+// Alias for DiffViewer component
+export const useVersionCompare = useVersionComparison;
+
 /**
  * Fetch decision list with pagination
  */

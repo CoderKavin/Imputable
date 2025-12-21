@@ -8,15 +8,17 @@ These endpoints implement the four critical flows:
 4. GET /decisions/{id} - Fetch with optional time travel
 """
 
+import logging
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from ..core import OrgContextDep, SessionDep
-from ..models import ImpactLevel
+from ..models import ImpactLevel, Organization, User
 from ..models import DecisionStatus
 from ..services.ledger_engine import (
     AmendDecisionInput,
@@ -29,6 +31,9 @@ from ..services.ledger_engine import (
     VersionNotFoundError,
     ConcurrencyError,
 )
+from ..services.notifications import NotificationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/decisions", tags=["ledger"])
 
@@ -233,6 +238,118 @@ LedgerEngineDep = Annotated[LedgerEngine, Depends(get_ledger_engine)]
 
 
 # =============================================================================
+# NOTIFICATION HELPERS
+# =============================================================================
+
+
+async def send_decision_created_notification(
+    session,
+    organization_id: UUID,
+    decision,
+    version,
+    creator_id: UUID,
+):
+    """Background task to send decision created notifications."""
+    try:
+        # Fetch org with integration settings
+        result = await session.execute(
+            select(Organization).where(Organization.id == organization_id)
+        )
+        org = result.scalar_one_or_none()
+
+        if not org or (not org.slack_access_token and not org.teams_webhook_url):
+            return  # No integrations configured
+
+        # Fetch creator
+        user_result = await session.execute(
+            select(User).where(User.id == creator_id)
+        )
+        creator = user_result.scalar_one_or_none()
+
+        if not creator:
+            return
+
+        notification_service = NotificationService(session)
+        await notification_service.notify_decision_created(org, decision, version, creator)
+        await notification_service.close()
+
+    except Exception as e:
+        logger.error(f"Failed to send decision created notification: {e}")
+
+
+async def send_decision_updated_notification(
+    session,
+    organization_id: UUID,
+    decision,
+    version,
+    updater_id: UUID,
+    change_summary: str,
+):
+    """Background task to send decision updated notifications."""
+    try:
+        result = await session.execute(
+            select(Organization).where(Organization.id == organization_id)
+        )
+        org = result.scalar_one_or_none()
+
+        if not org or (not org.slack_access_token and not org.teams_webhook_url):
+            return
+
+        user_result = await session.execute(
+            select(User).where(User.id == updater_id)
+        )
+        updater = user_result.scalar_one_or_none()
+
+        if not updater:
+            return
+
+        notification_service = NotificationService(session)
+        await notification_service.notify_decision_updated(
+            org, decision, version, updater, change_summary
+        )
+        await notification_service.close()
+
+    except Exception as e:
+        logger.error(f"Failed to send decision updated notification: {e}")
+
+
+async def send_status_changed_notification(
+    session,
+    organization_id: UUID,
+    decision,
+    old_status: DecisionStatus,
+    new_status: DecisionStatus,
+    changed_by_id: UUID,
+):
+    """Background task to send status changed notifications."""
+    try:
+        result = await session.execute(
+            select(Organization).where(Organization.id == organization_id)
+        )
+        org = result.scalar_one_or_none()
+
+        if not org or (not org.slack_access_token and not org.teams_webhook_url):
+            return
+
+        user_result = await session.execute(
+            select(User).where(User.id == changed_by_id)
+        )
+        changed_by = user_result.scalar_one_or_none()
+
+        if not changed_by:
+            return
+
+        notification_service = NotificationService(session)
+        await notification_service.notify_status_changed(
+            org, decision, old_status, new_status, changed_by
+        )
+        await notification_service.close()
+
+    except Exception as e:
+        logger.error(f"Failed to send status changed notification: {e}")
+
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -303,6 +420,8 @@ async def create_decision(
     request: CreateDecisionRequest,
     current_user: OrgContextDep,
     engine: LedgerEngineDep,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
 ):
     """Create a new decision."""
     try:
@@ -319,6 +438,16 @@ async def create_decision(
             input=input_data,
             organization_id=current_user.organization_id,
             author_id=current_user.id,
+        )
+
+        # Send notification in background (non-blocking)
+        background_tasks.add_task(
+            send_decision_created_notification,
+            session,
+            current_user.organization_id,
+            result.decision,
+            result.version,
+            current_user.id,
         )
 
         return build_decision_response(result)
@@ -430,6 +559,8 @@ async def amend_decision(
     request: AmendDecisionRequest,
     current_user: OrgContextDep,
     engine: LedgerEngineDep,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
 ):
     """Amend a decision by creating a new version."""
     try:
@@ -446,6 +577,17 @@ async def amend_decision(
             decision_id=decision_id,
             input=input_data,
             author_id=current_user.id,
+        )
+
+        # Send notification in background (non-blocking)
+        background_tasks.add_task(
+            send_decision_updated_notification,
+            session,
+            current_user.organization_id,
+            result.decision,
+            result.version,
+            current_user.id,
+            request.change_summary,
         )
 
         return build_decision_response(result)
@@ -487,9 +629,15 @@ async def supersede_decision(
     request: SupersedeRequest,
     current_user: OrgContextDep,
     engine: LedgerEngineDep,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
 ):
     """Mark a decision as superseded by another."""
     try:
+        # Capture old status before the operation
+        old_status_result = await engine.get_decision(decision_id)
+        old_status = old_status_result.decision.status
+
         input_data = SupersedeInput(
             new_decision_id=request.new_decision_id,
             reason=request.reason,
@@ -499,6 +647,17 @@ async def supersede_decision(
             old_decision_id=decision_id,
             input=input_data,
             author_id=current_user.id,
+        )
+
+        # Send notification in background (non-blocking)
+        background_tasks.add_task(
+            send_status_changed_notification,
+            session,
+            current_user.organization_id,
+            old_decision,
+            old_status,
+            DecisionStatus.SUPERSEDED,
+            current_user.id,
         )
 
         return SupersedeResponse(

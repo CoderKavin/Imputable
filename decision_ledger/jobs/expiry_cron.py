@@ -9,9 +9,12 @@ Typical cron schedule: 0 9 * * * (daily at 9 AM)
 
 import asyncio
 import logging
+import os
+import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from ..services.expiry_engine import ExpiryEngine, ExpiryConfig
@@ -19,6 +22,118 @@ from ..services.notification_service import NotificationService, EmailConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# ALERTING
+# =============================================================================
+
+
+async def send_alert(
+    title: str,
+    message: str,
+    severity: str = "error",
+    details: dict | None = None,
+) -> None:
+    """
+    Send an alert when the cron job fails.
+
+    Supports multiple channels:
+    - Slack webhook
+    - Generic webhook (for PagerDuty, Opsgenie, etc.)
+    - Logs (always)
+    """
+    # Always log the error
+    log_message = f"[CRON ALERT] {title}: {message}"
+    if details:
+        log_message += f" | Details: {details}"
+
+    if severity == "critical":
+        logger.critical(log_message)
+    else:
+        logger.error(log_message)
+
+    # Slack webhook
+    slack_webhook_url = os.getenv("SLACK_ALERTS_WEBHOOK_URL")
+    if slack_webhook_url:
+        try:
+            await _send_slack_alert(slack_webhook_url, title, message, severity, details)
+        except Exception as e:
+            logger.error(f"Failed to send Slack alert: {e}")
+
+    # Generic webhook (PagerDuty, Opsgenie, custom)
+    alert_webhook_url = os.getenv("ALERT_WEBHOOK_URL")
+    if alert_webhook_url:
+        try:
+            await _send_webhook_alert(alert_webhook_url, title, message, severity, details)
+        except Exception as e:
+            logger.error(f"Failed to send webhook alert: {e}")
+
+
+async def _send_slack_alert(
+    webhook_url: str,
+    title: str,
+    message: str,
+    severity: str,
+    details: dict | None,
+) -> None:
+    """Send alert to Slack."""
+    color = "#dc2626" if severity == "critical" else "#f59e0b"  # Red or orange
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"🚨 {title}", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": message},
+        },
+    ]
+
+    if details:
+        details_text = "\n".join([f"• *{k}*: {v}" for k, v in details.items()])
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": details_text},
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [
+            {"type": "mrkdwn", "text": f"Severity: *{severity.upper()}* | Time: {datetime.now(timezone.utc).isoformat()}"},
+        ],
+    })
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            webhook_url,
+            json={
+                "attachments": [{"color": color, "blocks": blocks}],
+            },
+            timeout=10,
+        )
+
+
+async def _send_webhook_alert(
+    webhook_url: str,
+    title: str,
+    message: str,
+    severity: str,
+    details: dict | None,
+) -> None:
+    """Send alert to generic webhook endpoint."""
+    payload = {
+        "title": title,
+        "message": message,
+        "severity": severity,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "imputable-cron",
+        "details": details or {},
+    }
+
+    async with httpx.AsyncClient() as client:
+        await client.post(webhook_url, json=payload, timeout=10)
 
 
 async def run_expiry_job(
@@ -109,8 +224,23 @@ async def run_expiry_job(
                 await session.commit()
 
     except Exception as e:
-        logger.error(f"Expiry job failed: {str(e)}")
-        results["errors"].append(f"Job failed: {str(e)}")
+        error_msg = f"Expiry job failed: {str(e)}"
+        logger.error(error_msg)
+        results["errors"].append(error_msg)
+
+        # CRITICAL: Alert on job failure
+        await send_alert(
+            title="Expiry Cron Job Failed",
+            message=f"The daily expiry processing job crashed unexpectedly.",
+            severity="critical",
+            details={
+                "error": str(e),
+                "traceback": traceback.format_exc()[-500:],  # Last 500 chars
+                "started_at": results["started_at"],
+                "expired_before_crash": results["expired_count"],
+                "at_risk_before_crash": results["at_risk_count"],
+            },
+        )
         raise
 
     finally:
@@ -125,6 +255,19 @@ async def run_expiry_job(
         f"{results['expired_count']} expired, {results['at_risk_count']} at risk, "
         f"{results['notifications_sent']} notifications sent"
     )
+
+    # Alert if there were partial failures (notifications failed but job completed)
+    if results["notifications_failed"] > 0:
+        await send_alert(
+            title="Expiry Job Completed with Warnings",
+            message=f"The expiry job completed but {results['notifications_failed']} notifications failed to send.",
+            severity="warning",
+            details={
+                "notifications_sent": results["notifications_sent"],
+                "notifications_failed": results["notifications_failed"],
+                "errors": results["errors"][:5],  # First 5 errors
+            },
+        )
 
     return results
 

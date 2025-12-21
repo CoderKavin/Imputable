@@ -4,24 +4,17 @@
  * Propose Change Modal
  *
  * Interface for amending a decision (creating a new version).
- * Key features:
- * - Pre-filled with current content
- * - Required "Change Reason" field
- * - Rich text editing with TipTap
- * - Optimistic locking with expected_version
+ * Modern rounded design with improved UX.
  */
 
 import React, { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useDecision, useAmendDecision } from "@/hooks/use-decisions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type {
-  DecisionContent,
   ImpactLevel,
   AmendDecisionRequest,
-  Alternative
+  Alternative,
 } from "@/types/decision";
 import {
   X,
@@ -36,6 +29,7 @@ import {
   MessageSquare,
   Plus,
   Trash2,
+  Tag,
 } from "lucide-react";
 
 interface ProposeChangeModalProps {
@@ -49,7 +43,8 @@ export function ProposeChangeModal({
   onClose,
   onSuccess,
 }: ProposeChangeModalProps) {
-  const { data: decision, isLoading: isLoadingDecision } = useDecision(decisionId);
+  const { data: decision, isLoading: isLoadingDecision } =
+    useDecision(decisionId);
   const amendMutation = useAmendDecision(decisionId);
 
   // Form state
@@ -105,7 +100,6 @@ export function ProposeChangeModal({
       onSuccess?.();
       onClose();
     } catch (error) {
-      // Error handled by mutation
       console.error("Failed to propose change:", error);
     }
   }, [
@@ -126,10 +120,7 @@ export function ProposeChangeModal({
 
   // Add alternative
   const handleAddAlternative = useCallback(() => {
-    setAlternatives((prev) => [
-      ...prev,
-      { name: "", rejected_reason: "" },
-    ]);
+    setAlternatives((prev) => [...prev, { name: "", rejected_reason: "" }]);
   }, []);
 
   // Remove alternative
@@ -141,12 +132,10 @@ export function ProposeChangeModal({
   const handleUpdateAlternative = useCallback(
     (index: number, field: "name" | "rejected_reason", value: string) => {
       setAlternatives((prev) =>
-        prev.map((alt, i) =>
-          i === index ? { ...alt, [field]: value } : alt
-        )
+        prev.map((alt, i) => (i === index ? { ...alt, [field]: value } : alt)),
       );
     },
-    []
+    [],
   );
 
   // Add tag
@@ -166,8 +155,8 @@ export function ProposeChangeModal({
   if (isLoadingDecision) {
     return (
       <ModalWrapper onClose={onClose}>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
         </div>
       </ModalWrapper>
     );
@@ -176,59 +165,64 @@ export function ProposeChangeModal({
   if (!decision) {
     return (
       <ModalWrapper onClose={onClose}>
-        <div className="text-center py-12 text-destructive">
-          <AlertCircle className="h-12 w-12 mx-auto mb-4" />
-          <p>Failed to load decision</p>
+        <div className="text-center py-16">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <p className="text-gray-600">Failed to load decision</p>
         </div>
       </ModalWrapper>
     );
   }
 
-  const isValid = title.trim() && context.trim() && choice.trim() &&
-                  rationale.trim() && changeReason.trim();
+  const isValid =
+    title.trim() &&
+    context.trim() &&
+    choice.trim() &&
+    rationale.trim() &&
+    changeReason.trim();
 
   return (
     <ModalWrapper onClose={onClose}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between p-6 border-b border-gray-100">
         <div>
-          <h2 className="text-lg font-semibold">Propose Change</h2>
-          <p className="text-sm text-muted-foreground">
-            DEC-{decision.decision_number} · Creating v{decision.version.version_number + 1}
+          <h2 className="text-xl font-semibold text-gray-900">
+            Propose Change
+          </h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            DEC-{decision.decision_number} · Creating v
+            {decision.version.version_number + 1}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <button
+          onClick={onClose}
+          className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-gray-100 transition-colors"
+        >
+          <X className="h-5 w-5 text-gray-500" />
+        </button>
       </div>
 
       {/* Form */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Change Reason - REQUIRED */}
-        <Card className="border-primary/30 bg-primary/5">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold">Change Reason</h3>
-              <Badge variant="destructive" className="text-xs">Required</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Explain what you're changing and why. This will be recorded in the audit log.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <textarea
-              value={changeReason}
-              onChange={(e) => setChangeReason(e.target.value)}
-              placeholder="e.g., Updating rationale due to new Q3 budget constraints..."
-              className={cn(
-                "w-full h-24 px-3 py-2 rounded-md border bg-background text-sm",
-                "focus:outline-none focus:ring-2 focus:ring-primary/20",
-                "placeholder:text-muted-foreground"
-              )}
-            />
-          </CardContent>
-        </Card>
+        <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="h-5 w-5 text-indigo-600" />
+            <h3 className="font-semibold text-gray-900">Change Reason</h3>
+            <span className="text-xs font-medium px-2 py-0.5 bg-red-100 text-red-700 rounded-full">
+              Required
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 mb-3">
+            Explain what you're changing and why. This will be recorded in the
+            audit log.
+          </p>
+          <textarea
+            value={changeReason}
+            onChange={(e) => setChangeReason(e.target.value)}
+            placeholder="e.g., Updating rationale due to new Q3 budget constraints..."
+            className="w-full h-24 px-4 py-3 rounded-xl border border-indigo-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all placeholder:text-gray-400"
+          />
+        </div>
 
         {/* Title */}
         <FormSection icon={FileText} title="Title">
@@ -236,72 +230,81 @@ export function ProposeChangeModal({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className={cn(
-              "w-full px-3 py-2 rounded-md border bg-background text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/20"
-            )}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
           />
         </FormSection>
 
         {/* Impact Level */}
         <FormSection icon={AlertTriangle} title="Impact Level">
           <div className="flex gap-2">
-            {(["low", "medium", "high", "critical"] as ImpactLevel[]).map((level) => (
-              <Button
-                key={level}
-                type="button"
-                variant={impactLevel === level ? "default" : "outline"}
-                size="sm"
-                onClick={() => setImpactLevel(level)}
-                className="capitalize"
-              >
-                {level}
-              </Button>
-            ))}
+            {(["low", "medium", "high", "critical"] as ImpactLevel[]).map(
+              (level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setImpactLevel(level)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all",
+                    impactLevel === level
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200",
+                  )}
+                >
+                  {level}
+                </button>
+              ),
+            )}
           </div>
         </FormSection>
 
         {/* Context */}
-        <FormSection icon={FileText} title="Context" description="Background and problem statement">
+        <FormSection
+          icon={FileText}
+          title="Context"
+          description="Background and problem statement"
+        >
           <textarea
             value={context}
             onChange={(e) => setContext(e.target.value)}
             rows={4}
-            className={cn(
-              "w-full px-3 py-2 rounded-md border bg-background text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/20"
-            )}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
           />
         </FormSection>
 
         {/* Decision */}
-        <FormSection icon={CheckCircle2} title="Decision" description="What we decided">
+        <FormSection
+          icon={CheckCircle2}
+          title="Decision"
+          description="What we decided"
+        >
           <textarea
             value={choice}
             onChange={(e) => setChoice(e.target.value)}
             rows={3}
-            className={cn(
-              "w-full px-3 py-2 rounded-md border bg-background text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/20"
-            )}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
           />
         </FormSection>
 
         {/* Rationale */}
-        <FormSection icon={Brain} title="Rationale" description="Why we made this choice">
+        <FormSection
+          icon={Brain}
+          title="Rationale"
+          description="Why we made this choice"
+        >
           <textarea
             value={rationale}
             onChange={(e) => setRationale(e.target.value)}
             rows={4}
-            className={cn(
-              "w-full px-3 py-2 rounded-md border bg-background text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/20"
-            )}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
           />
         </FormSection>
 
         {/* Alternatives */}
-        <FormSection icon={XCircle} title="Alternatives Considered" description="Options we rejected">
+        <FormSection
+          icon={XCircle}
+          title="Alternatives Considered"
+          description="Options we rejected"
+        >
           <div className="space-y-3">
             {alternatives.map((alt, index) => (
               <div key={index} className="flex gap-2 items-start">
@@ -309,33 +312,33 @@ export function ProposeChangeModal({
                   <input
                     type="text"
                     value={alt.name}
-                    onChange={(e) => handleUpdateAlternative(index, "name", e.target.value)}
+                    onChange={(e) =>
+                      handleUpdateAlternative(index, "name", e.target.value)
+                    }
                     placeholder="Alternative name"
-                    className={cn(
-                      "w-full px-3 py-2 rounded-md border bg-background text-sm",
-                      "focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    )}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
                   />
                   <input
                     type="text"
                     value={alt.rejected_reason}
-                    onChange={(e) => handleUpdateAlternative(index, "rejected_reason", e.target.value)}
+                    onChange={(e) =>
+                      handleUpdateAlternative(
+                        index,
+                        "rejected_reason",
+                        e.target.value,
+                      )
+                    }
                     placeholder="Why it was rejected"
-                    className={cn(
-                      "w-full px-3 py-2 rounded-md border bg-background text-sm",
-                      "focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    )}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
                   />
                 </div>
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon"
                   onClick={() => handleRemoveAlternative(index)}
-                  className="text-destructive hover:text-destructive"
+                  className="p-2 rounded-xl text-red-500 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="h-4 w-4" />
-                </Button>
+                </button>
               </div>
             ))}
             <Button
@@ -343,6 +346,7 @@ export function ProposeChangeModal({
               variant="outline"
               size="sm"
               onClick={handleAddAlternative}
+              className="rounded-xl"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Alternative
@@ -351,48 +355,58 @@ export function ProposeChangeModal({
         </FormSection>
 
         {/* Consequences */}
-        <FormSection icon={AlertTriangle} title="Consequences" description="Expected outcomes (optional)">
+        <FormSection
+          icon={AlertTriangle}
+          title="Consequences"
+          description="Expected outcomes (optional)"
+        >
           <textarea
             value={consequences}
             onChange={(e) => setConsequences(e.target.value)}
             rows={3}
-            className={cn(
-              "w-full px-3 py-2 rounded-md border bg-background text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary/20"
-            )}
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
           />
         </FormSection>
 
         {/* Tags */}
-        <FormSection icon={FileText} title="Tags">
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="gap-1">
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="ml-1 hover:text-destructive"
+        <FormSection icon={Tag} title="Tags">
+          <div className="space-y-3">
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-full"
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tag)}
+                      className="hover:text-red-600 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
               <input
                 type="text"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && (e.preventDefault(), handleAddTag())
+                }
                 placeholder="Add tag..."
-                className={cn(
-                  "flex-1 px-3 py-2 rounded-md border bg-background text-sm",
-                  "focus:outline-none focus:ring-2 focus:ring-primary/20"
-                )}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
               />
-              <Button type="button" variant="outline" size="sm" onClick={handleAddTag}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddTag}
+                className="rounded-xl"
+              >
                 Add
               </Button>
             </div>
@@ -401,18 +415,19 @@ export function ProposeChangeModal({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between p-4 border-t bg-muted/30">
-        <p className="text-xs text-muted-foreground">
-          This will create version {decision.version.version_number + 1}.
-          The current version will be preserved.
+      <div className="flex items-center justify-between p-6 border-t border-gray-100 bg-gray-50/50">
+        <p className="text-xs text-gray-500">
+          This will create version {decision.version.version_number + 1}. The
+          current version will be preserved.
         </p>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose}>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={!isValid || amendMutation.isPending}
+            className="rounded-xl"
           >
             {amendMutation.isPending ? (
               <>
@@ -431,8 +446,8 @@ export function ProposeChangeModal({
 
       {/* Error display */}
       {amendMutation.isError && (
-        <div className="absolute bottom-20 left-4 right-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-          <AlertCircle className="h-4 w-4 inline mr-2" />
+        <div className="absolute bottom-24 left-6 right-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
           {(amendMutation.error as Error).message || "Failed to save changes"}
         </div>
       )}
@@ -452,14 +467,14 @@ function ModalWrapper({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
       {/* Modal */}
-      <div className="relative w-full max-w-3xl max-h-[90vh] bg-background rounded-lg shadow-xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden">
         {children}
       </div>
     </div>
@@ -473,16 +488,19 @@ interface FormSectionProps {
   children: React.ReactNode;
 }
 
-function FormSection({ icon: Icon, title, description, children }: FormSectionProps) {
+function FormSection({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: FormSectionProps) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <h4 className="font-medium text-sm">{title}</h4>
+        <Icon className="h-4 w-4 text-gray-400" />
+        <h4 className="font-medium text-sm text-gray-900">{title}</h4>
       </div>
-      {description && (
-        <p className="text-xs text-muted-foreground">{description}</p>
-      )}
+      {description && <p className="text-xs text-gray-500">{description}</p>}
       {children}
     </div>
   );

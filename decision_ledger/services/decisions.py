@@ -97,13 +97,24 @@ class DecisionService:
     async def get_decision(
         self,
         decision_id: UUID,
+        organization_id: UUID | None = None,
         include_versions: bool = False,
     ) -> Decision | None:
-        """Get a decision by ID."""
-        query = select(Decision).where(
+        """Get a decision by ID.
+
+        SECURITY: If organization_id is provided, enforces tenant isolation.
+        Always pass organization_id from authenticated context to prevent data leaks.
+        """
+        conditions = [
             Decision.id == decision_id,
             Decision.deleted_at.is_(None),
-        )
+        ]
+
+        # CRITICAL: Enforce tenant isolation when org_id is provided
+        if organization_id is not None:
+            conditions.append(Decision.organization_id == organization_id)
+
+        query = select(Decision).where(*conditions)
 
         if include_versions:
             query = query.options(
@@ -149,9 +160,11 @@ class DecisionService:
         decision_id: UUID,
         data: DecisionUpdate,
         user_id: UUID,
+        organization_id: UUID | None = None,
     ) -> DecisionVersion:
         """Update a decision by creating a new version."""
-        decision = await self.get_decision(decision_id)
+        # SECURITY: Pass org_id for tenant isolation
+        decision = await self.get_decision(decision_id, organization_id=organization_id)
         if not decision:
             raise ValueError("Decision not found")
 
@@ -367,9 +380,10 @@ class DecisionService:
     # STATUS MANAGEMENT
     # =========================================================================
 
-    async def submit_for_review(self, decision_id: UUID) -> Decision:
+    async def submit_for_review(self, decision_id: UUID, organization_id: UUID | None = None) -> Decision:
         """Submit a draft decision for review."""
-        decision = await self.get_decision(decision_id)
+        # SECURITY: Pass org_id for tenant isolation
+        decision = await self.get_decision(decision_id, organization_id=organization_id)
         if not decision:
             raise ValueError("Decision not found")
 
@@ -380,9 +394,10 @@ class DecisionService:
         await self.session.flush()
         return decision
 
-    async def deprecate_decision(self, decision_id: UUID) -> Decision:
+    async def deprecate_decision(self, decision_id: UUID, organization_id: UUID | None = None) -> Decision:
         """Deprecate a decision."""
-        decision = await self.get_decision(decision_id)
+        # SECURITY: Pass org_id for tenant isolation
+        decision = await self.get_decision(decision_id, organization_id=organization_id)
         if not decision:
             raise ValueError("Decision not found")
 

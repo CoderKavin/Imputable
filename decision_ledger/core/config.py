@@ -104,6 +104,44 @@ class Settings(BaseSettings):
     audit_chain_enabled: bool = True  # Enable cryptographic chain
     audit_retention_days: int = Field(default=365 * 7, ge=30)  # 7 years
 
+    # Stripe (Billing)
+    stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str | None = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
+
+    @property
+    def stripe_enabled(self) -> bool:
+        """Check if Stripe billing is configured."""
+        return bool(self.stripe_secret_key)
+
+    # Slack Integration
+    slack_client_id: str | None = Field(default=None, alias="SLACK_CLIENT_ID")
+    slack_client_secret: str | None = Field(default=None, alias="SLACK_CLIENT_SECRET")
+    slack_signing_secret: str | None = Field(default=None, alias="SLACK_SIGNING_SECRET")
+    slack_redirect_uri: str | None = Field(default=None, alias="SLACK_REDIRECT_URI")
+
+    # Frontend URL (for OAuth redirects)
+    frontend_url: str = Field(
+        default="https://imputable.vercel.app",
+        alias="FRONTEND_URL"
+    )
+
+    @property
+    def slack_enabled(self) -> bool:
+        """Check if Slack integration is configured."""
+        return bool(self.slack_client_id and self.slack_client_secret)
+
+    # Encryption key for storing sensitive tokens
+    encryption_key: str | None = Field(
+        default=None,
+        alias="ENCRYPTION_KEY",
+        description="Fernet key for encrypting Slack tokens. Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+    )
+
+    @property
+    def encryption_enabled(self) -> bool:
+        """Check if encryption is configured."""
+        return bool(self.encryption_key)
+
     @property
     def database_url_sync(self) -> str:
         """Get synchronous database URL."""

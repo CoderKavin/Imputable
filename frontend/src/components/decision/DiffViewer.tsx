@@ -1,41 +1,30 @@
 "use client";
 
 /**
- * Diff Viewer Component (The Money Feature)
+ * DiffViewer Component
  *
- * Visualizes changes between two versions with:
- * - Green highlighting for additions
- * - Red highlighting for deletions
- * - Side-by-side or unified view
- * - Section-by-section comparison
+ * Shows a side-by-side comparison of two decision versions.
+ * Highlights changes in content, metadata, and structure.
  */
 
-import React, { useMemo, useState } from "react";
-import DiffMatchPatch from "diff-match-patch";
-import { cn, formatDateTime } from "@/lib/utils";
-import { useVersionComparison, useDecision } from "@/hooks/use-decisions";
-import { Badge } from "@/components/ui/badge";
+import React from "react";
+import { useVersionCompare } from "@/hooks/use-decisions";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { DecisionContent, DiffMode } from "@/types/decision";
 import {
   X,
-  ArrowRight,
-  Columns,
-  Rows,
-  FileText,
-  CheckCircle2,
-  Brain,
   Loader2,
+  AlertCircle,
+  ArrowRight,
   Plus,
   Minus,
-  Equal,
+  FileText,
 } from "lucide-react";
 
 interface DiffViewerProps {
   decisionId: string;
-  versionA: number; // Older version
-  versionB: number; // Newer version
+  versionA: number;
+  versionB: number;
   onClose?: () => void;
 }
 
@@ -45,33 +34,42 @@ export function DiffViewer({
   versionB,
   onClose,
 }: DiffViewerProps) {
-  const [viewMode, setViewMode] = useState<DiffMode>("unified");
-
-  // Fetch both versions
-  const { data: comparison, isLoading, error } = useVersionComparison(
+  const { data, isLoading, error } = useVersionCompare(
     decisionId,
     versionA,
-    versionB
+    versionB,
   );
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span className="ml-2 text-muted-foreground">Loading comparison...</span>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="text-sm text-gray-500">Loading comparison...</p>
+        </div>
       </div>
     );
   }
 
-  if (error || !comparison) {
+  if (error || !data) {
     return (
-      <div className="text-center py-12 text-destructive">
-        Failed to load version comparison
+      <div className="flex items-center justify-center py-12">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center">
+            <AlertCircle className="h-6 w-6 text-red-500" />
+          </div>
+          <p className="text-gray-500">Failed to load comparison</p>
+          {onClose && (
+            <Button variant="outline" onClick={onClose} className="rounded-xl">
+              Close
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
 
-  const { version_a: oldVersion, version_b: newVersion, changes } = comparison;
+  const { version_a, version_b, changes } = data;
 
   return (
     <div className="space-y-6">
@@ -79,355 +77,271 @@ export function DiffViewer({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm">
-            <Badge variant="outline" className="font-mono">
+            <span className="px-3 py-1 rounded-full bg-red-100 text-red-700 font-medium">
               v{versionA}
-            </Badge>
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            <Badge variant="default" className="font-mono">
+            </span>
+            <ArrowRight className="w-4 h-4 text-gray-400" />
+            <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-medium">
               v{versionB}
-            </Badge>
+            </span>
           </div>
-          <span className="text-sm text-muted-foreground">
-            Comparing changes
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* View mode toggle */}
-          <div className="flex items-center border rounded-lg p-1">
-            <Button
-              variant={viewMode === "unified" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 px-2"
-              onClick={() => setViewMode("unified")}
-            >
-              <Rows className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "split" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 px-2"
-              onClick={() => setViewMode("split")}
-            >
-              <Columns className="h-4 w-4" />
-            </Button>
+          <div className="text-sm text-gray-500">
+            Comparing version {versionA} to version {versionB}
           </div>
-
-          {onClose && (
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          )}
         </div>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="rounded-xl"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* Change Summary */}
-      <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50 border">
-        <DiffStat
-          icon={Plus}
-          label="Additions"
-          color="text-emerald-600"
-          hasChanges={changes.content_changed || changes.title_changed}
-        />
-        <DiffStat
-          icon={Minus}
-          label="Removals"
-          color="text-red-600"
-          hasChanges={changes.content_changed || changes.title_changed}
-        />
-        <DiffStat
-          icon={Equal}
-          label="Unchanged"
-          color="text-muted-foreground"
-          hasChanges={!changes.content_changed && !changes.title_changed}
-        />
+      <div className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+        <FileText className="w-5 h-5 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-900">Changes detected:</p>
+          <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+            {changes.title_changed && (
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Title changed
+              </span>
+            )}
+            {changes.content_changed && (
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                Content changed
+              </span>
+            )}
+            {changes.tags_changed && (
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-purple-500" />
+                Tags changed
+              </span>
+            )}
+            {!changes.title_changed &&
+              !changes.content_changed &&
+              !changes.tags_changed && (
+                <span className="text-gray-400">No significant changes</span>
+              )}
+          </div>
+        </div>
       </div>
 
       {/* Title Diff */}
       {changes.title_changed && (
-        <DiffSection
-          title="Title"
-          icon={FileText}
-          oldValue={oldVersion.title}
-          newValue={newVersion.title}
-          viewMode={viewMode}
-        />
+        <DiffSection title="Title">
+          <div className="grid grid-cols-2 gap-4">
+            <DiffBlock type="removed" content={version_a.title} />
+            <DiffBlock type="added" content={version_b.title} />
+          </div>
+        </DiffSection>
       )}
 
-      {/* Content Diffs */}
+      {/* Content Diff */}
       {changes.content_changed && (
         <>
-          <DiffSection
-            title="Context"
-            icon={FileText}
-            oldValue={oldVersion.content.context}
-            newValue={newVersion.content.context}
-            viewMode={viewMode}
-          />
-          <DiffSection
-            title="Decision"
-            icon={CheckCircle2}
-            oldValue={oldVersion.content.choice}
-            newValue={newVersion.content.choice}
-            viewMode={viewMode}
-            highlight
-          />
-          <DiffSection
-            title="Rationale"
-            icon={Brain}
-            oldValue={oldVersion.content.rationale}
-            newValue={newVersion.content.rationale}
-            viewMode={viewMode}
-          />
+          {/* Context */}
+          {version_a.content?.context !== version_b.content?.context && (
+            <DiffSection title="Context">
+              <div className="grid grid-cols-2 gap-4">
+                <DiffBlock
+                  type="removed"
+                  content={version_a.content?.context || ""}
+                />
+                <DiffBlock
+                  type="added"
+                  content={version_b.content?.context || ""}
+                />
+              </div>
+            </DiffSection>
+          )}
+
+          {/* Decision */}
+          {version_a.content?.choice !== version_b.content?.choice && (
+            <DiffSection title="Decision">
+              <div className="grid grid-cols-2 gap-4">
+                <DiffBlock
+                  type="removed"
+                  content={version_a.content?.choice || ""}
+                />
+                <DiffBlock
+                  type="added"
+                  content={version_b.content?.choice || ""}
+                />
+              </div>
+            </DiffSection>
+          )}
+
+          {/* Rationale */}
+          {version_a.content?.rationale !== version_b.content?.rationale && (
+            <DiffSection title="Rationale">
+              <div className="grid grid-cols-2 gap-4">
+                <DiffBlock
+                  type="removed"
+                  content={version_a.content?.rationale || ""}
+                />
+                <DiffBlock
+                  type="added"
+                  content={version_b.content?.rationale || ""}
+                />
+              </div>
+            </DiffSection>
+          )}
+
+          {/* Consequences */}
+          {version_a.content?.consequences !==
+            version_b.content?.consequences && (
+            <DiffSection title="Consequences">
+              <div className="grid grid-cols-2 gap-4">
+                <DiffBlock
+                  type="removed"
+                  content={version_a.content?.consequences || ""}
+                />
+                <DiffBlock
+                  type="added"
+                  content={version_b.content?.consequences || ""}
+                />
+              </div>
+            </DiffSection>
+          )}
         </>
       )}
 
       {/* Tags Diff */}
       {changes.tags_changed && (
-        <Card>
-          <CardHeader className="pb-3">
-            <h3 className="font-semibold flex items-center gap-2">
-              Tags Changed
-            </h3>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground mb-2">Before</p>
-                <div className="flex flex-wrap gap-1">
-                  {oldVersion.tags.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant="outline"
-                      className={cn(
-                        !newVersion.tags.includes(tag) &&
-                          "bg-red-50 border-red-200 text-red-700 line-through"
-                      )}
-                    >
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground mb-2">After</p>
-                <div className="flex flex-wrap gap-1">
-                  {newVersion.tags.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant="outline"
-                      className={cn(
-                        !oldVersion.tags.includes(tag) &&
-                          "bg-emerald-50 border-emerald-200 text-emerald-700"
-                      )}
-                    >
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
+        <DiffSection title="Tags">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-red-600 uppercase tracking-wide">
+                Version {versionA}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(version_a.tags || []).map((tag: string) => (
+                  <span
+                    key={tag}
+                    className={cn(
+                      "px-3 py-1 rounded-full text-sm",
+                      !(version_b.tags || []).includes(tag)
+                        ? "bg-red-100 text-red-700 line-through"
+                        : "bg-gray-100 text-gray-600",
+                    )}
+                  >
+                    {tag}
+                  </span>
+                ))}
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-green-600 uppercase tracking-wide">
+                Version {versionB}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(version_b.tags || []).map((tag: string) => (
+                  <span
+                    key={tag}
+                    className={cn(
+                      "px-3 py-1 rounded-full text-sm",
+                      !(version_a.tags || []).includes(tag)
+                        ? "bg-green-100 text-green-700 font-medium"
+                        : "bg-gray-100 text-gray-600",
+                    )}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DiffSection>
       )}
 
-      {/* No changes */}
-      {!changes.title_changed && !changes.content_changed && !changes.tags_changed && (
-        <div className="text-center py-12 text-muted-foreground">
-          <Equal className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>No differences found between these versions</p>
+      {/* Metadata */}
+      <DiffSection title="Metadata">
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="space-y-2 p-4 rounded-xl bg-gray-50">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Version {versionA}
+            </p>
+            <p className="text-gray-900">
+              Created: {new Date(version_a.created_at).toLocaleString()}
+            </p>
+          </div>
+          <div className="space-y-2 p-4 rounded-xl bg-gray-50">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Version {versionB}
+            </p>
+            <p className="text-gray-900">
+              Created: {new Date(version_b.created_at).toLocaleString()}
+            </p>
+          </div>
         </div>
-      )}
+      </DiffSection>
     </div>
   );
 }
 
 // =============================================================================
-// DIFF SECTION COMPONENT
+// HELPER COMPONENTS
 // =============================================================================
-
-interface DiffSectionProps {
-  title: string;
-  icon: React.ElementType;
-  oldValue: string;
-  newValue: string;
-  viewMode: DiffMode;
-  highlight?: boolean;
-}
 
 function DiffSection({
   title,
-  icon: Icon,
-  oldValue,
-  newValue,
-  viewMode,
-  highlight,
-}: DiffSectionProps) {
-  const diffs = useMemo(() => {
-    const dmp = new DiffMatchPatch();
-    const diff = dmp.diff_main(oldValue, newValue);
-    dmp.diff_cleanupSemantic(diff);
-    return diff;
-  }, [oldValue, newValue]);
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      {children}
+    </div>
+  );
+}
 
-  // Check if there are actual changes
-  const hasChanges = diffs.some(([op]) => op !== 0);
-
-  if (!hasChanges) {
-    return null;
-  }
+function DiffBlock({
+  type,
+  content,
+}: {
+  type: "added" | "removed";
+  content: string;
+}) {
+  const isAdded = type === "added";
 
   return (
-    <Card className={cn(highlight && "border-primary/30")}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <Icon className={cn(
-            "h-5 w-5",
-            highlight ? "text-primary" : "text-muted-foreground"
-          )} />
-          <h3 className="font-semibold">{title}</h3>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {viewMode === "unified" ? (
-          <UnifiedDiffView diffs={diffs} />
+    <div
+      className={cn(
+        "p-4 rounded-xl border text-sm whitespace-pre-wrap",
+        isAdded
+          ? "bg-green-50 border-green-200 text-green-900"
+          : "bg-red-50 border-red-200 text-red-900",
+      )}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        {isAdded ? (
+          <Plus className="w-4 h-4 text-green-600" />
         ) : (
-          <SplitDiffView oldValue={oldValue} newValue={newValue} diffs={diffs} />
+          <Minus className="w-4 h-4 text-red-600" />
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// =============================================================================
-// UNIFIED DIFF VIEW
-// =============================================================================
-
-interface UnifiedDiffViewProps {
-  diffs: [number, string][];
-}
-
-function UnifiedDiffView({ diffs }: UnifiedDiffViewProps) {
-  return (
-    <div className="font-mono text-sm leading-relaxed whitespace-pre-wrap">
-      {diffs.map(([operation, text], index) => {
-        if (operation === -1) {
-          // Deletion
-          return (
-            <span
-              key={index}
-              className="bg-red-100 text-red-800 px-0.5 rounded"
-              style={{ textDecoration: "line-through" }}
-            >
-              {text}
-            </span>
-          );
-        }
-        if (operation === 1) {
-          // Addition
-          return (
-            <span
-              key={index}
-              className="bg-emerald-100 text-emerald-800 px-0.5 rounded"
-            >
-              {text}
-            </span>
-          );
-        }
-        // Unchanged
-        return <span key={index}>{text}</span>;
-      })}
-    </div>
-  );
-}
-
-// =============================================================================
-// SPLIT DIFF VIEW
-// =============================================================================
-
-interface SplitDiffViewProps {
-  oldValue: string;
-  newValue: string;
-  diffs: [number, string][];
-}
-
-function SplitDiffView({ oldValue, newValue, diffs }: SplitDiffViewProps) {
-  // Build left and right sides
-  const leftParts: React.ReactNode[] = [];
-  const rightParts: React.ReactNode[] = [];
-
-  diffs.forEach(([operation, text], index) => {
-    if (operation === -1) {
-      // Deletion - only on left
-      leftParts.push(
         <span
-          key={`l-${index}`}
-          className="bg-red-100 text-red-800 px-0.5 rounded"
+          className={cn(
+            "text-xs font-medium uppercase tracking-wide",
+            isAdded ? "text-green-600" : "text-red-600",
+          )}
         >
-          {text}
+          {isAdded ? "New" : "Old"}
         </span>
-      );
-    } else if (operation === 1) {
-      // Addition - only on right
-      rightParts.push(
-        <span
-          key={`r-${index}`}
-          className="bg-emerald-100 text-emerald-800 px-0.5 rounded"
-        >
-          {text}
-        </span>
-      );
-    } else {
-      // Unchanged - both sides
-      leftParts.push(<span key={`l-${index}`}>{text}</span>);
-      rightParts.push(<span key={`r-${index}`}>{text}</span>);
-    }
-  });
-
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="p-3 rounded-lg bg-red-50/50 border border-red-100">
-        <div className="text-xs font-medium text-red-600 mb-2 flex items-center gap-1">
-          <Minus className="h-3 w-3" />
-          Before
-        </div>
-        <div className="font-mono text-sm leading-relaxed whitespace-pre-wrap">
-          {leftParts}
-        </div>
       </div>
-      <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-100">
-        <div className="text-xs font-medium text-emerald-600 mb-2 flex items-center gap-1">
-          <Plus className="h-3 w-3" />
-          After
-        </div>
-        <div className="font-mono text-sm leading-relaxed whitespace-pre-wrap">
-          {rightParts}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// =============================================================================
-// DIFF STAT COMPONENT
-// =============================================================================
-
-interface DiffStatProps {
-  icon: React.ElementType;
-  label: string;
-  color: string;
-  hasChanges: boolean;
-}
-
-function DiffStat({ icon: Icon, label, color, hasChanges }: DiffStatProps) {
-  return (
-    <div className={cn(
-      "flex items-center gap-2 text-sm",
-      !hasChanges && "opacity-50"
-    )}>
-      <Icon className={cn("h-4 w-4", color)} />
-      <span className="text-muted-foreground">{label}</span>
+      <p className={cn(isAdded ? "" : "line-through opacity-75")}>
+        {content || <span className="text-gray-400 italic">Empty</span>}
+      </p>
     </div>
   );
 }
