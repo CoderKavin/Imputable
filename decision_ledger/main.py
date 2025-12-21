@@ -164,6 +164,60 @@ async def test_token(request: TokenTestRequest):
     return result
 
 
+@app.post("/debug/test-auth", tags=["debug"])
+async def test_auth(request: TokenTestRequest, x_organization_id: str = ""):
+    """Test full auth flow including DB operations."""
+    from .core.security import decode_clerk_token
+    from .core.database import get_session
+    from .core.dependencies import get_or_create_clerk_user, get_or_create_clerk_organization
+
+    authorization = request.authorization or ""
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+
+    if not token:
+        return {"error": "No token provided"}
+
+    # Decode Clerk token
+    clerk_payload = decode_clerk_token(token)
+    if not clerk_payload:
+        return {"error": "Failed to decode Clerk token"}
+
+    result = {
+        "clerk_user_id": clerk_payload.sub,
+        "clerk_org_id": clerk_payload.org_id,
+        "header_org_id": x_organization_id,
+        "email": clerk_payload.email,
+    }
+
+    # Try DB operations
+    try:
+        async for session in get_session():
+            # Create user
+            user = await get_or_create_clerk_user(session, clerk_payload)
+            result["db_user_id"] = str(user.id)
+            result["db_user_email"] = user.email
+
+            # Create org if header provided
+            org_id_to_use = clerk_payload.org_id or x_organization_id
+            if org_id_to_use and org_id_to_use.startswith("org_"):
+                org, role = await get_or_create_clerk_organization(
+                    session, org_id_to_use, None, user, "member"
+                )
+                result["db_org_id"] = str(org.id)
+                result["db_org_slug"] = org.slug
+                result["db_org_role"] = role
+
+            result["success"] = True
+            break
+    except Exception as e:
+        import traceback
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+        result["success"] = False
+
+    return result
+
+
 @app.get("/debug/config", tags=["debug"])
 async def debug_config():
     """Debug endpoint to check configuration (development only)."""
