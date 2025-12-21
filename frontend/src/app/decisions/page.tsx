@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useOrganization } from "@clerk/nextjs";
 import { useDecisionList } from "@/hooks/use-decisions";
 import { Navbar } from "@/components/navbar";
 import { Badge } from "@/components/ui/badge";
@@ -195,7 +196,11 @@ function getImpactVariant(
 
 export default function DecisionsPage() {
   const [page, setPage] = useState(1);
+  const { organization, isLoaded: orgLoaded } = useOrganization();
   const { data, isLoading, error } = useDecisionList(page, 20);
+
+  // Show message if no organization selected
+  const noOrganization = orgLoaded && !organization;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -240,11 +245,43 @@ export default function DecisionsPage() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {isLoading ? (
+        {noOrganization ? (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg
+                    className="w-5 h-5 text-amber-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-amber-900">
+                    No Organization Selected
+                  </h3>
+                  <p className="text-amber-700 text-sm mt-1">
+                    To view and manage decisions, you need to select or create
+                    an organization. Use the organization switcher in the top
+                    navigation bar.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : isLoading ? (
           <DecisionListSkeleton count={6} />
         ) : error ? (
           <div className="text-center py-12 text-red-600">
-            Failed to load decisions
+            Failed to load decisions. Please try again.
           </div>
         ) : data?.items.length === 0 ? (
           <div className="text-center py-12">

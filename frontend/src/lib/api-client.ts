@@ -1,6 +1,9 @@
 /**
  * API Client for Imputable
  * Handles all communication with the backend
+ *
+ * Note: This client now integrates with Clerk for authentication.
+ * The token is fetched from Clerk's session.
  */
 
 import axios, { AxiosInstance, AxiosError } from "axios";

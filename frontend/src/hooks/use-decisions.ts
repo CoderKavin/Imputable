@@ -1,6 +1,8 @@
 /**
  * React Query Hooks for Imputable
  * Provides efficient data fetching with caching for version switching
+ *
+ * These hooks now use Clerk authentication via useDecisionApi hook.
  */
 
 import {
@@ -9,7 +11,9 @@ import {
   useQueryClient,
   UseQueryOptions,
 } from "@tanstack/react-query";
-import { api, decisionKeys } from "@/lib/api-client";
+import { useAuth, useOrganization } from "@clerk/nextjs";
+import { decisionKeys } from "@/lib/api-client";
+import { useDecisionApi } from "./use-api";
 import type {
   Decision,
   DecisionSummary,
@@ -36,11 +40,13 @@ export function useDecision(
   version?: number,
   options?: Omit<UseQueryOptions<Decision>, "queryKey" | "queryFn">,
 ) {
+  const { getDecision } = useDecisionApi();
+
   return useQuery({
     queryKey: version
       ? decisionKeys.version(id, version)
       : decisionKeys.detail(id),
-    queryFn: () => api.getDecision(id, version),
+    queryFn: () => getDecision(id, version),
     staleTime: 5 * 60 * 1000, // 5 minutes - versions are immutable!
     gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
     ...options,
@@ -52,11 +58,12 @@ export function useDecision(
  */
 export function usePrefetchVersion() {
   const queryClient = useQueryClient();
+  const { getDecision } = useDecisionApi();
 
   return (id: string, version: number) => {
     queryClient.prefetchQuery({
       queryKey: decisionKeys.version(id, version),
-      queryFn: () => api.getDecision(id, version),
+      queryFn: () => getDecision(id, version),
       staleTime: 5 * 60 * 1000,
     });
   };
@@ -69,9 +76,11 @@ export function useVersionHistory(
   decisionId: string,
   options?: Omit<UseQueryOptions<VersionHistoryItem[]>, "queryKey" | "queryFn">,
 ) {
+  const { getVersionHistory } = useDecisionApi();
+
   return useQuery({
     queryKey: decisionKeys.versions(decisionId),
-    queryFn: () => api.getVersionHistory(decisionId),
+    queryFn: () => getVersionHistory(decisionId),
     staleTime: 60 * 1000, // 1 minute
     ...options,
   });
@@ -89,9 +98,11 @@ export function useVersionComparison(
     "queryKey" | "queryFn"
   >,
 ) {
+  const { compareVersions } = useDecisionApi();
+
   return useQuery({
     queryKey: decisionKeys.compare(decisionId, versionA, versionB),
-    queryFn: () => api.compareVersions(decisionId, versionA, versionB),
+    queryFn: () => compareVersions(decisionId, versionA, versionB),
     staleTime: Infinity, // Comparisons are immutable
     enabled: versionA > 0 && versionB > 0 && versionA !== versionB,
     ...options,
@@ -102,10 +113,15 @@ export function useVersionComparison(
  * Fetch decision list with pagination
  */
 export function useDecisionList(page = 1, pageSize = 20) {
+  const { listDecisions } = useDecisionApi();
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
   return useQuery({
-    queryKey: decisionKeys.list(page, pageSize),
-    queryFn: () => api.listDecisions(page, pageSize),
+    queryKey: [...decisionKeys.list(page, pageSize), organization?.id],
+    queryFn: () => listDecisions(page, pageSize),
     staleTime: 30 * 1000, // 30 seconds
+    enabled: isSignedIn && !!organization?.id, // Only fetch when signed in with org
   });
 }
 
@@ -133,9 +149,10 @@ export function useDecisionLineage(
  */
 export function useCreateDecision() {
   const queryClient = useQueryClient();
+  const { createDecision } = useDecisionApi();
 
   return useMutation({
-    mutationFn: (data: CreateDecisionRequest) => api.createDecision(data),
+    mutationFn: (data: CreateDecisionRequest) => createDecision(data),
     onSuccess: (newDecision) => {
       // Invalidate list queries
       queryClient.invalidateQueries({ queryKey: decisionKeys.lists() });
@@ -154,10 +171,10 @@ export function useCreateDecision() {
  */
 export function useAmendDecision(decisionId: string) {
   const queryClient = useQueryClient();
+  const { amendDecision } = useDecisionApi();
 
   return useMutation({
-    mutationFn: (data: AmendDecisionRequest) =>
-      api.amendDecision(decisionId, data),
+    mutationFn: (data: AmendDecisionRequest) => amendDecision(decisionId, data),
     onSuccess: (updatedDecision) => {
       // Update the main decision cache
       queryClient.setQueryData(
