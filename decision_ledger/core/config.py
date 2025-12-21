@@ -59,6 +59,38 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=5)
     refresh_token_expire_days: int = Field(default=7, ge=1)
 
+    # Clerk Authentication
+    clerk_secret_key: str | None = Field(default=None, alias="CLERK_SECRET_KEY")
+    clerk_publishable_key: str | None = Field(default=None, alias="CLERK_PUBLISHABLE_KEY")
+    clerk_jwks_url: str | None = Field(default=None)
+
+    @property
+    def clerk_enabled(self) -> bool:
+        """Check if Clerk authentication is configured."""
+        return bool(self.clerk_secret_key)
+
+    @property
+    def clerk_issuer(self) -> str | None:
+        """Get Clerk issuer URL from publishable key."""
+        if not self.clerk_publishable_key:
+            return None
+        # Extract instance ID from publishable key (pk_test_xxx or pk_live_xxx)
+        # The key format is pk_{env}_{base64_encoded_frontend_api}
+        try:
+            import base64
+            parts = self.clerk_publishable_key.split("_")
+            if len(parts) >= 3:
+                encoded = parts[2]
+                # Add padding if needed
+                padding = 4 - len(encoded) % 4
+                if padding != 4:
+                    encoded += "=" * padding
+                frontend_api = base64.b64decode(encoded).decode("utf-8")
+                return f"https://{frontend_api}"
+        except Exception:
+            pass
+        return None
+
     # Security
     bcrypt_rounds: int = Field(default=12, ge=4, le=31)
 

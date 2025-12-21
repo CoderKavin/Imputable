@@ -1,7 +1,8 @@
 """FastAPI dependencies for authentication, authorization, and context."""
 
+import logging
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,11 +10,136 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Organization, OrganizationMember, User
+from .config import get_settings
 from .database import get_session, set_tenant_context
-from .security import decode_token
+from .security import decode_token, decode_clerk_token, ClerkTokenPayload
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # Security scheme
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_or_create_clerk_user(
+    session: AsyncSession,
+    clerk_payload: ClerkTokenPayload,
+) -> User:
+    """Get or create a user from Clerk token payload."""
+    # Look up user by Clerk ID (auth_provider_id)
+    result = await session.execute(
+        select(User).where(
+            User.auth_provider == "clerk",
+            User.auth_provider_id == clerk_payload.sub,
+            User.deleted_at.is_(None),
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Update user info if changed
+        needs_update = False
+        if clerk_payload.email and user.email != clerk_payload.email:
+            user.email = clerk_payload.email
+            needs_update = True
+        if clerk_payload.full_name and user.name != clerk_payload.full_name:
+            user.name = clerk_payload.full_name
+            needs_update = True
+        if clerk_payload.image_url and user.avatar_url != clerk_payload.image_url:
+            user.avatar_url = clerk_payload.image_url
+            needs_update = True
+        if needs_update:
+            await session.commit()
+        return user
+
+    # Create new user
+    user = User(
+        id=uuid4(),
+        email=clerk_payload.email or f"{clerk_payload.sub}@clerk.local",
+        name=clerk_payload.full_name,
+        avatar_url=clerk_payload.image_url,
+        auth_provider="clerk",
+        auth_provider_id=clerk_payload.sub,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    logger.info(f"Created new user from Clerk: {user.id} ({user.email})")
+    return user
+
+
+async def get_or_create_clerk_organization(
+    session: AsyncSession,
+    clerk_org_id: str,
+    clerk_org_slug: str | None,
+    user: User,
+    role: str = "member",
+) -> tuple[Organization, str]:
+    """Get or create an organization from Clerk org ID."""
+    # Look up organization by Clerk org ID (stored in settings)
+    result = await session.execute(
+        select(Organization).where(
+            Organization.settings["clerk_org_id"].astext == clerk_org_id,
+            Organization.deleted_at.is_(None),
+        )
+    )
+    org = result.scalar_one_or_none()
+
+    if not org:
+        # Create new organization
+        slug = clerk_org_slug or f"org-{clerk_org_id[-8:]}"
+        # Ensure unique slug
+        base_slug = slug
+        counter = 1
+        while True:
+            existing = await session.execute(
+                select(Organization).where(Organization.slug == slug)
+            )
+            if not existing.scalar_one_or_none():
+                break
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        org = Organization(
+            id=uuid4(),
+            slug=slug,
+            name=clerk_org_slug or f"Organization {clerk_org_id[-8:]}",
+            settings={"clerk_org_id": clerk_org_id},
+        )
+        session.add(org)
+        await session.commit()
+        await session.refresh(org)
+        logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
+
+    # Ensure user is a member of the organization
+    result = await session.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == org.id,
+            OrganizationMember.user_id == user.id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+
+    if not membership:
+        # Map Clerk roles to our roles
+        mapped_role = "member"
+        if role in ("org:admin", "admin"):
+            mapped_role = "admin"
+        elif role in ("org:owner", "owner"):
+            mapped_role = "owner"
+
+        membership = OrganizationMember(
+            id=uuid4(),
+            organization_id=org.id,
+            user_id=user.id,
+            role=mapped_role,
+        )
+        session.add(membership)
+        await session.commit()
+        logger.info(f"Added user {user.id} to organization {org.id} as {mapped_role}")
+        return org, mapped_role
+
+    return org, membership.role
 
 
 class CurrentUser:
@@ -51,7 +177,7 @@ async def get_current_user(
 ) -> CurrentUser:
     """Dependency to get the current authenticated user.
 
-    Validates JWT token and optionally sets organization context.
+    Validates JWT token (Clerk or legacy) and optionally sets organization context.
     """
     if not credentials:
         raise HTTPException(
@@ -60,8 +186,59 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Decode token
-    payload = decode_token(credentials.credentials)
+    token = credentials.credentials
+    user: User | None = None
+    org_id: UUID | None = None
+    org_role: str | None = None
+
+    # Try Clerk authentication first if enabled
+    if settings.clerk_enabled:
+        clerk_payload = decode_clerk_token(token)
+        if clerk_payload:
+            logger.debug(f"Clerk token decoded for user: {clerk_payload.sub}")
+
+            # Get or create user from Clerk
+            user = await get_or_create_clerk_user(session, clerk_payload)
+
+            # Handle organization context from Clerk
+            if clerk_payload.org_id:
+                # User has an active organization in Clerk
+                org, role = await get_or_create_clerk_organization(
+                    session,
+                    clerk_payload.org_id,
+                    clerk_payload.org_slug,
+                    user,
+                    clerk_payload.org_role or "member",
+                )
+                org_id = org.id
+                org_role = role
+            elif x_organization_id:
+                # Use header-provided org ID
+                try:
+                    org_id = UUID(x_organization_id)
+                    # Verify membership
+                    result = await session.execute(
+                        select(OrganizationMember).where(
+                            OrganizationMember.organization_id == org_id,
+                            OrganizationMember.user_id == user.id,
+                        )
+                    )
+                    membership = result.scalar_one_or_none()
+                    if membership:
+                        org_role = membership.role
+                    else:
+                        org_id = None  # Not a member, ignore header
+                except ValueError:
+                    pass
+
+            # Set RLS context if we have an org
+            if org_id:
+                await set_tenant_context(session, org_id, user.id)
+
+            return CurrentUser(user=user, organization_id=org_id, org_role=org_role)
+
+    # Fall back to legacy token authentication
+    payload = decode_token(token)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,9 +266,6 @@ async def get_current_user(
         )
 
     # Determine organization context
-    org_id: UUID | None = None
-    org_role: str | None = None
-
     # Priority: header > token > None
     if x_organization_id:
         try:
