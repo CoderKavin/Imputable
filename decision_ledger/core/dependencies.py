@@ -224,22 +224,38 @@ async def get_current_user(
                 org_id = org.id
                 org_role = role
             elif x_organization_id:
-                # Use header-provided org ID
+                # Use header-provided org ID (could be Clerk org ID or UUID)
+                logger.info(f"Using X-Organization-ID header: {x_organization_id}")
                 try:
-                    org_id = UUID(x_organization_id)
-                    # Verify membership
-                    result = await session.execute(
-                        select(OrganizationMember).where(
-                            OrganizationMember.organization_id == org_id,
-                            OrganizationMember.user_id == user.id,
+                    # Check if it's a Clerk org ID (starts with "org_")
+                    if x_organization_id.startswith("org_"):
+                        # Look up org by Clerk ID
+                        org, role = await get_or_create_clerk_organization(
+                            session,
+                            x_organization_id,
+                            None,  # No slug available from header
+                            user,
+                            "member",
                         )
-                    )
-                    membership = result.scalar_one_or_none()
-                    if membership:
-                        org_role = membership.role
+                        org_id = org.id
+                        org_role = role
                     else:
-                        org_id = None  # Not a member, ignore header
-                except ValueError:
+                        # Assume it's a UUID
+                        org_id = UUID(x_organization_id)
+                        # Verify membership
+                        result = await session.execute(
+                            select(OrganizationMember).where(
+                                OrganizationMember.organization_id == org_id,
+                                OrganizationMember.user_id == user.id,
+                            )
+                        )
+                        membership = result.scalar_one_or_none()
+                        if membership:
+                            org_role = membership.role
+                        else:
+                            org_id = None  # Not a member, ignore header
+                except Exception as e:
+                    logger.error(f"Error processing X-Organization-ID: {e}")
                     pass
 
             # Set RLS context if we have an org
