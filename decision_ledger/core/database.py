@@ -41,7 +41,10 @@ if os.getenv("ENVIRONMENT") == "production" or "supabase" in db_url or "neon" in
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     connect_args["ssl"] = ssl_context
-    logger.info(f"Using SSL for database connection")
+    # Disable prepared statements for pgbouncer compatibility (Supabase uses pgbouncer)
+    connect_args["prepared_statement_cache_size"] = 0
+    connect_args["statement_cache_size"] = 0
+    logger.info(f"Using SSL for database connection with pgbouncer compatibility")
 
 logger.info(f"Database URL (masked): {db_url[:30]}...")
 
