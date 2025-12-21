@@ -162,7 +162,7 @@ async def list_decisions(
     service: DecisionServiceDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    search: str = Query(None, description="Search query to filter decisions by title, tags, or content"),
+    search: str | None = Query(default=None, description="Search query to filter decisions by title, tags, or content"),
 ):
     """List all current (non-superseded) decisions. Optionally filter by search query."""
     offset = (page - 1) * page_size
