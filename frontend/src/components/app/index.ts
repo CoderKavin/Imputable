@@ -4,3 +4,5 @@ export { AppLayout } from "./app-layout";
 export { DecisionCard } from "./decision-card";
 export { StatusPill, ImpactPill, StatusDot } from "./status-pill";
 export { StatCard, ColoredStatCard } from "./stat-card";
+export { SearchCommand } from "./search-command";
+export { NotificationsDropdown } from "./notifications-dropdown";

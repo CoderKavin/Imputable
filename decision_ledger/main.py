@@ -67,20 +67,31 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
-cors_origins = settings.allowed_origins
-# Ensure Vercel URL is always included
-if "https://imputable.vercel.app" not in cors_origins:
-    cors_origins.append("https://imputable.vercel.app")
+# CORS middleware with explicit origins (credentials require explicit origins, not "*")
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:8000",
+    "https://imputable.vercel.app",
+    "https://www.imputable.vercel.app",
+]
+
+# Add any additional configured origins
+configured_origins = settings.allowed_origins
+for origin in configured_origins:
+    if origin and origin not in cors_origins:
+        cors_origins.append(origin)
+
 print(f"[CORS] Allowed origins: {cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=["*"],
     expose_headers=["*"],
+    max_age=86400,
 )
 
 
