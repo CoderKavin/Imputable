@@ -53,18 +53,28 @@ async def get_or_create_clerk_user(
         return user
 
     # Create new user
+    user_name = clerk_payload.full_name or clerk_payload.email or f"User {clerk_payload.sub[-8:]}"
+    user_email = clerk_payload.email or f"{clerk_payload.sub}@clerk.local"
+
+    logger.info(f"Creating new Clerk user: email={user_email}, name={user_name}, clerk_id={clerk_payload.sub}")
+
     user = User(
         id=uuid4(),
-        email=clerk_payload.email or f"{clerk_payload.sub}@clerk.local",
-        name=clerk_payload.full_name,
+        email=user_email,
+        name=user_name,
         avatar_url=clerk_payload.image_url,
         auth_provider="clerk",
         auth_provider_id=clerk_payload.sub,
     )
     session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    logger.info(f"Created new user from Clerk: {user.id} ({user.email})")
+    try:
+        await session.commit()
+        await session.refresh(user)
+        logger.info(f"Created new user from Clerk: {user.id} ({user.email})")
+    except Exception as e:
+        logger.error(f"Failed to create Clerk user: {e}")
+        await session.rollback()
+        raise
     return user
 
 
