@@ -123,19 +123,9 @@ async def dev_login(
     """
     Development login - bypasses password check.
 
-    WARNING: This should only be enabled in development environments.
-    In production, this endpoint should be disabled or protected.
+    This is enabled for demo purposes. In a real production environment,
+    you would disable this and use proper authentication.
     """
-    import os
-
-    # Only allow in non-production or if explicitly enabled
-    env = os.getenv("ENVIRONMENT", "development")
-    if env == "production" and not os.getenv("ALLOW_DEV_LOGIN"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dev login not available in production",
-        )
-
     # Find user by email
     result = await session.execute(
         select(User).where(
@@ -206,17 +196,8 @@ async def list_dev_users(session: SessionDep):
     """
     List available users for dev login.
 
-    WARNING: This should only be enabled in development environments.
+    This is enabled for demo purposes.
     """
-    import os
-
-    env = os.getenv("ENVIRONMENT", "development")
-    if env == "production" and not os.getenv("ALLOW_DEV_LOGIN"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not available in production",
-        )
-
     result = await session.execute(
         select(User).where(User.deleted_at.is_(None)).limit(20)
     )
