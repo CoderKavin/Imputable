@@ -126,69 +126,77 @@ async def dev_login(
     This is enabled for demo purposes. In a real production environment,
     you would disable this and use proper authentication.
     """
-    # Find user by email
-    result = await session.execute(
-        select(User).where(
-            User.email == request.email,
-            User.deleted_at.is_(None),
+    try:
+        # Find user by email
+        result = await session.execute(
+            select(User).where(
+                User.email == request.email,
+                User.deleted_at.is_(None),
+            )
         )
-    )
-    user = result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with email {request.email} not found",
-        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with email {request.email} not found",
+            )
 
-    # Get organization
-    org_id = None
-    org_name = None
+        # Get organization
+        org_id = None
+        org_name = None
 
-    if request.organization_id:
-        try:
-            org_uuid = UUID(request.organization_id)
+        if request.organization_id:
+            try:
+                org_uuid = UUID(request.organization_id)
+                org_result = await session.execute(
+                    select(OrganizationMember, Organization)
+                    .join(Organization, OrganizationMember.organization_id == Organization.id)
+                    .where(
+                        OrganizationMember.user_id == user.id,
+                        OrganizationMember.organization_id == org_uuid,
+                    )
+                )
+                org_row = org_result.first()
+                if org_row:
+                    membership, org = org_row
+                    org_id = org.id
+                    org_name = org.name
+            except ValueError:
+                pass
+
+        # If no org specified, get user's first organization
+        if not org_id:
             org_result = await session.execute(
                 select(OrganizationMember, Organization)
                 .join(Organization, OrganizationMember.organization_id == Organization.id)
-                .where(
-                    OrganizationMember.user_id == user.id,
-                    OrganizationMember.organization_id == org_uuid,
-                )
+                .where(OrganizationMember.user_id == user.id)
+                .limit(1)
             )
             org_row = org_result.first()
             if org_row:
                 membership, org = org_row
                 org_id = org.id
                 org_name = org.name
-        except ValueError:
-            pass
 
-    # If no org specified, get user's first organization
-    if not org_id:
-        org_result = await session.execute(
-            select(OrganizationMember, Organization)
-            .join(Organization, OrganizationMember.organization_id == Organization.id)
-            .where(OrganizationMember.user_id == user.id)
-            .limit(1)
+        # Create access token
+        token = create_access_token(user_id=user.id, organization_id=org_id)
+
+        return TokenResponse(
+            access_token=token,
+            user_id=str(user.id),
+            user_name=user.name,
+            user_email=user.email,
+            organization_id=str(org_id) if org_id else None,
+            organization_name=org_name,
         )
-        org_row = org_result.first()
-        if org_row:
-            membership, org = org_row
-            org_id = org.id
-            org_name = org.name
-
-    # Create access token
-    token = create_access_token(user_id=user.id, organization_id=org_id)
-
-    return TokenResponse(
-        access_token=token,
-        user_id=str(user.id),
-        user_name=user.name,
-        user_email=user.email,
-        organization_id=str(org_id) if org_id else None,
-        organization_name=org_name,
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Login error: {str(e)}",
+        )
 
 
 @router.get("/users", response_model=list[dict])
