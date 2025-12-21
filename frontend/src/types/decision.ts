@@ -107,6 +107,7 @@ export interface Decision {
 
 export interface DecisionSummary {
   id: string;
+  organization_id: string;
   decision_number: number;
   title: string;
   status: DecisionStatus;

@@ -25,6 +25,41 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 // =============================================================================
+// AUTH TYPES
+// =============================================================================
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface DevLoginRequest {
+  email: string;
+  organization_id?: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  organization_id?: string;
+  organization_name?: string;
+}
+
+export interface DevUser {
+  id: string;
+  name: string;
+  email: string;
+  organizations: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
+}
+
+// =============================================================================
 // ERROR HANDLING
 // =============================================================================
 
@@ -104,8 +139,102 @@ class ImputableApi {
     }
   }
 
+  clearToken(): void {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user_info");
+    }
+    this.organizationId = null;
+  }
+
   setOrganization(orgId: string): void {
     this.organizationId = orgId;
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.getToken();
+  }
+
+  // =========================================================================
+  // AUTHENTICATION
+  // =========================================================================
+
+  /**
+   * Login with email and password
+   */
+  async login(data: LoginRequest): Promise<TokenResponse> {
+    const response = await this.client.post<TokenResponse>("/auth/login", data);
+    const tokenData = response.data;
+
+    // Store token and org
+    this.setToken(tokenData.access_token);
+    if (tokenData.organization_id) {
+      this.setOrganization(tokenData.organization_id);
+    }
+
+    // Store user info
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        "user_info",
+        JSON.stringify({
+          id: tokenData.user_id,
+          name: tokenData.user_name,
+          email: tokenData.user_email,
+          organization_id: tokenData.organization_id,
+          organization_name: tokenData.organization_name,
+        }),
+      );
+    }
+
+    return tokenData;
+  }
+
+  /**
+   * Dev login (no password required)
+   */
+  async devLogin(data: DevLoginRequest): Promise<TokenResponse> {
+    const response = await this.client.post<TokenResponse>(
+      "/auth/dev-login",
+      data,
+    );
+    const tokenData = response.data;
+
+    // Store token and org
+    this.setToken(tokenData.access_token);
+    if (tokenData.organization_id) {
+      this.setOrganization(tokenData.organization_id);
+    }
+
+    // Store user info
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        "user_info",
+        JSON.stringify({
+          id: tokenData.user_id,
+          name: tokenData.user_name,
+          email: tokenData.user_email,
+          organization_id: tokenData.organization_id,
+          organization_name: tokenData.organization_name,
+        }),
+      );
+    }
+
+    return tokenData;
+  }
+
+  /**
+   * Get available users for dev login
+   */
+  async getDevUsers(): Promise<DevUser[]> {
+    const response = await this.client.get<DevUser[]>("/auth/users");
+    return response.data;
+  }
+
+  /**
+   * Logout - clear stored credentials
+   */
+  logout(): void {
+    this.clearToken();
   }
 
   // =========================================================================
