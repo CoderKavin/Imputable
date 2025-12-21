@@ -249,7 +249,7 @@ class Decision(Base, UUIDMixin, SoftDeleteMixin):
         ForeignKey("decision_versions.id", use_alter=True)
     )
     status: Mapped[DecisionStatus] = mapped_column(
-        Enum(DecisionStatus, name="decision_status"),
+        Enum(DecisionStatus, name="decision_status", values_callable=lambda x: [e.value for e in x]),
         default=DecisionStatus.DRAFT,
     )
     owner_team_id: Mapped[UUID | None] = mapped_column(ForeignKey("teams.id"))
@@ -327,7 +327,7 @@ class DecisionVersion(Base, UUIDMixin):
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     impact_level: Mapped[ImpactLevel] = mapped_column(
-        Enum(ImpactLevel, name="impact_level"),
+        Enum(ImpactLevel, name="impact_level", values_callable=lambda x: [e.value for e in x]),
         default=ImpactLevel.MEDIUM,
     )
     content: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -376,7 +376,7 @@ class DecisionRelationship(Base, UUIDMixin):
         ForeignKey("decisions.id"), nullable=False
     )
     relationship_type: Mapped[RelationshipType] = mapped_column(
-        Enum(RelationshipType, name="relationship_type"), nullable=False
+        Enum(RelationshipType, name="relationship_type", values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     description: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -438,7 +438,7 @@ class Approval(Base, UUIDMixin):
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     status: Mapped[ApprovalStatus] = mapped_column(
-        Enum(ApprovalStatus, name="approval_status"), nullable=False
+        Enum(ApprovalStatus, name="approval_status", values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     comment: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -502,7 +502,7 @@ class AuditLog(Base, UUIDMixin):
     )
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     action: Mapped[AuditAction] = mapped_column(
-        Enum(AuditAction, name="audit_action"), nullable=False
+        Enum(AuditAction, name="audit_action", values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -612,10 +612,10 @@ class NotificationLog(Base, UUIDMixin):
         ForeignKey("users.id"), nullable=False
     )
     notification_type: Mapped[NotificationType] = mapped_column(
-        Enum(NotificationType, name="notification_type"), nullable=False
+        Enum(NotificationType, name="notification_type", values_callable=lambda x: [e.value for e in x]), nullable=False
     )
     status: Mapped[NotificationStatus] = mapped_column(
-        Enum(NotificationStatus, name="notification_status"),
+        Enum(NotificationStatus, name="notification_status", values_callable=lambda x: [e.value for e in x]),
         default=NotificationStatus.PENDING,
     )
     channel: Mapped[str] = mapped_column(
