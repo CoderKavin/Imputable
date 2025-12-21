@@ -86,6 +86,8 @@ class Settings(BaseSettings):
                 if padding != 4:
                     encoded += "=" * padding
                 frontend_api = base64.b64decode(encoded).decode("utf-8")
+                # Remove any trailing $ or other non-domain characters
+                frontend_api = frontend_api.rstrip("$").strip()
                 return f"https://{frontend_api}"
         except Exception:
             pass
