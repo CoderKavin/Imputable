@@ -113,16 +113,23 @@ async def health_check():
     return {"status": "healthy", "version": settings.app_version}
 
 
+from pydantic import BaseModel as PydanticBaseModel
+from typing import Optional
+
+class TokenTestRequest(PydanticBaseModel):
+    authorization: Optional[str] = None
+
 @app.post("/debug/test-token", tags=["debug"])
-async def test_token(authorization: str = ""):
+async def test_token(request: TokenTestRequest):
     """Test endpoint to debug token verification."""
     from .core.security import decode_clerk_token, decode_token
 
+    authorization = request.authorization or ""
     # Extract token from "Bearer xxx" format
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
 
     if not token:
-        return {"error": "No token provided", "hint": "Send Authorization header or token in body"}
+        return {"error": "No token provided", "hint": "Send JSON body with {\"authorization\": \"Bearer <token>\"}"}
 
     result = {
         "token_preview": token[:50] + "..." if len(token) > 50 else token,
