@@ -20,8 +20,13 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    # Startup
-    await init_db()
+    # Startup - skip init_db in production (tables already exist)
+    import os
+    if os.getenv("ENVIRONMENT") != "production":
+        try:
+            await init_db()
+        except Exception as e:
+            print(f"Warning: Could not initialize database: {e}")
     yield
     # Shutdown
     await close_db()
