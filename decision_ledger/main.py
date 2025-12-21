@@ -137,6 +137,10 @@ async def debug_config():
         "database_url_from_env": os.getenv("DATABASE_URL", "NOT SET")[:50] + "..." if os.getenv("DATABASE_URL") else "NOT SET",
         "database_url_from_settings": masked,
         "secret_key_set": settings.secret_key != "change-me-in-production-use-strong-random-key",
+        "clerk_enabled": settings.clerk_enabled,
+        "clerk_secret_key_set": bool(settings.clerk_secret_key),
+        "clerk_publishable_key_set": bool(settings.clerk_publishable_key),
+        "clerk_issuer": settings.clerk_issuer,
     }
 
 
