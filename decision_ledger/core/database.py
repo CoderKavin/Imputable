@@ -141,14 +141,13 @@ class TenantContext:
 
     async def __aenter__(self) -> "TenantContext":
         # Set session variables for RLS
+        # Note: SET LOCAL doesn't support parameters, so we format directly
         await self.session.execute(
-            text("SET LOCAL app.current_organization_id = :org_id"),
-            {"org_id": str(self.organization_id)},
+            text(f"SET LOCAL app.current_organization_id = '{str(self.organization_id)}'")
         )
         if self.user_id:
             await self.session.execute(
-                text("SET LOCAL app.current_user_id = :user_id"),
-                {"user_id": str(self.user_id)},
+                text(f"SET LOCAL app.current_user_id = '{str(self.user_id)}'")
             )
         return self
 
@@ -165,15 +164,17 @@ async def set_tenant_context(
     """Set RLS context variables for the current session.
 
     Call this at the start of each request to enable row-level security.
+    Note: SET commands don't support parameterized queries, so we use string formatting.
+    The UUID values are validated before this point, so this is safe.
     """
+    # SET LOCAL doesn't support parameters, so we format the string directly
+    # UUIDs are validated by the caller, so this is safe from SQL injection
     await session.execute(
-        text("SET LOCAL app.current_organization_id = :org_id"),
-        {"org_id": str(organization_id)},
+        text(f"SET LOCAL app.current_organization_id = '{str(organization_id)}'")
     )
     if user_id:
         await session.execute(
-            text("SET LOCAL app.current_user_id = :user_id"),
-            {"user_id": str(user_id)},
+            text(f"SET LOCAL app.current_user_id = '{str(user_id)}'")
         )
 
 
