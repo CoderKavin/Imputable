@@ -110,6 +110,7 @@ async def get_or_create_clerk_organization(
             slug = f"{base_slug}-{counter}"
             counter += 1
 
+        logger.info(f"Creating new organization: slug={slug}, clerk_org_id={clerk_org_id}")
         org = Organization(
             id=uuid4(),
             slug=slug,
@@ -117,9 +118,14 @@ async def get_or_create_clerk_organization(
             settings={"clerk_org_id": clerk_org_id},
         )
         session.add(org)
-        await session.commit()
-        await session.refresh(org)
-        logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
+        try:
+            await session.commit()
+            await session.refresh(org)
+            logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
+        except Exception as e:
+            logger.error(f"Failed to create organization: {e}")
+            await session.rollback()
+            raise
 
     # Ensure user is a member of the organization
     result = await session.execute(
@@ -138,6 +144,7 @@ async def get_or_create_clerk_organization(
         elif role in ("org:owner", "owner"):
             mapped_role = "owner"
 
+        logger.info(f"Adding user {user.id} to organization {org.id} as {mapped_role}")
         membership = OrganizationMember(
             id=uuid4(),
             organization_id=org.id,
@@ -145,8 +152,13 @@ async def get_or_create_clerk_organization(
             role=mapped_role,
         )
         session.add(membership)
-        await session.commit()
-        logger.info(f"Added user {user.id} to organization {org.id} as {mapped_role}")
+        try:
+            await session.commit()
+            logger.info(f"Added user {user.id} to organization {org.id} as {mapped_role}")
+        except Exception as e:
+            logger.error(f"Failed to add user to organization: {e}")
+            await session.rollback()
+            raise
         return org, mapped_role
 
     return org, membership.role
