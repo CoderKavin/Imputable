@@ -175,8 +175,13 @@ async def test_token(request: TokenTestRequest):
     return result
 
 
+from fastapi import Header
+
 @app.post("/debug/test-auth", tags=["debug"])
-async def test_auth(request: TokenTestRequest, x_organization_id: str = ""):
+async def test_auth(
+    request: TokenTestRequest,
+    x_organization_id: str | None = Header(default=None, alias="X-Organization-ID"),
+):
     """Test full auth flow including DB operations."""
     from .core.security import decode_clerk_token
     from .core.database import get_session
