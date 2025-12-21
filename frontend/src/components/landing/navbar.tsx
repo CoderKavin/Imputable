@@ -18,9 +18,9 @@ export function LandingNavbar() {
   }, []);
 
   const navLinks = [
-    { href: "#features", label: "Features" },
-    { href: "#pricing", label: "Pricing" },
-    { href: "#docs", label: "Docs" },
+    { href: "/features", label: "Features" },
+    { href: "/pricing", label: "Pricing" },
+    { href: "/docs", label: "Docs" },
   ];
 
   return (
@@ -42,19 +42,21 @@ export function LandingNavbar() {
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm group-hover:scale-105 transition-transform">
                 IM
               </div>
-              <span className="text-white font-semibold text-lg">Imputable</span>
+              <span className="text-white font-semibold text-lg">
+                Imputable
+              </span>
             </Link>
 
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-8">
               {navLinks.map((link) => (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   className="text-gray-400 hover:text-white transition-colors text-sm font-medium"
                 >
                   {link.label}
-                </a>
+                </Link>
               ))}
             </div>
 
@@ -66,10 +68,7 @@ export function LandingNavbar() {
               >
                 Sign In
               </Link>
-              <Link
-                href="/sign-up"
-                className="relative group"
-              >
+              <Link href="/sign-up" className="relative group">
                 {/* Button glow effect */}
                 <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500 to-purple-600 rounded-lg opacity-70 group-hover:opacity-100 blur-sm transition-opacity" />
                 <div className="relative bg-black px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/10 group-hover:border-transparent transition-colors">
@@ -83,7 +82,11 @@ export function LandingNavbar() {
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="md:hidden text-gray-400 hover:text-white transition-colors"
             >
-              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {isMobileMenuOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              )}
             </button>
           </div>
         </div>
@@ -109,17 +112,20 @@ export function LandingNavbar() {
             <div className="relative pt-20 px-6">
               <div className="flex flex-col gap-4">
                 {navLinks.map((link, index) => (
-                  <motion.a
+                  <motion.div
                     key={link.href}
-                    href={link.href}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.1 }}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="text-2xl font-medium text-gray-300 hover:text-white transition-colors py-2"
                   >
-                    {link.label}
-                  </motion.a>
+                    <Link
+                      href={link.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="text-2xl font-medium text-gray-300 hover:text-white transition-colors py-2 block"
+                    >
+                      {link.label}
+                    </Link>
+                  </motion.div>
                 ))}
 
                 <div className="h-px bg-white/10 my-4" />
