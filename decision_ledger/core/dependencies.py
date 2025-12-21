@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Organization, OrganizationMember, User
+from ..models import Organization, OrganizationMember, User, SubscriptionTier
 from .config import get_settings
 from .database import get_session, set_tenant_context
 from .security import decode_token, decode_clerk_token, ClerkTokenPayload
@@ -117,6 +117,7 @@ async def get_or_create_clerk_organization(
             slug=slug,
             name=clerk_org_slug or f"Organization {clerk_org_id[-8:]}",
             settings={"clerk_org_id": clerk_org_id},
+            subscription_tier=SubscriptionTier.FREE,
         )
         session.add(org)
         try:
