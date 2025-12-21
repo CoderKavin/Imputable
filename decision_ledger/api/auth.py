@@ -198,29 +198,35 @@ async def list_dev_users(session: SessionDep):
 
     This is enabled for demo purposes.
     """
-    result = await session.execute(
-        select(User).where(User.deleted_at.is_(None)).limit(20)
-    )
-    users = result.scalars().all()
-
-    user_list = []
-    for user in users:
-        # Get user's organizations
-        org_result = await session.execute(
-            select(Organization)
-            .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
-            .where(OrganizationMember.user_id == user.id)
+    try:
+        result = await session.execute(
+            select(User).where(User.deleted_at.is_(None)).limit(20)
         )
-        orgs = org_result.scalars().all()
+        users = result.scalars().all()
 
-        user_list.append({
-            "id": str(user.id),
-            "name": user.name,
-            "email": user.email,
-            "organizations": [
-                {"id": str(org.id), "name": org.name, "slug": org.slug}
-                for org in orgs
-            ],
-        })
+        user_list = []
+        for user in users:
+            # Get user's organizations
+            org_result = await session.execute(
+                select(Organization)
+                .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
+                .where(OrganizationMember.user_id == user.id)
+            )
+            orgs = org_result.scalars().all()
 
-    return user_list
+            user_list.append({
+                "id": str(user.id),
+                "name": user.name,
+                "email": user.email,
+                "organizations": [
+                    {"id": str(org.id), "name": org.name, "slug": org.slug}
+                    for org in orgs
+                ],
+            })
+
+        return user_list
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}",
+        )
