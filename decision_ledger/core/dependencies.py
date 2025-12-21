@@ -97,7 +97,8 @@ async def get_or_create_clerk_organization(
 
     if not org:
         # Create new organization
-        slug = clerk_org_slug or f"org-{clerk_org_id[-8:]}"
+        # Slug must be lowercase alphanumeric with hyphens
+        slug = (clerk_org_slug or f"org-{clerk_org_id[-8:]}").lower()
         # Ensure unique slug
         base_slug = slug
         counter = 1
