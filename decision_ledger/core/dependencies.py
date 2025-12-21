@@ -268,8 +268,12 @@ async def get_current_user(
                         else:
                             org_id = None  # Not a member, ignore header
                 except Exception as e:
-                    logger.error(f"Error processing X-Organization-ID: {e}")
-                    pass
+                    logger.error(f"Error processing X-Organization-ID '{x_organization_id}': {e}", exc_info=True)
+                    # Don't silently swallow - re-raise as 500 for debugging
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to process organization: {str(e)}",
+                    )
 
             # Set RLS context if we have an org
             if org_id:
