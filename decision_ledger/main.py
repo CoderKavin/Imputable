@@ -83,11 +83,19 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions."""
+    import traceback
+    error_detail = str(exc)
+    # In development/debug mode, include full traceback
+    if settings.debug or settings.environment != "production":
+        error_detail = f"{str(exc)}\n{traceback.format_exc()}"
+
+    print(f"[ERROR] Unhandled exception: {error_detail}")
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(
             error="internal_error",
-            message="An unexpected error occurred",
+            message=f"An unexpected error occurred: {str(exc)[:200]}",
             details=[],
         ).model_dump(),
     )
