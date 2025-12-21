@@ -113,6 +113,50 @@ async def health_check():
     return {"status": "healthy", "version": settings.app_version}
 
 
+@app.post("/debug/test-token", tags=["debug"])
+async def test_token(authorization: str = ""):
+    """Test endpoint to debug token verification."""
+    from .core.security import decode_clerk_token, decode_token
+
+    # Extract token from "Bearer xxx" format
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+
+    if not token:
+        return {"error": "No token provided", "hint": "Send Authorization header or token in body"}
+
+    result = {
+        "token_preview": token[:50] + "..." if len(token) > 50 else token,
+        "clerk_enabled": settings.clerk_enabled,
+    }
+
+    # Try Clerk decode
+    if settings.clerk_enabled:
+        clerk_payload = decode_clerk_token(token)
+        if clerk_payload:
+            result["clerk_decode"] = {
+                "success": True,
+                "sub": clerk_payload.sub,
+                "org_id": clerk_payload.org_id,
+                "org_role": clerk_payload.org_role,
+                "email": clerk_payload.email,
+            }
+        else:
+            result["clerk_decode"] = {"success": False, "error": "Failed to decode as Clerk token"}
+
+    # Try legacy decode
+    legacy_payload = decode_token(token)
+    if legacy_payload:
+        result["legacy_decode"] = {
+            "success": True,
+            "sub": legacy_payload.sub,
+            "org": legacy_payload.org,
+        }
+    else:
+        result["legacy_decode"] = {"success": False}
+
+    return result
+
+
 @app.get("/debug/config", tags=["debug"])
 async def debug_config():
     """Debug endpoint to check configuration (development only)."""
