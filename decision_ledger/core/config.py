@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,12 +27,22 @@ class Settings(BaseSettings):
 
     # API
     api_prefix: str = "/api/v1"
-    allowed_origins: list[str] = Field(default=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://imputable.vercel.app",
-        "https://*.vercel.app"
-    ])
+    allowed_origins_str: str = Field(
+        default="http://localhost:3000,http://localhost:3001,https://imputable.vercel.app",
+        alias="ALLOWED_ORIGINS"
+    )
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Parse allowed origins from string."""
+        origins = self.allowed_origins_str
+        if origins.startswith("["):
+            import json
+            try:
+                return json.loads(origins)
+            except:
+                pass
+        return [o.strip() for o in origins.split(",") if o.strip()]
 
     # Database
     database_url: PostgresDsn = Field(
@@ -59,20 +69,6 @@ class Settings(BaseSettings):
     # Audit
     audit_chain_enabled: bool = True  # Enable cryptographic chain
     audit_retention_days: int = Field(default=365 * 7, ge=30)  # 7 years
-
-    @field_validator("allowed_origins", mode="before")
-    @classmethod
-    def parse_origins(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            # Try JSON first, then comma-separated
-            if v.startswith("["):
-                import json
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError:
-                    pass
-            return [origin.strip() for origin in v.split(",")]
-        return v
 
     @property
     def database_url_sync(self) -> str:
