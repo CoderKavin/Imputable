@@ -681,10 +681,14 @@ class ExpiryEngine:
         decision_id: UUID | None = None,
         owner_user_id: UUID | None = None,
     ) -> list[UpdateRequest]:
-        """Get all pending (unresolved) update requests."""
+        """Get all pending (unresolved) update requests with decision details."""
         query = (
             select(UpdateRequest)
             .join(Decision, UpdateRequest.decision_id == Decision.id)
+            .options(
+                selectinload(UpdateRequest.decision).selectinload(Decision.current_version),
+                selectinload(UpdateRequest.requester),
+            )
             .where(UpdateRequest.resolved_at.is_(None))
             .order_by(
                 # Urgency order: critical, high, normal, low

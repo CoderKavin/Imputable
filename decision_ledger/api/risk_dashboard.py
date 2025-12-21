@@ -617,14 +617,13 @@ async def get_update_requests(
         owner_user_id=owner_id,
     )
 
-    # For now, return simplified response (would need to join with Decision)
     return [
         UpdateRequestResponse(
             id=str(req.id),
             decision_id=str(req.decision_id),
-            decision_number=None,  # Would need join
-            decision_title=None,  # Would need join
-            requested_by_name="",  # Would need join
+            decision_number=req.decision.decision_number if req.decision else None,
+            decision_title=req.decision.current_version.title if req.decision and req.decision.current_version else None,
+            requested_by_name=req.requester.name if req.requester else "Unknown",
             message=req.message,
             urgency=req.urgency,
             created_at=req.created_at,
