@@ -193,9 +193,10 @@ async def get_current_user(
 
     # Try Clerk authentication first if enabled
     if settings.clerk_enabled:
+        logger.info(f"Clerk enabled, attempting to decode token (first 50 chars): {token[:50]}...")
         clerk_payload = decode_clerk_token(token)
         if clerk_payload:
-            logger.debug(f"Clerk token decoded for user: {clerk_payload.sub}")
+            logger.info(f"Clerk token decoded for user: {clerk_payload.sub}, org_id: {clerk_payload.org_id}")
 
             # Get or create user from Clerk
             user = await get_or_create_clerk_user(session, clerk_payload)
@@ -238,11 +239,13 @@ async def get_current_user(
             return CurrentUser(user=user, organization_id=org_id, org_role=org_role)
 
     # Fall back to legacy token authentication
+    logger.info("Clerk auth failed or not enabled, trying legacy auth")
     payload = decode_token(token)
     if not payload:
+        logger.warning(f"Legacy token decode failed for token (first 50 chars): {token[:50]}...")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Invalid or expired token - neither Clerk nor legacy auth succeeded",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
