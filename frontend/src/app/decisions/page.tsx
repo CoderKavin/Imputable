@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useDecisionList } from "@/hooks/use-decisions";
 import { AppLayout, DecisionCard } from "@/components/app";
@@ -18,6 +19,7 @@ import { Plus, Filter, FileText, Building2 } from "lucide-react";
 import type { DecisionSummary } from "@/types/decision";
 
 export default function DecisionsPage() {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const { organization, isLoaded: orgLoaded } = useOrganization();
   const { data, isLoading, error } = useDecisionList(page, 20);
@@ -26,7 +28,10 @@ export default function DecisionsPage() {
   const noOrganization = orgLoaded && !organization;
 
   const pageActions = (
-    <Button className="rounded-2xl px-4 gap-2">
+    <Button
+      className="rounded-2xl px-4 gap-2"
+      onClick={() => router.push("/decisions/new")}
+    >
       <Plus className="w-4 h-4" />
       New Decision
     </Button>
@@ -132,6 +137,7 @@ function FilterPill({
 
 // Empty State
 function EmptyState() {
+  const router = useRouter();
   return (
     <div className="text-center py-16">
       <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-6">
@@ -144,7 +150,10 @@ function EmptyState() {
         Create your first decision to start documenting your engineering
         choices.
       </p>
-      <Button className="rounded-2xl px-6 gap-2">
+      <Button
+        className="rounded-2xl px-6 gap-2"
+        onClick={() => router.push("/decisions/new")}
+      >
         <Plus className="w-4 h-4" />
         Create Decision
       </Button>
