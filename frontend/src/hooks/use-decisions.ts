@@ -127,14 +127,28 @@ export function useDecisionList(page = 1, pageSize = 20) {
 
 /**
  * Fetch decision lineage (supersession chain)
+ * TODO: Add getLineage to useDecisionApi when backend supports it
  */
 export function useDecisionLineage(
   decisionId: string,
   options?: Omit<UseQueryOptions<DecisionLineage>, "queryKey" | "queryFn">,
 ) {
+  // Placeholder - lineage endpoint not yet implemented in useDecisionApi
   return useQuery({
     queryKey: decisionKeys.lineage(decisionId),
-    queryFn: () => api.getLineage(decisionId),
+    queryFn: async (): Promise<DecisionLineage> => {
+      // Return empty lineage for now
+      return {
+        current_decision: {
+          id: decisionId,
+          decision_number: 0,
+          title: "",
+          status: "draft" as const,
+        },
+        predecessors: [],
+        successors: [],
+      };
+    },
     staleTime: 60 * 1000,
     ...options,
   });
@@ -204,18 +218,22 @@ export function useAmendDecision(decisionId: string) {
 
 /**
  * Supersede a decision
+ * TODO: Add supersedeDecision to useDecisionApi when backend supports it
  */
 export function useSupersedeDecision() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       oldDecisionId,
       data,
     }: {
       oldDecisionId: string;
       data: SupersedeRequest;
-    }) => api.supersedeDecision(oldDecisionId, data),
+    }): Promise<SupersedeResponse> => {
+      // Placeholder - supersede endpoint not yet implemented in useDecisionApi
+      throw new Error("Supersede not yet implemented");
+    },
     onSuccess: (response) => {
       // Invalidate both decisions
       queryClient.invalidateQueries({
