@@ -100,6 +100,33 @@ async def health_check():
     return {"status": "healthy", "version": settings.app_version}
 
 
+@app.get("/debug/config", tags=["debug"])
+async def debug_config():
+    """Debug endpoint to check configuration (development only)."""
+    import os
+    db_url = str(settings.database_url) if hasattr(settings, 'database_url') else "NOT SET"
+    # Mask the password in the URL
+    if "@" in db_url:
+        parts = db_url.split("@")
+        before_at = parts[0]
+        after_at = parts[1] if len(parts) > 1 else ""
+        if ":" in before_at:
+            # Mask password
+            creds = before_at.rsplit(":", 1)
+            masked = f"{creds[0]}:****@{after_at}"
+        else:
+            masked = db_url[:30] + "..."
+    else:
+        masked = db_url[:30] + "..."
+
+    return {
+        "environment": os.getenv("ENVIRONMENT", "not set"),
+        "database_url_from_env": os.getenv("DATABASE_URL", "NOT SET")[:50] + "..." if os.getenv("DATABASE_URL") else "NOT SET",
+        "database_url_from_settings": masked,
+        "secret_key_set": settings.secret_key != "change-me-in-production-use-strong-random-key",
+    }
+
+
 # Include API routes
 app.include_router(api_router, prefix=settings.api_prefix)
 
