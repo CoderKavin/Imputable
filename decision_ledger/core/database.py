@@ -50,11 +50,12 @@ logger.info(f"Database URL (masked): {db_url[:30]}...")
 
 engine = create_async_engine(
     settings.database_url_async,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
+    pool_size=10,  # Keep more connections ready
+    max_overflow=20,  # Allow more overflow connections
     echo=settings.database_echo,
     pool_pre_ping=True,  # Check connection health before use
-    pool_recycle=3600,   # Recycle connections after 1 hour
+    pool_recycle=300,  # Recycle connections every 5 minutes (faster turnover)
+    pool_timeout=30,  # Wait up to 30s for a connection
     connect_args=connect_args,
 )
 
