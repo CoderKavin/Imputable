@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import {
   MessageSquare,
   Check,
@@ -71,6 +72,7 @@ function TeamsIcon({ className }: { className?: string }) {
 
 export function IntegrationsTab() {
   const { getToken } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   // State
   const [status, setStatus] = useState<IntegrationStatus | null>(null);
@@ -85,10 +87,12 @@ export function IntegrationsTab() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Fetch integration status on mount
+  // Fetch integration status on mount and when org changes
   useEffect(() => {
-    fetchStatus();
-  }, []);
+    if (currentOrganization?.id) {
+      fetchStatus();
+    }
+  }, [currentOrganization?.id]);
 
   // Clear messages after 5 seconds
   useEffect(() => {
@@ -106,13 +110,20 @@ export function IntegrationsTab() {
   // =============================================================================
 
   async function fetchStatus() {
+    if (!currentOrganization?.id) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
+      setError(null);
       const token = await getToken();
 
       const response = await fetch(`${API_BASE_URL}/integrations/status`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "X-Organization-ID": currentOrganization.id,
         },
       });
 
@@ -145,6 +156,8 @@ export function IntegrationsTab() {
   }
 
   async function connectSlack() {
+    if (!currentOrganization?.id) return;
+
     try {
       setSlackConnecting(true);
       setError(null);
@@ -155,6 +168,7 @@ export function IntegrationsTab() {
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "X-Organization-ID": currentOrganization.id,
           },
         },
       );
@@ -176,6 +190,8 @@ export function IntegrationsTab() {
   }
 
   async function disconnectSlack() {
+    if (!currentOrganization?.id) return;
+
     try {
       setSlackDisconnecting(true);
       setError(null);
@@ -185,6 +201,7 @@ export function IntegrationsTab() {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
+          "X-Organization-ID": currentOrganization.id,
         },
       });
 
@@ -203,6 +220,7 @@ export function IntegrationsTab() {
   }
 
   async function saveTeamsWebhook() {
+    if (!currentOrganization?.id) return;
     if (!teamsWebhookUrl.trim()) {
       setError("Please enter a webhook URL");
       return;
@@ -218,6 +236,7 @@ export function IntegrationsTab() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "X-Organization-ID": currentOrganization.id,
         },
         body: JSON.stringify({
           webhook_url: teamsWebhookUrl,
@@ -244,6 +263,8 @@ export function IntegrationsTab() {
   }
 
   async function disconnectTeams() {
+    if (!currentOrganization?.id) return;
+
     try {
       setTeamsDisconnecting(true);
       setError(null);
@@ -253,6 +274,7 @@ export function IntegrationsTab() {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
+          "X-Organization-ID": currentOrganization.id,
         },
       });
 
@@ -271,6 +293,8 @@ export function IntegrationsTab() {
   }
 
   async function sendTestNotification() {
+    if (!currentOrganization?.id) return;
+
     try {
       setTestingSlack(true);
       setTestingTeams(true);
@@ -283,6 +307,7 @@ export function IntegrationsTab() {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
+            "X-Organization-ID": currentOrganization.id,
           },
         },
       );
