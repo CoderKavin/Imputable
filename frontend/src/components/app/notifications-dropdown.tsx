@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import {
   Bell,
   FileText,
@@ -18,7 +19,12 @@ import { formatRelativeTime } from "@/lib/utils";
 
 interface Notification {
   id: string;
-  type: "decision_created" | "decision_updated" | "review_needed" | "approved" | "expired";
+  type:
+    | "decision_created"
+    | "decision_updated"
+    | "review_needed"
+    | "approved"
+    | "expired";
   title: string;
   message: string;
   decision_id?: string;
@@ -30,7 +36,7 @@ interface Notification {
 export function NotificationsDropdown() {
   const router = useRouter();
   const { getToken } = useAuth();
-  const { organization } = useOrganization();
+  const { currentOrganization } = useOrganization();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(false);
@@ -41,7 +47,10 @@ export function NotificationsDropdown() {
   // Close on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -52,34 +61,42 @@ export function NotificationsDropdown() {
 
   // Fetch notifications (simulated for now - would connect to real API)
   const fetchNotifications = async () => {
-    if (!organization?.id) return;
+    if (!currentOrganization?.id) return;
 
     setLoading(true);
     try {
       const token = await getToken();
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const API_BASE =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
       // Try to fetch from risk dashboard update requests as notifications
-      const response = await fetch(`${API_BASE}/risk-dashboard/update-requests?my_decisions_only=false`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Organization-ID": organization.id,
+      const response = await fetch(
+        `${API_BASE}/api/v1/risk-dashboard/update-requests?my_decisions_only=false`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-Organization-ID": currentOrganization.id,
+          },
         },
-      });
+      );
 
       if (response.ok) {
         const data = await response.json();
         // Transform update requests into notifications
-        const notifs: Notification[] = (data || []).slice(0, 10).map((req: any) => ({
-          id: req.id,
-          type: "review_needed" as const,
-          title: `Review requested for DEC-${req.decision_number || "?"}`,
-          message: req.message || "A team member has requested you review this decision.",
-          decision_id: req.decision_id,
-          decision_number: req.decision_number,
-          created_at: req.created_at,
-          read: false,
-        }));
+        const notifs: Notification[] = (data || [])
+          .slice(0, 10)
+          .map((req: any) => ({
+            id: req.id,
+            type: "review_needed" as const,
+            title: `Review requested for DEC-${req.decision_number || "?"}`,
+            message:
+              req.message ||
+              "A team member has requested you review this decision.",
+            decision_id: req.decision_id,
+            decision_number: req.decision_number,
+            created_at: req.created_at,
+            read: false,
+          }));
         setNotifications(notifs);
         setUnreadCount(notifs.filter((n) => !n.read).length);
       } else if (response.status === 402) {
@@ -98,14 +115,14 @@ export function NotificationsDropdown() {
 
   // Fetch on mount and when org changes
   useEffect(() => {
-    if (organization?.id) {
+    if (currentOrganization?.id) {
       fetchNotifications();
     }
-  }, [organization?.id]);
+  }, [currentOrganization?.id]);
 
   // Refresh when dropdown opens
   useEffect(() => {
-    if (open && organization?.id) {
+    if (open && currentOrganization?.id) {
       fetchNotifications();
     }
   }, [open]);
@@ -130,7 +147,7 @@ export function NotificationsDropdown() {
   const handleNotificationClick = (notification: Notification) => {
     // Mark as read (in a real app, would call API)
     setNotifications((prev) =>
-      prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+      prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)),
     );
     setUnreadCount((prev) => Math.max(0, prev - 1));
 
@@ -207,7 +224,7 @@ export function NotificationsDropdown() {
                       onClick={() => handleNotificationClick(notification)}
                       className={cn(
                         "w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-gray-50 transition-colors",
-                        !notification.read && "bg-indigo-50/50"
+                        !notification.read && "bg-indigo-50/50",
                       )}
                     >
                       <div className="mt-0.5">{getIcon(notification.type)}</div>
@@ -215,7 +232,9 @@ export function NotificationsDropdown() {
                         <p
                           className={cn(
                             "text-sm",
-                            notification.read ? "text-gray-700" : "text-gray-900 font-medium"
+                            notification.read
+                              ? "text-gray-700"
+                              : "text-gray-900 font-medium",
                           )}
                         >
                           {notification.title}

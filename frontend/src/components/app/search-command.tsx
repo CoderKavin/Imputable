@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, FileText, Loader2, X } from "lucide-react";
-import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { cn } from "@/lib/utils";
 
 interface SearchResult {
@@ -22,7 +23,7 @@ interface SearchCommandProps {
 export function SearchCommand({ className }: SearchCommandProps) {
   const router = useRouter();
   const { getToken } = useAuth();
-  const { organization } = useOrganization();
+  const { currentOrganization } = useOrganization();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,7 +50,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
   // Search API call
   const performSearch = useCallback(
     async (searchQuery: string) => {
-      if (!searchQuery.trim() || !organization?.id) {
+      if (!searchQuery.trim() || !currentOrganization?.id) {
         setResults([]);
         return;
       }
@@ -65,7 +66,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
           {
             headers: {
               Authorization: `Bearer ${token}`,
-              "X-Organization-ID": organization.id,
+              "X-Organization-ID": currentOrganization.id,
             },
           },
         );
@@ -83,7 +84,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
         setLoading(false);
       }
     },
-    [getToken, organization?.id],
+    [getToken, currentOrganization?.id],
   );
 
   // Debounced search

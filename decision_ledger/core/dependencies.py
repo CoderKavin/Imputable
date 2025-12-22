@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Organization, OrganizationMember, User, SubscriptionTier
 from .config import get_settings
 from .database import get_session, set_tenant_context
-from .security import decode_token, decode_clerk_token, ClerkTokenPayload
+from .security import decode_token, decode_firebase_token, FirebaseTokenPayload
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -21,16 +21,16 @@ settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def get_or_create_clerk_user(
+async def get_or_create_firebase_user(
     session: AsyncSession,
-    clerk_payload: ClerkTokenPayload,
+    firebase_payload: FirebaseTokenPayload,
 ) -> User:
-    """Get or create a user from Clerk token payload."""
-    # Look up user by Clerk ID (auth_provider_id)
+    """Get or create a user from Firebase token payload."""
+    # Look up user by Firebase UID (auth_provider_id)
     result = await session.execute(
         select(User).where(
-            User.auth_provider == "clerk",
-            User.auth_provider_id == clerk_payload.sub,
+            User.auth_provider == "firebase",
+            User.auth_provider_id == firebase_payload.uid,
             User.deleted_at.is_(None),
         )
     )
@@ -39,132 +39,88 @@ async def get_or_create_clerk_user(
     if user:
         # Update user info if changed
         needs_update = False
-        if clerk_payload.email and user.email != clerk_payload.email:
-            user.email = clerk_payload.email
+        if firebase_payload.email and user.email != firebase_payload.email:
+            user.email = firebase_payload.email
             needs_update = True
-        if clerk_payload.full_name and user.name != clerk_payload.full_name:
-            user.name = clerk_payload.full_name
+        if firebase_payload.name and user.name != firebase_payload.name:
+            user.name = firebase_payload.name
             needs_update = True
-        if clerk_payload.image_url and user.avatar_url != clerk_payload.image_url:
-            user.avatar_url = clerk_payload.image_url
+        if firebase_payload.picture and user.avatar_url != firebase_payload.picture:
+            user.avatar_url = firebase_payload.picture
             needs_update = True
         if needs_update:
             await session.commit()
         return user
 
     # Create new user
-    user_name = clerk_payload.full_name or clerk_payload.email or f"User {clerk_payload.sub[-8:]}"
-    user_email = clerk_payload.email or f"{clerk_payload.sub}@clerk.local"
+    user_name = firebase_payload.name or firebase_payload.email or f"User {firebase_payload.uid[-8:]}"
+    user_email = firebase_payload.email or f"{firebase_payload.uid}@firebase.local"
 
-    logger.info(f"Creating new Clerk user: email={user_email}, name={user_name}, clerk_id={clerk_payload.sub}")
+    logger.info(f"Creating new Firebase user: email={user_email}, name={user_name}, uid={firebase_payload.uid}")
 
     user = User(
         id=uuid4(),
         email=user_email,
         name=user_name,
-        avatar_url=clerk_payload.image_url,
-        auth_provider="clerk",
-        auth_provider_id=clerk_payload.sub,
+        avatar_url=firebase_payload.picture,
+        auth_provider="firebase",
+        auth_provider_id=firebase_payload.uid,
     )
     session.add(user)
     try:
         await session.commit()
         await session.refresh(user)
-        logger.info(f"Created new user from Clerk: {user.id} ({user.email})")
+        logger.info(f"Created new user from Firebase: {user.id} ({user.email})")
     except Exception as e:
-        logger.error(f"Failed to create Clerk user: {e}")
+        logger.error(f"Failed to create Firebase user: {e}")
         await session.rollback()
         raise
     return user
 
 
-async def get_or_create_clerk_organization(
+async def get_user_organization(
     session: AsyncSession,
-    clerk_org_id: str,
-    clerk_org_slug: str | None,
     user: User,
-    role: str = "member",
-) -> tuple[Organization, str]:
-    """Get or create an organization from Clerk org ID."""
-    # Look up organization by Clerk org ID (stored in settings)
+    org_id: str | None = None,
+) -> tuple[Organization | None, str | None]:
+    """Get user's organization by ID or their first organization."""
+    if org_id:
+        try:
+            org_uuid = UUID(org_id)
+            # Verify membership
+            result = await session.execute(
+                select(OrganizationMember, Organization)
+                .join(Organization, OrganizationMember.organization_id == Organization.id)
+                .where(
+                    OrganizationMember.organization_id == org_uuid,
+                    OrganizationMember.user_id == user.id,
+                    Organization.deleted_at.is_(None),
+                )
+            )
+            row = result.first()
+            if row:
+                membership, org = row
+                return org, membership.role
+        except ValueError:
+            logger.warning(f"Invalid organization ID format: {org_id}")
+            pass
+
+    # Get user's first organization
     result = await session.execute(
-        select(Organization).where(
-            Organization.settings["clerk_org_id"].astext == clerk_org_id,
+        select(OrganizationMember, Organization)
+        .join(Organization, OrganizationMember.organization_id == Organization.id)
+        .where(
+            OrganizationMember.user_id == user.id,
             Organization.deleted_at.is_(None),
         )
+        .limit(1)
     )
-    org = result.scalar_one_or_none()
+    row = result.first()
+    if row:
+        membership, org = row
+        return org, membership.role
 
-    created_org = False
-    if not org:
-        # Create new organization
-        # Slug must be lowercase alphanumeric with hyphens
-        slug = (clerk_org_slug or f"org-{clerk_org_id[-8:]}").lower()
-        # Remove any invalid characters
-        import re
-        slug = re.sub(r'[^a-z0-9-]', '-', slug)
-
-        # Ensure unique slug
-        base_slug = slug
-        counter = 1
-        while True:
-            existing = await session.execute(
-                select(Organization).where(Organization.slug == slug)
-            )
-            if not existing.scalar_one_or_none():
-                break
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-
-        logger.info(f"Creating new organization: slug={slug}, clerk_org_id={clerk_org_id}")
-        org = Organization(
-            id=uuid4(),
-            slug=slug,
-            name=clerk_org_slug or f"Organization {clerk_org_id[-8:]}",
-            settings={"clerk_org_id": clerk_org_id},
-            subscription_tier=SubscriptionTier.FREE,
-        )
-        session.add(org)
-        created_org = True
-
-    # Check membership
-    result = await session.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.organization_id == org.id,
-            OrganizationMember.user_id == user.id,
-        )
-    )
-    membership = result.scalar_one_or_none()
-
-    # Map Clerk roles to our roles
-    mapped_role = "member"
-    if role in ("org:admin", "admin"):
-        mapped_role = "admin"
-    elif role in ("org:owner", "owner"):
-        mapped_role = "owner"
-
-    if not membership:
-        logger.info(f"Adding user {user.id} to organization {org.id} as {mapped_role}")
-        membership = OrganizationMember(
-            id=uuid4(),
-            organization_id=org.id,
-            user_id=user.id,
-            role=mapped_role,
-        )
-        session.add(membership)
-
-    # Single commit for all changes
-    try:
-        await session.commit()
-        if created_org:
-            await session.refresh(org)
-            logger.info(f"Created new organization from Clerk: {org.id} ({org.slug})")
-    except Exception as e:
-        logger.error(f"Failed to save organization/membership: {e}")
-        await session.rollback()
-        raise
-
-    return org, membership.role if membership else mapped_role
+    return None, None
 
 
 class CurrentUser:
@@ -202,7 +158,7 @@ async def get_current_user(
 ) -> CurrentUser:
     """Dependency to get the current authenticated user.
 
-    Validates JWT token (Clerk or legacy) and optionally sets organization context.
+    Validates JWT token (Firebase or legacy) and optionally sets organization context.
     """
     if not credentials:
         raise HTTPException(
@@ -216,66 +172,36 @@ async def get_current_user(
     org_id: UUID | None = None
     org_role: str | None = None
 
-    # Try Clerk authentication first if enabled
-    if settings.clerk_enabled:
-        logger.info(f"Clerk enabled, attempting to decode token (first 50 chars): {token[:50]}...")
-        clerk_payload = decode_clerk_token(token)
-        if clerk_payload:
-            logger.info(f"Clerk token decoded for user: {clerk_payload.sub}, org_id: {clerk_payload.org_id}")
+    # Try Firebase authentication first if enabled
+    if settings.firebase_enabled:
+        logger.info(f"Firebase enabled, attempting to decode token (first 50 chars): {token[:50]}...")
+        firebase_payload = decode_firebase_token(token)
+        if firebase_payload:
+            logger.info(f"Firebase token decoded for user: {firebase_payload.uid}, email: {firebase_payload.email}")
 
-            # Get or create user from Clerk
-            user = await get_or_create_clerk_user(session, clerk_payload)
+            # Get or create user from Firebase
+            user = await get_or_create_firebase_user(session, firebase_payload)
 
-            # Handle organization context from Clerk
-            if clerk_payload.org_id:
-                # User has an active organization in Clerk
-                org, role = await get_or_create_clerk_organization(
-                    session,
-                    clerk_payload.org_id,
-                    clerk_payload.org_slug,
-                    user,
-                    clerk_payload.org_role or "member",
-                )
-                org_id = org.id
-                org_role = role
-            elif x_organization_id:
-                # Use header-provided org ID (could be Clerk org ID or UUID)
+            # Handle organization context from header
+            if x_organization_id:
                 logger.info(f"Using X-Organization-ID header: {x_organization_id}")
                 try:
-                    # Check if it's a Clerk org ID (starts with "org_")
-                    if x_organization_id.startswith("org_"):
-                        # Look up org by Clerk ID
-                        org, role = await get_or_create_clerk_organization(
-                            session,
-                            x_organization_id,
-                            None,  # No slug available from header
-                            user,
-                            "member",
-                        )
+                    org, role = await get_user_organization(session, user, x_organization_id)
+                    if org:
                         org_id = org.id
                         org_role = role
-                    else:
-                        # Assume it's a UUID
-                        org_id = UUID(x_organization_id)
-                        # Verify membership
-                        result = await session.execute(
-                            select(OrganizationMember).where(
-                                OrganizationMember.organization_id == org_id,
-                                OrganizationMember.user_id == user.id,
-                            )
-                        )
-                        membership = result.scalar_one_or_none()
-                        if membership:
-                            org_role = membership.role
-                        else:
-                            org_id = None  # Not a member, ignore header
                 except Exception as e:
                     logger.error(f"Error processing X-Organization-ID '{x_organization_id}': {e}", exc_info=True)
-                    # Don't silently swallow - re-raise as 500 for debugging
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Failed to process organization: {str(e)}",
                     )
+            else:
+                # Get user's first organization if no header
+                org, role = await get_user_organization(session, user)
+                if org:
+                    org_id = org.id
+                    org_role = role
 
             # Set RLS context if we have an org
             if org_id:
@@ -284,13 +210,13 @@ async def get_current_user(
             return CurrentUser(user=user, organization_id=org_id, org_role=org_role)
 
     # Fall back to legacy token authentication
-    logger.info("Clerk auth failed or not enabled, trying legacy auth")
+    logger.info("Firebase auth failed or not enabled, trying legacy auth")
     payload = decode_token(token)
     if not payload:
         logger.warning(f"Legacy token decode failed for token (first 50 chars): {token[:50]}...")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token - neither Clerk nor legacy auth succeeded",
+            detail="Invalid or expired token - neither Firebase nor legacy auth succeeded",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

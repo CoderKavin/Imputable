@@ -1,13 +1,14 @@
 /**
- * API Hook with Clerk Authentication
+ * API Hook with Firebase Authentication
  *
- * This hook provides authenticated API access using Clerk's session token.
+ * This hook provides authenticated API access using Firebase ID tokens.
  * Use this instead of the raw api-client for all authenticated requests.
  */
 
-import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useCallback, useMemo } from "react";
-import axios, { AxiosInstance } from "axios";
+import axios from "axios";
 import type {
   Decision,
   DecisionSummary,
@@ -26,7 +27,7 @@ const API_BASE_URL =
  */
 export function useApiClient() {
   const { getToken } = useAuth();
-  const { organization } = useOrganization();
+  const { currentOrganization } = useOrganization();
 
   const client = useMemo(() => {
     const instance = axios.create({
@@ -43,8 +44,8 @@ export function useApiClient() {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
-        if (organization?.id) {
-          config.headers["X-Organization-ID"] = organization.id;
+        if (currentOrganization?.id) {
+          config.headers["X-Organization-ID"] = currentOrganization.id;
         }
       } catch (error) {
         console.error("Failed to get auth token:", error);
@@ -53,35 +54,40 @@ export function useApiClient() {
     });
 
     return instance;
-  }, [getToken, organization?.id]);
+  }, [getToken, currentOrganization?.id]);
 
   return client;
 }
 
 /**
- * Hook for decision-related API calls with Clerk auth
+ * Hook for decision-related API calls with Firebase auth
  */
 export function useDecisionApi() {
   const client = useApiClient();
 
   const listDecisions = useCallback(
-    async (page = 1, pageSize = 20): Promise<PaginatedResponse<DecisionSummary>> => {
+    async (
+      page = 1,
+      pageSize = 20,
+    ): Promise<PaginatedResponse<DecisionSummary>> => {
       const response = await client.get<PaginatedResponse<DecisionSummary>>(
         "/decisions",
-        { params: { page, page_size: pageSize } }
+        { params: { page, page_size: pageSize } },
       );
       return response.data;
     },
-    [client]
+    [client],
   );
 
   const getDecision = useCallback(
     async (id: string, version?: number): Promise<Decision> => {
       const params = version ? { version } : {};
-      const response = await client.get<Decision>(`/decisions/${id}`, { params });
+      const response = await client.get<Decision>(`/decisions/${id}`, {
+        params,
+      });
       return response.data;
     },
-    [client]
+    [client],
   );
 
   const createDecision = useCallback(
@@ -89,7 +95,7 @@ export function useDecisionApi() {
       const response = await client.post<Decision>("/decisions", data);
       return response.data;
     },
-    [client]
+    [client],
   );
 
   const amendDecision = useCallback(
@@ -97,32 +103,32 @@ export function useDecisionApi() {
       const response = await client.put<Decision>(`/decisions/${id}`, data);
       return response.data;
     },
-    [client]
+    [client],
   );
 
   const getVersionHistory = useCallback(
     async (decisionId: string): Promise<VersionHistoryItem[]> => {
       const response = await client.get<VersionHistoryItem[]>(
-        `/decisions/${decisionId}/versions`
+        `/decisions/${decisionId}/versions`,
       );
       return response.data;
     },
-    [client]
+    [client],
   );
 
   const compareVersions = useCallback(
     async (
       decisionId: string,
       versionA: number,
-      versionB: number
+      versionB: number,
     ): Promise<VersionCompareResponse> => {
       const response = await client.get<VersionCompareResponse>(
         `/decisions/${decisionId}/compare`,
-        { params: { version_a: versionA, version_b: versionB } }
+        { params: { version_a: versionA, version_b: versionB } },
       );
       return response.data;
     },
-    [client]
+    [client],
   );
 
   return {

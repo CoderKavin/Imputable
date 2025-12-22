@@ -1,5 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import { LandingNavbar } from "@/components/landing/navbar";
 import { SpotlightHero } from "@/components/landing/spotlight-hero";
 import { BentoGrid } from "@/components/landing/bento-grid";
@@ -13,12 +16,29 @@ import { Footer } from "@/components/landing/footer";
  * Public page that shows the product value proposition.
  * If user is already signed in, redirect to dashboard.
  */
-export default async function Home() {
-  const { userId } = await auth();
+export default function Home() {
+  const router = useRouter();
+  const { user, loading } = useAuth();
 
-  // If already signed in, redirect to dashboard
-  if (userId) {
-    redirect("/dashboard");
+  useEffect(() => {
+    // If already signed in, redirect to dashboard
+    if (!loading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, loading, router]);
+
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // If user is signed in, don't render (will redirect)
+  if (user) {
+    return null;
   }
 
   return (

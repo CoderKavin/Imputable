@@ -11,7 +11,11 @@ import {
 } from "@/components/ui/tooltip";
 
 // Subscription tier hierarchy
-export type SubscriptionTier = "free" | "starter" | "professional" | "enterprise";
+export type SubscriptionTier =
+  | "free"
+  | "starter"
+  | "professional"
+  | "enterprise";
 
 const TIER_ORDER: Record<SubscriptionTier, number> = {
   free: 0,
@@ -202,7 +206,7 @@ export function useSubscription(): {
   // This could come from:
   // 1. A React context that's populated at app load
   // 2. An API call with React Query
-  // 3. Data from Clerk's organization metadata
+  // 3. Data from your organization's metadata
 
   // For now, default to 'free' - in dev mode the backend returns 'enterprise'
   const tier: SubscriptionTier = "free";

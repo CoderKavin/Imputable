@@ -2,8 +2,8 @@
  * API Client for Imputable
  * Handles all communication with the backend
  *
- * Note: This client now integrates with Clerk for authentication.
- * The token is fetched from Clerk's session.
+ * Note: This client integrates with Firebase for authentication.
+ * The token is fetched from Firebase's user session.
  */
 
 import axios, { AxiosInstance, AxiosError } from "axios";
@@ -24,8 +24,7 @@ import type {
 // CONFIGURATION
 // =============================================================================
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // =============================================================================
 // AUTH TYPES
@@ -103,7 +102,7 @@ class ImputableApi {
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: `${API_BASE_URL}/api/v1`,
       headers: {
         "Content-Type": "application/json",
       },

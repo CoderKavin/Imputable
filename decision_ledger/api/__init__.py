@@ -9,6 +9,7 @@ from .decisions import router as decisions_router
 from .integrations import router as integrations_router
 from .ledger import router as ledger_router
 from .risk_dashboard import router as risk_dashboard_router
+from .user import router as user_router
 
 # Main API router
 api_router = APIRouter()
@@ -16,6 +17,9 @@ api_router = APIRouter()
 # Include all route modules
 # Auth routes (login, dev-login)
 api_router.include_router(auth_router)
+
+# User routes (/me/*)
+api_router.include_router(user_router)
 
 # Ledger routes are the primary decision management endpoints
 api_router.include_router(ledger_router)

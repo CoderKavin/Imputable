@@ -2,7 +2,7 @@
  * React Query Hooks for Imputable
  * Provides efficient data fetching with caching for version switching
  *
- * These hooks now use Clerk authentication via useDecisionApi hook.
+ * These hooks now use Firebase authentication via useDecisionApi hook.
  */
 
 import {
@@ -11,7 +11,8 @@ import {
   useQueryClient,
   UseQueryOptions,
 } from "@tanstack/react-query";
-import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { decisionKeys } from "@/lib/api-client";
 import { useDecisionApi } from "./use-api";
 import type {
@@ -117,14 +118,14 @@ export const useVersionCompare = useVersionComparison;
  */
 export function useDecisionList(page = 1, pageSize = 20) {
   const { listDecisions } = useDecisionApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...decisionKeys.list(page, pageSize), organization?.id],
+    queryKey: [...decisionKeys.list(page, pageSize), currentOrganization?.id],
     queryFn: () => listDecisions(page, pageSize),
     staleTime: 30 * 1000, // 30 seconds
-    enabled: isSignedIn && !!organization?.id, // Only fetch when signed in with org
+    enabled: !!user && !!currentOrganization?.id, // Only fetch when signed in with org
   });
 }
 

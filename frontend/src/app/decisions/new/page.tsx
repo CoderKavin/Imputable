@@ -9,12 +9,16 @@
 
 import React, { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useOrganization } from "@clerk/nextjs";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { cn } from "@/lib/utils";
 import { useCreateDecision } from "@/hooks/use-decisions";
 import { AppLayout } from "@/components/app";
 import { Button } from "@/components/ui/button";
-import type { ImpactLevel, Alternative, CreateDecisionRequest } from "@/types/decision";
+import type {
+  ImpactLevel,
+  Alternative,
+  CreateDecisionRequest,
+} from "@/types/decision";
 import {
   ArrowLeft,
   Save,
@@ -33,7 +37,7 @@ import {
 
 export default function NewDecisionPage() {
   const router = useRouter();
-  const { organization } = useOrganization();
+  const { currentOrganization } = useOrganization();
   const createMutation = useCreateDecision();
 
   // Form state
@@ -49,7 +53,12 @@ export default function NewDecisionPage() {
 
   // Handle form submission
   const handleSubmit = useCallback(async () => {
-    if (!title.trim() || !context.trim() || !choice.trim() || !rationale.trim()) {
+    if (
+      !title.trim() ||
+      !context.trim() ||
+      !choice.trim() ||
+      !rationale.trim()
+    ) {
       return;
     }
 
@@ -59,7 +68,7 @@ export default function NewDecisionPage() {
         context,
         choice,
         rationale,
-        alternatives: alternatives.filter(a => a.name.trim()),
+        alternatives: alternatives.filter((a) => a.name.trim()),
         consequences: consequences || undefined,
       },
       impact_level: impactLevel,
@@ -72,7 +81,18 @@ export default function NewDecisionPage() {
     } catch (error) {
       console.error("Failed to create decision:", error);
     }
-  }, [title, context, choice, rationale, alternatives, consequences, impactLevel, tags, createMutation, router]);
+  }, [
+    title,
+    context,
+    choice,
+    rationale,
+    alternatives,
+    consequences,
+    impactLevel,
+    tags,
+    createMutation,
+    router,
+  ]);
 
   // Add alternative
   const handleAddAlternative = useCallback(() => {
@@ -88,10 +108,10 @@ export default function NewDecisionPage() {
   const handleUpdateAlternative = useCallback(
     (index: number, field: "name" | "rejected_reason", value: string) => {
       setAlternatives((prev) =>
-        prev.map((alt, i) => (i === index ? { ...alt, [field]: value } : alt))
+        prev.map((alt, i) => (i === index ? { ...alt, [field]: value } : alt)),
       );
     },
-    []
+    [],
   );
 
   // Add tag
@@ -108,16 +128,24 @@ export default function NewDecisionPage() {
     setTags((prev) => prev.filter((t) => t !== tag));
   }, []);
 
-  const isValid = title.trim() && context.trim() && choice.trim() && rationale.trim();
+  const isValid =
+    title.trim() && context.trim() && choice.trim() && rationale.trim();
 
-  if (!organization) {
+  if (!currentOrganization) {
     return (
-      <AppLayout title="Create Decision" subtitle="Document a new engineering decision">
+      <AppLayout
+        title="Create Decision"
+        subtitle="Document a new engineering decision"
+      >
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <AlertCircle className="w-12 h-12 mx-auto mb-4 text-amber-500" />
-            <h2 className="text-xl font-semibold mb-2">No Organization Selected</h2>
-            <p className="text-gray-500 mb-4">Please select an organization to create decisions.</p>
+            <h2 className="text-xl font-semibold mb-2">
+              No Organization Selected
+            </h2>
+            <p className="text-gray-500 mb-4">
+              Please select an organization to create decisions.
+            </p>
             <Button variant="outline" onClick={() => router.push("/dashboard")}>
               Go to Dashboard
             </Button>
@@ -132,7 +160,11 @@ export default function NewDecisionPage() {
       title="Create Decision"
       subtitle="Document a new engineering decision"
       actions={
-        <Button variant="outline" onClick={() => router.back()} className="rounded-xl gap-2">
+        <Button
+          variant="outline"
+          onClick={() => router.back()}
+          className="rounded-xl gap-2"
+        >
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
@@ -156,21 +188,23 @@ export default function NewDecisionPage() {
             {/* Impact Level */}
             <FormSection icon={AlertTriangle} title="Impact Level" required>
               <div className="flex gap-2">
-                {(["low", "medium", "high", "critical"] as ImpactLevel[]).map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => setImpactLevel(level)}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all",
-                      impactLevel === level
-                        ? "bg-gray-900 text-white"
-                        : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200"
-                    )}
-                  >
-                    {level}
-                  </button>
-                ))}
+                {(["low", "medium", "high", "critical"] as ImpactLevel[]).map(
+                  (level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setImpactLevel(level)}
+                      className={cn(
+                        "px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all",
+                        impactLevel === level
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200",
+                      )}
+                    >
+                      {level}
+                    </button>
+                  ),
+                )}
               </div>
             </FormSection>
 
@@ -235,14 +269,22 @@ export default function NewDecisionPage() {
                       <input
                         type="text"
                         value={alt.name}
-                        onChange={(e) => handleUpdateAlternative(index, "name", e.target.value)}
+                        onChange={(e) =>
+                          handleUpdateAlternative(index, "name", e.target.value)
+                        }
                         placeholder="Alternative name"
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
                       />
                       <input
                         type="text"
                         value={alt.rejected_reason}
-                        onChange={(e) => handleUpdateAlternative(index, "rejected_reason", e.target.value)}
+                        onChange={(e) =>
+                          handleUpdateAlternative(
+                            index,
+                            "rejected_reason",
+                            e.target.value,
+                          )
+                        }
                         placeholder="Why it was rejected"
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
                       />
@@ -311,11 +353,18 @@ export default function NewDecisionPage() {
                     type="text"
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && (e.preventDefault(), handleAddTag())
+                    }
                     placeholder="Add tag (e.g., database, security, api)..."
                     className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
                   />
-                  <Button type="button" variant="outline" onClick={handleAddTag} className="rounded-xl">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddTag}
+                    className="rounded-xl"
+                  >
                     Add
                   </Button>
                 </div>
@@ -329,7 +378,11 @@ export default function NewDecisionPage() {
               All required fields must be filled to create the decision.
             </p>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={() => router.back()} className="rounded-xl">
+              <Button
+                variant="outline"
+                onClick={() => router.back()}
+                className="rounded-xl"
+              >
                 Cancel
               </Button>
               <Button
@@ -356,7 +409,8 @@ export default function NewDecisionPage() {
           {createMutation.isError && (
             <div className="mx-6 mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
-              {(createMutation.error as Error).message || "Failed to create decision"}
+              {(createMutation.error as Error).message ||
+                "Failed to create decision"}
             </div>
           )}
         </div>
@@ -377,7 +431,13 @@ interface FormSectionProps {
   children: React.ReactNode;
 }
 
-function FormSection({ icon: Icon, title, description, required, children }: FormSectionProps) {
+function FormSection({
+  icon: Icon,
+  title,
+  description,
+  required,
+  children,
+}: FormSectionProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">

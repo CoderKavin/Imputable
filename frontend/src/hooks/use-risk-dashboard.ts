@@ -2,7 +2,7 @@
  * React Query Hooks for Risk Dashboard
  * Provides data fetching for tech debt tracking and executive views
  *
- * Uses Clerk authentication via useApiClient hook.
+ * Uses Firebase authentication via useApiClient hook.
  */
 
 import {
@@ -11,9 +11,10 @@ import {
   useQueryClient,
   UseQueryOptions,
 } from "@tanstack/react-query";
-import { useAuth, useOrganization } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useApiClient } from "./use-api";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
 // =============================================================================
 // TYPES
@@ -157,7 +158,7 @@ export interface UpdateRequest {
 // =============================================================================
 
 /**
- * Hook for risk dashboard API calls with Clerk auth
+ * Hook for risk dashboard API calls with Firebase auth
  */
 export function useRiskDashboardApi() {
   const client = useApiClient();
@@ -320,15 +321,15 @@ export function useRiskStats(
   options?: Omit<UseQueryOptions<RiskStats>, "queryKey" | "queryFn">,
 ) {
   const { getStats } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...riskDashboardKeys.stats(), organization?.id],
+    queryKey: [...riskDashboardKeys.stats(), currentOrganization?.id],
     queryFn: getStats,
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // Refresh every minute
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -349,14 +350,14 @@ export function useExpiringDecisions(
   >,
 ) {
   const { getExpiringDecisions } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...riskDashboardKeys.expiring(filters), organization?.id],
+    queryKey: [...riskDashboardKeys.expiring(filters), currentOrganization?.id],
     queryFn: () => getExpiringDecisions(filters),
     staleTime: 30 * 1000,
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -370,17 +371,17 @@ export function useCalendarData(
   options?: Omit<UseQueryOptions<CalendarData>, "queryKey" | "queryFn">,
 ) {
   const { getCalendar } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
     queryKey: [
       ...riskDashboardKeys.calendar(startDate, endDate),
-      organization?.id,
+      currentOrganization?.id,
     ],
     queryFn: () => getCalendar(startDate, endDate),
     staleTime: 60 * 1000,
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -393,14 +394,14 @@ export function useHeatmapData(
   options?: Omit<UseQueryOptions<HeatmapData>, "queryKey" | "queryFn">,
 ) {
   const { getHeatmap } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...riskDashboardKeys.heatmap(months), organization?.id],
+    queryKey: [...riskDashboardKeys.heatmap(months), currentOrganization?.id],
     queryFn: () => getHeatmap(months),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -412,14 +413,14 @@ export function useTeamHeatmap(
   options?: Omit<UseQueryOptions<TeamHeatmapData>, "queryKey" | "queryFn">,
 ) {
   const { getTeamHeatmap } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...riskDashboardKeys.teamHeatmap(), organization?.id],
+    queryKey: [...riskDashboardKeys.teamHeatmap(), currentOrganization?.id],
     queryFn: getTeamHeatmap,
     staleTime: 60 * 1000, // 1 minute
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -431,14 +432,14 @@ export function useTagHeatmap(
   options?: Omit<UseQueryOptions<TagHeatmapData>, "queryKey" | "queryFn">,
 ) {
   const { getTagHeatmap } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...riskDashboardKeys.tagHeatmap(), organization?.id],
+    queryKey: [...riskDashboardKeys.tagHeatmap(), currentOrganization?.id],
     queryFn: getTagHeatmap,
     staleTime: 60 * 1000, // 1 minute
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }
@@ -451,17 +452,17 @@ export function useUpdateRequests(
   options?: Omit<UseQueryOptions<UpdateRequest[]>, "queryKey" | "queryFn">,
 ) {
   const { getUpdateRequests } = useRiskDashboardApi();
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
 
   return useQuery({
     queryKey: [
       ...riskDashboardKeys.updateRequests(myDecisionsOnly),
-      organization?.id,
+      currentOrganization?.id,
     ],
     queryFn: () => getUpdateRequests(myDecisionsOnly),
     staleTime: 30 * 1000,
-    enabled: isSignedIn && !!organization?.id,
+    enabled: !!user && !!currentOrganization?.id,
     ...options,
   });
 }

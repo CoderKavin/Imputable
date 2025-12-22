@@ -1,33 +1,46 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 /**
- * Clerk Middleware for Route Protection
+ * Middleware for Route Handling
  *
- * Public Routes: Accessible without authentication
- * - / (landing page)
- * - /sign-in, /sign-up (auth pages)
- * - /api/webhook/* (webhooks for Clerk events)
+ * Note: Firebase token verification cannot be done in Edge middleware.
+ * Auth protection is handled at the component/page level using AuthContext.
  *
- * Protected Routes: Require authentication
- * - /dashboard/*
- * - /decisions/*
- * - Everything else not explicitly public
+ * This middleware handles:
+ * - Basic route matching
+ * - CORS headers for API routes
  */
 
-// Define public routes that don't require authentication
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/api/webhook(.*)",
-]);
+// Public routes that don't need any special handling
+const publicRoutes = ["/", "/sign-in", "/sign-up", "/api/webhook"];
 
-export default clerkMiddleware(async (auth, req) => {
-  // If the route is not public, require authentication
-  if (!isPublicRoute(req)) {
-    await auth.protect();
+function isPublicRoute(pathname: string): boolean {
+  return publicRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Add CORS headers for API routes if needed
+  if (pathname.startsWith("/api/")) {
+    const response = NextResponse.next();
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    response.headers.set(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    );
+    response.headers.set(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization",
+    );
+    return response;
   }
-});
+
+  return NextResponse.next();
+}
 
 export const config = {
   // Match all routes except static files and Next.js internals

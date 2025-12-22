@@ -133,7 +133,7 @@ class TokenTestRequest(PydanticBaseModel):
 @app.post("/debug/test-token", tags=["debug"])
 async def test_token(request: TokenTestRequest):
     """Test endpoint to debug token verification."""
-    from .core.security import decode_clerk_token, decode_token
+    from .core.security import decode_firebase_token, decode_token
 
     authorization = request.authorization or ""
     # Extract token from "Bearer xxx" format
@@ -144,22 +144,22 @@ async def test_token(request: TokenTestRequest):
 
     result = {
         "token_preview": token[:50] + "..." if len(token) > 50 else token,
-        "clerk_enabled": settings.clerk_enabled,
+        "firebase_enabled": settings.firebase_enabled,
     }
 
-    # Try Clerk decode
-    if settings.clerk_enabled:
-        clerk_payload = decode_clerk_token(token)
-        if clerk_payload:
-            result["clerk_decode"] = {
+    # Try Firebase decode
+    if settings.firebase_enabled:
+        firebase_payload = decode_firebase_token(token)
+        if firebase_payload:
+            result["firebase_decode"] = {
                 "success": True,
-                "sub": clerk_payload.sub,
-                "org_id": clerk_payload.org_id,
-                "org_role": clerk_payload.org_role,
-                "email": clerk_payload.email,
+                "uid": firebase_payload.uid,
+                "email": firebase_payload.email,
+                "name": firebase_payload.name,
+                "sign_in_provider": firebase_payload.sign_in_provider,
             }
         else:
-            result["clerk_decode"] = {"success": False, "error": "Failed to decode as Clerk token"}
+            result["firebase_decode"] = {"success": False, "error": "Failed to decode as Firebase token"}
 
     # Try legacy decode
     legacy_payload = decode_token(token)
@@ -183,9 +183,9 @@ async def test_auth(
     x_organization_id: str | None = Header(default=None, alias="X-Organization-ID"),
 ):
     """Test full auth flow including DB operations."""
-    from .core.security import decode_clerk_token
+    from .core.security import decode_firebase_token
     from .core.database import get_session
-    from .core.dependencies import get_or_create_clerk_user, get_or_create_clerk_organization
+    from .core.dependencies import get_or_create_firebase_user, get_user_organization
 
     authorization = request.authorization or ""
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
@@ -193,35 +193,32 @@ async def test_auth(
     if not token:
         return {"error": "No token provided"}
 
-    # Decode Clerk token
-    clerk_payload = decode_clerk_token(token)
-    if not clerk_payload:
-        return {"error": "Failed to decode Clerk token"}
+    # Decode Firebase token
+    firebase_payload = decode_firebase_token(token)
+    if not firebase_payload:
+        return {"error": "Failed to decode Firebase token"}
 
     result = {
-        "clerk_user_id": clerk_payload.sub,
-        "clerk_org_id": clerk_payload.org_id,
+        "firebase_uid": firebase_payload.uid,
+        "email": firebase_payload.email,
         "header_org_id": x_organization_id,
-        "email": clerk_payload.email,
     }
 
     # Try DB operations
     try:
         async for session in get_session():
             # Create user
-            user = await get_or_create_clerk_user(session, clerk_payload)
+            user = await get_or_create_firebase_user(session, firebase_payload)
             result["db_user_id"] = str(user.id)
             result["db_user_email"] = user.email
 
-            # Create org if header provided
-            org_id_to_use = clerk_payload.org_id or x_organization_id
-            if org_id_to_use and org_id_to_use.startswith("org_"):
-                org, role = await get_or_create_clerk_organization(
-                    session, org_id_to_use, None, user, "member"
-                )
-                result["db_org_id"] = str(org.id)
-                result["db_org_slug"] = org.slug
-                result["db_org_role"] = role
+            # Get organization if header provided
+            if x_organization_id:
+                org, role = await get_user_organization(session, user, x_organization_id)
+                if org:
+                    result["db_org_id"] = str(org.id)
+                    result["db_org_slug"] = org.slug
+                    result["db_org_role"] = role
 
             result["success"] = True
             break
@@ -258,10 +255,8 @@ async def debug_config():
         "database_url_from_env": os.getenv("DATABASE_URL", "NOT SET")[:50] + "..." if os.getenv("DATABASE_URL") else "NOT SET",
         "database_url_from_settings": masked,
         "secret_key_set": settings.secret_key != "change-me-in-production-use-strong-random-key",
-        "clerk_enabled": settings.clerk_enabled,
-        "clerk_secret_key_set": bool(settings.clerk_secret_key),
-        "clerk_publishable_key_set": bool(settings.clerk_publishable_key),
-        "clerk_issuer": settings.clerk_issuer,
+        "firebase_enabled": settings.firebase_enabled,
+        "firebase_project_id": settings.firebase_project_id,
     }
 
 

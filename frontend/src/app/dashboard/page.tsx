@@ -1,5 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { AppLayout } from "@/components/app";
 import { DashboardContent } from "./dashboard-content";
 
@@ -8,14 +12,31 @@ import { DashboardContent } from "./dashboard-content";
  *
  * Main landing page after sign-in.
  * Shows overview stats and quick actions.
- * Requires authentication (handled by middleware).
+ * Requires authentication.
  */
-export default async function DashboardPage() {
-  const { userId, orgId } = await auth();
+export default function DashboardPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { currentOrganization, loading: orgLoading } = useOrganization();
 
-  // This should be handled by middleware, but double-check
-  if (!userId) {
-    redirect("/sign-in");
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/sign-in");
+    }
+  }, [user, authLoading, router]);
+
+  // Loading state
+  if (authLoading || orgLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Not signed in - will redirect
+  if (!user) {
+    return null;
   }
 
   return (
@@ -23,7 +44,7 @@ export default async function DashboardPage() {
       title="Dashboard"
       subtitle="Welcome back! Here's what's happening."
     >
-      <DashboardContent hasOrg={!!orgId} />
+      <DashboardContent hasOrg={!!currentOrganization} />
     </AppLayout>
   );
 }

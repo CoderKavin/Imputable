@@ -3,11 +3,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
-import httpx
 import logging
 
 import jwt
-from jwt import PyJWKClient
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
@@ -16,26 +14,43 @@ from .config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-# Clerk JWKS client (cached)
-_clerk_jwks_client: PyJWKClient | None = None
+# Firebase Admin SDK (lazy initialization)
+_firebase_app = None
 
 
-def get_clerk_jwks_client() -> PyJWKClient | None:
-    """Get or create Clerk JWKS client for RS256 verification."""
-    global _clerk_jwks_client
+def get_firebase_app():
+    """Get or initialize Firebase Admin SDK."""
+    global _firebase_app
 
-    if not settings.clerk_enabled:
+    if not settings.firebase_enabled:
         return None
 
-    if _clerk_jwks_client is None:
-        # Clerk JWKS URL format
-        issuer = settings.clerk_issuer
-        if issuer:
-            jwks_url = f"{issuer}/.well-known/jwks.json"
-            _clerk_jwks_client = PyJWKClient(jwks_url, cache_keys=True)
-            logger.info(f"Initialized Clerk JWKS client with URL: {jwks_url}")
+    if _firebase_app is None:
+        try:
+            import firebase_admin
+            from firebase_admin import credentials
 
-    return _clerk_jwks_client
+            # Handle the private key - it may have escaped newlines
+            private_key = settings.firebase_private_key
+            if private_key:
+                # Replace escaped newlines with actual newlines
+                private_key = private_key.replace("\\n", "\n")
+
+            cred = credentials.Certificate({
+                "type": "service_account",
+                "project_id": settings.firebase_project_id,
+                "client_email": settings.firebase_client_email,
+                "private_key": private_key,
+                "token_uri": "https://oauth2.googleapis.com/token",
+            })
+            _firebase_app = firebase_admin.initialize_app(cred)
+            logger.info(f"Firebase Admin SDK initialized for project: {settings.firebase_project_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+            return None
+
+    return _firebase_app
+
 
 # Password hashing
 pwd_context = CryptContext(
@@ -114,86 +129,53 @@ def decode_token(token: str) -> TokenPayload | None:
         return None
 
 
-class ClerkTokenPayload(BaseModel):
-    """Clerk JWT token payload."""
+class FirebaseTokenPayload(BaseModel):
+    """Firebase JWT token payload."""
 
-    sub: str  # Clerk user ID (e.g., user_xxx)
-    azp: str | None = None  # Authorized party (frontend URL)
-    org_id: str | None = None  # Clerk organization ID
-    org_role: str | None = None  # Role in organization
-    org_slug: str | None = None  # Organization slug
+    uid: str  # Firebase user ID
+    email: str | None = None
+    email_verified: bool = False
+    name: str | None = None
+    picture: str | None = None
+    sign_in_provider: str | None = None  # password, google.com, etc.
     exp: datetime
     iat: datetime
-    nbf: datetime | None = None
     iss: str | None = None  # Issuer
 
-    # Additional Clerk claims
-    email: str | None = None
-    first_name: str | None = None
-    last_name: str | None = None
-    image_url: str | None = None
 
-    @property
-    def full_name(self) -> str:
-        """Get user's full name."""
-        parts = [self.first_name, self.last_name]
-        return " ".join(p for p in parts if p) or "Unknown User"
+def decode_firebase_token(token: str) -> FirebaseTokenPayload | None:
+    """Decode and validate a Firebase ID token."""
+    app = get_firebase_app()
 
-
-def decode_clerk_token(token: str) -> ClerkTokenPayload | None:
-    """Decode and validate a Clerk JWT token using RS256."""
-    jwks_client = get_clerk_jwks_client()
-
-    if not jwks_client:
-        logger.warning("Clerk JWKS client not configured")
+    if not app:
+        logger.warning("Firebase app not configured")
         return None
 
     try:
-        logger.info("Attempting to get signing key from JWKS")
-        # Get the signing key from JWKS
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        logger.info("Got signing key, decoding token")
+        from firebase_admin import auth
 
-        # Decode and verify the token
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            options={
-                "verify_aud": False,  # Clerk doesn't always include audience
-            }
+        logger.info("Verifying Firebase ID token")
+        # Verify the ID token
+        decoded_token = auth.verify_id_token(token)
+        logger.info(f"Token verified for uid={decoded_token.get('uid')}, email={decoded_token.get('email')}")
+
+        # Extract sign-in provider from firebase claims
+        firebase_claims = decoded_token.get("firebase", {})
+        sign_in_provider = firebase_claims.get("sign_in_provider")
+
+        return FirebaseTokenPayload(
+            uid=decoded_token["uid"],
+            email=decoded_token.get("email"),
+            email_verified=decoded_token.get("email_verified", False),
+            name=decoded_token.get("name"),
+            picture=decoded_token.get("picture"),
+            sign_in_provider=sign_in_provider,
+            exp=datetime.fromtimestamp(decoded_token["exp"], tz=timezone.utc),
+            iat=datetime.fromtimestamp(decoded_token["iat"], tz=timezone.utc),
+            iss=decoded_token.get("iss"),
         )
-        logger.info(f"Token decoded successfully, sub={payload.get('sub')}, org_id={payload.get('org_id')}")
-
-        # Extract additional claims from session claims if present
-        email = payload.get("email")
-        first_name = payload.get("first_name")
-        last_name = payload.get("last_name")
-        image_url = payload.get("image_url")
-
-        return ClerkTokenPayload(
-            sub=payload["sub"],
-            azp=payload.get("azp"),
-            org_id=payload.get("org_id"),
-            org_role=payload.get("org_role"),
-            org_slug=payload.get("org_slug"),
-            exp=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
-            iat=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
-            nbf=datetime.fromtimestamp(payload["nbf"], tz=timezone.utc) if payload.get("nbf") else None,
-            iss=payload.get("iss"),
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            image_url=image_url,
-        )
-    except jwt.ExpiredSignatureError:
-        logger.warning("Clerk token expired")
-        return None
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid Clerk token: {e}")
-        return None
     except Exception as e:
-        logger.error(f"Error decoding Clerk token: {e}")
+        logger.warning(f"Firebase token verification failed: {e}")
         return None
 
 

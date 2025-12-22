@@ -1,21 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import {
-  SignInButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-  OrganizationSwitcher,
-} from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { UserMenu } from "@/components/auth/UserMenu";
+import { OrganizationSwitcher } from "@/components/auth/OrganizationSwitcher";
 
 /**
  * Main Navigation Bar
  *
  * Displays different content based on authentication state:
- * - Logged Out: Shows "Sign In" button
- * - Logged In: Shows OrganizationSwitcher and UserButton
+ * - Logged Out: Shows "Sign In" and "Get Started" buttons
+ * - Logged In: Shows OrganizationSwitcher and UserMenu
  *
  * The OrganizationSwitcher is crucial for B2B multi-tenancy:
  * - Allows users to switch between organizations
@@ -23,6 +19,8 @@ import { Button } from "@/components/ui/button";
  * - Shows the current organization context
  */
 export function Navbar() {
+  const { user, loading } = useAuth();
+
   return (
     <header className="bg-white border-b sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6">
@@ -37,7 +35,7 @@ export function Navbar() {
             </Link>
 
             {/* Navigation Links - Only show when signed in */}
-            <SignedIn>
+            {user && (
               <nav className="hidden md:flex items-center gap-6">
                 <Link
                   href="/dashboard"
@@ -58,57 +56,36 @@ export function Navbar() {
                   Audit Log
                 </Link>
               </nav>
-            </SignedIn>
+            )}
           </div>
 
           {/* Right Side - Auth Controls */}
           <div className="flex items-center gap-4">
-            {/* Signed Out State */}
-            <SignedOut>
-              <SignInButton mode="modal">
-                <Button variant="outline" size="sm">
-                  Sign In
-                </Button>
-              </SignInButton>
-              <Link href="/sign-up">
-                <Button size="sm">Get Started</Button>
-              </Link>
-            </SignedOut>
+            {loading ? (
+              // Loading state
+              <div className="h-9 w-20 bg-gray-200 rounded animate-pulse" />
+            ) : !user ? (
+              // Signed Out State
+              <>
+                <Link href="/sign-in">
+                  <Button variant="outline" size="sm">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/sign-up">
+                  <Button size="sm">Get Started</Button>
+                </Link>
+              </>
+            ) : (
+              // Signed In State
+              <>
+                {/* Organization Switcher - Critical for B2B */}
+                <OrganizationSwitcher />
 
-            {/* Signed In State */}
-            <SignedIn>
-              {/* Organization Switcher - Critical for B2B */}
-              <OrganizationSwitcher
-                hidePersonal={false}
-                afterCreateOrganizationUrl="/dashboard"
-                afterLeaveOrganizationUrl="/"
-                afterSelectOrganizationUrl="/dashboard"
-                appearance={{
-                  elements: {
-                    rootBox: "flex items-center",
-                    organizationSwitcherTrigger:
-                      "px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors",
-                    organizationPreviewMainIdentifier: "font-medium text-sm",
-                    organizationSwitcherTriggerIcon: "text-gray-500",
-                  },
-                }}
-                createOrganizationMode="modal"
-                organizationProfileMode="modal"
-              />
-
-              {/* User Button with dropdown menu */}
-              <UserButton
-                afterSignOutUrl="/"
-                appearance={{
-                  elements: {
-                    avatarBox: "w-9 h-9",
-                    userButtonPopoverCard: "shadow-lg",
-                    userButtonPopoverActionButton: "text-sm",
-                  },
-                }}
-                userProfileMode="modal"
-              />
-            </SignedIn>
+                {/* User Menu with dropdown */}
+                <UserMenu />
+              </>
+            )}
           </div>
         </div>
       </div>

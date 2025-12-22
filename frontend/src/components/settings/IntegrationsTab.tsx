@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   MessageSquare,
   Check,
@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 // =============================================================================
 // TYPES
@@ -120,7 +121,12 @@ export function IntegrationsTab() {
         if (response.status === 403) {
           setError("Integrations require a Pro subscription");
           setStatus({
-            slack: { connected: false, team_name: null, channel_name: null, installed_at: null },
+            slack: {
+              connected: false,
+              team_name: null,
+              channel_name: null,
+              installed_at: null,
+            },
             teams: { connected: false, channel_name: null, installed_at: null },
           });
           return;
@@ -144,11 +150,14 @@ export function IntegrationsTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/integrations/slack/install`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const response = await fetch(
+        `${API_BASE_URL}/integrations/slack/install`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -226,7 +235,9 @@ export function IntegrationsTab() {
       await fetchStatus();
     } catch (err) {
       console.error("Error saving Teams webhook:", err);
-      setError(err instanceof Error ? err.message : "Failed to save Teams webhook");
+      setError(
+        err instanceof Error ? err.message : "Failed to save Teams webhook",
+      );
     } finally {
       setTeamsSaving(false);
     }
@@ -266,12 +277,15 @@ export function IntegrationsTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/integrations/test-notification`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const response = await fetch(
+        `${API_BASE_URL}/integrations/test-notification`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -281,7 +295,9 @@ export function IntegrationsTab() {
       setSuccess("Test notification sent!");
     } catch (err) {
       console.error("Error sending test:", err);
-      setError(err instanceof Error ? err.message : "Failed to send test notification");
+      setError(
+        err instanceof Error ? err.message : "Failed to send test notification",
+      );
     } finally {
       setTestingSlack(false);
       setTestingTeams(false);
@@ -308,8 +324,8 @@ export function IntegrationsTab() {
           Integrations
         </h2>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Connect Imputable to your team&apos;s communication tools to receive notifications
-          when decisions are created, updated, or need review.
+          Connect Imputable to your team&apos;s communication tools to receive
+          notifications when decisions are created, updated, or need review.
         </p>
       </div>
 
@@ -413,8 +429,8 @@ export function IntegrationsTab() {
             <div className="space-y-4">
               {/* Disconnected State */}
               <p className="text-sm text-zinc-500">
-                Connect your Slack workspace to receive real-time notifications about decision
-                updates, approvals, and review reminders.
+                Connect your Slack workspace to receive real-time notifications
+                about decision updates, approvals, and review reminders.
               </p>
               <Button
                 onClick={connectSlack}
@@ -507,8 +523,8 @@ export function IntegrationsTab() {
             <div className="space-y-4">
               {/* Disconnected State */}
               <p className="text-sm text-zinc-500">
-                Configure an incoming webhook to send notifications to your Microsoft Teams
-                channel.
+                Configure an incoming webhook to send notifications to your
+                Microsoft Teams channel.
               </p>
 
               {/* Setup Instructions */}
@@ -519,7 +535,9 @@ export function IntegrationsTab() {
                 <ol className="list-inside list-decimal space-y-1 text-sm text-zinc-500">
                   <li>In Teams, right-click the channel → Connectors</li>
                   <li>Find &quot;Incoming Webhook&quot; and click Configure</li>
-                  <li>Name it &quot;Imputable&quot; and copy the webhook URL</li>
+                  <li>
+                    Name it &quot;Imputable&quot; and copy the webhook URL
+                  </li>
                 </ol>
               </div>
 

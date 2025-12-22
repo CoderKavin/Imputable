@@ -5,12 +5,12 @@
  *
  * Route: /decisions
  * Shows all active decisions with search and filters
- * Protected route - requires authentication (handled by middleware)
+ * Protected route - requires authentication
  */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useOrganization } from "@clerk/nextjs";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
 import { AppLayout, DecisionCard } from "@/components/app";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,11 @@ import type { DecisionSummary } from "@/types/decision";
 export default function DecisionsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
-  const { organization, isLoaded: orgLoaded } = useOrganization();
+  const { currentOrganization, loading: orgLoading } = useOrganization();
   const { data, isLoading, error } = useDecisionList(page, 20);
 
   // Show message if no organization selected
-  const noOrganization = orgLoaded && !organization;
+  const noOrganization = !orgLoading && !currentOrganization;
 
   const pageActions = (
     <Button
