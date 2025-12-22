@@ -149,8 +149,19 @@ export function OrganizationProvider({
       );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Failed to create organization");
+        const errorText = await response.text();
+        let errorDetail = `Failed to create organization (${response.status})`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorDetail = errorData.detail || errorDetail;
+        } catch {
+          // Response wasn't JSON
+          if (errorText) {
+            errorDetail = errorText.substring(0, 100);
+          }
+        }
+        console.error("Create org error:", response.status, errorDetail);
+        throw new Error(errorDetail);
       }
 
       const newOrg = await response.json();

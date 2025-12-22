@@ -26,8 +26,12 @@ export function ExpiringDecisionsList({
   isLoading,
   totalCount,
 }: ExpiringDecisionsListProps) {
-  const [snoozeTarget, setSnoozeTarget] = useState<ExpiringDecision | null>(null);
-  const [resolveTarget, setResolveTarget] = useState<ExpiringDecision | null>(null);
+  const [snoozeTarget, setSnoozeTarget] = useState<ExpiringDecision | null>(
+    null,
+  );
+  const [resolveTarget, setResolveTarget] = useState<ExpiringDecision | null>(
+    null,
+  );
 
   const requestUpdate = useRequestUpdate();
 
@@ -35,7 +39,10 @@ export function ExpiringDecisionsList({
     return (
       <div className="space-y-4">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+          <div
+            key={i}
+            className="animate-pulse flex items-center space-x-4 p-4 bg-gray-50 rounded-2xl"
+          >
             <div className="h-4 bg-gray-200 rounded w-16" />
             <div className="h-4 bg-gray-200 rounded flex-1" />
             <div className="h-4 bg-gray-200 rounded w-24" />
@@ -49,7 +56,9 @@ export function ExpiringDecisionsList({
     return (
       <div className="text-center py-12">
         <CheckIcon className="mx-auto h-12 w-12 text-green-400" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900">All caught up!</h3>
+        <h3 className="mt-2 text-sm font-medium text-gray-900">
+          All caught up!
+        </h3>
         <p className="mt-1 text-sm text-gray-500">
           No decisions require attention right now.
         </p>
@@ -157,7 +166,10 @@ function DecisionRow({
                 #{decision.decision_number}
               </span>
               {decision.is_temporary && (
-                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-amber-50 text-amber-700 border-amber-200"
+                >
                   Temporary
                 </Badge>
               )}
@@ -181,7 +193,10 @@ function DecisionRow({
 
       {/* Status */}
       <td className="px-4 py-4">
-        <StatusBadge status={decision.status} daysUntil={decision.days_until_expiry} />
+        <StatusBadge
+          status={decision.status}
+          daysUntil={decision.days_until_expiry}
+        />
       </td>
 
       {/* Review Date */}
@@ -189,7 +204,9 @@ function DecisionRow({
         <div className="text-sm text-gray-900">
           {formatDate(decision.review_by_date)}
         </div>
-        <div className={`text-xs ${isExpired ? "text-red-600" : "text-gray-500"}`}>
+        <div
+          className={`text-xs ${isExpired ? "text-red-600" : "text-gray-500"}`}
+        >
           {daysText}
         </div>
       </td>
@@ -231,12 +248,16 @@ function DecisionRow({
 // Status Badge Component
 // =============================================================================
 
-function StatusBadge({ status, daysUntil }: { status: string; daysUntil: number }) {
+function StatusBadge({
+  status,
+  daysUntil,
+}: {
+  status: string;
+  daysUntil: number;
+}) {
   if (status === "expired") {
     return (
-      <Badge className="bg-red-100 text-red-800 border-red-200">
-        Expired
-      </Badge>
+      <Badge className="bg-red-100 text-red-800 border-red-200">Expired</Badge>
     );
   }
 

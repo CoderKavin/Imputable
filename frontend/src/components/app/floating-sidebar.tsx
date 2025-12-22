@@ -60,15 +60,13 @@ export function FloatingSidebar() {
         {/* Logo Section */}
         <div className="p-6 pb-4">
           <Link href="/dashboard" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-shadow">
-              <Image
-                src="/icon.png"
-                alt="Imputable"
-                width={40}
-                height={40}
-                className="w-full h-full object-cover"
-              />
-            </div>
+            <Image
+              src="/icon.png"
+              alt="Imputable"
+              width={36}
+              height={36}
+              className="w-9 h-9 object-contain group-hover:scale-105 transition-transform"
+            />
             <div>
               <span className="font-semibold text-gray-900 text-lg">
                 Imputable

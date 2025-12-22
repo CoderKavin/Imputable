@@ -15,8 +15,16 @@ export function DebtWallCalendar() {
 
   // Calculate date range for the visible month
   const { startDate, endDate } = useMemo(() => {
-    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+    const start = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      1,
+    );
+    const end = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 1,
+      0,
+    );
     return {
       startDate: start.toISOString(),
       endDate: end.toISOString(),
@@ -32,11 +40,15 @@ export function DebtWallCalendar() {
   }, [calendarData]);
 
   const goToPreviousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+    setCurrentDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() - 1),
+    );
   };
 
   const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+    setCurrentDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() + 1),
+    );
   };
 
   const goToToday = () => {
@@ -250,7 +262,7 @@ function CalendarDayCell({
       onClick={onClick}
       disabled={!hasDecisions}
       className={`
-        relative h-20 p-1 rounded-lg border transition-all
+        relative h-20 p-1 rounded-xl border transition-all
         ${isCurrentMonth ? "text-gray-900" : "text-gray-400"}
         ${isToday ? "ring-2 ring-indigo-500" : ""}
         ${bgColor}
@@ -321,7 +333,7 @@ function DayDetailsPanel({ day, onClose }: DayDetailsPanelProps) {
         {day.decisions.map((decision) => (
           <div
             key={decision.id}
-            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
           >
             <div className="flex items-center space-x-3">
               <div
@@ -359,7 +371,9 @@ function StatusBadge({ status }: { status: string }) {
   };
 
   return (
-    <span className={`px-2 py-0.5 text-xs rounded ${colors[status] || "bg-gray-100 text-gray-700"}`}>
+    <span
+      className={`px-2 py-0.5 text-xs rounded ${colors[status] || "bg-gray-100 text-gray-700"}`}
+    >
       {status.replace("_", " ")}
     </span>
   );
@@ -409,16 +423,36 @@ function CalendarSkeleton() {
 
 function ChevronLeftIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 19l-7-7 7-7"
+      />
     </svg>
   );
 }
 
 function ChevronRightIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
     </svg>
   );
 }

@@ -213,7 +213,7 @@ export function NotificationsDropdown() {
                 <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                 <p className="text-sm text-gray-500">No notifications yet</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  You'll see updates about your decisions here
+                  You&apos;ll see updates about your decisions here
                 </p>
               </div>
             ) : (

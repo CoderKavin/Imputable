@@ -14,7 +14,12 @@ import React from "react";
 import { cn, formatDateTime, formatStatus } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { Decision, DecisionVersion, DecisionStatus, ImpactLevel } from "@/types/decision";
+import type {
+  Decision,
+  DecisionVersion,
+  DecisionStatus,
+  ImpactLevel,
+} from "@/types/decision";
 import {
   FileText,
   CheckCircle2,
@@ -49,17 +54,18 @@ export function DecisionContent({
       <div className="space-y-4">
         {/* Historical Version Warning */}
         {isViewingHistory && (
-          <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
             <History className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-amber-800">
                 Viewing Historical Version {version.version_number}
               </p>
               <p className="text-sm text-amber-700 mt-1">
-                This is not the current version. Created on {formatDateTime(version.created_at)}.
+                This is not the current version. Created on{" "}
+                {formatDateTime(version.created_at)}.
                 {version.change_summary && (
                   <span className="block mt-1 italic">
-                    Changes: "{version.change_summary}"
+                    Changes: &quot;{version.change_summary}&quot;
                   </span>
                 )}
               </p>
@@ -69,14 +75,15 @@ export function DecisionContent({
 
         {/* Superseded Warning */}
         {decision.status === "superseded" && (
-          <div className="p-4 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3">
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-red-800">
                 This Decision Has Been Superseded
               </p>
               <p className="text-sm text-red-700 mt-1">
-                A newer decision has replaced this one. This version is kept for historical reference only.
+                A newer decision has replaced this one. This version is kept for
+                historical reference only.
               </p>
             </div>
           </div>
@@ -140,7 +147,7 @@ export function DecisionContent({
           description="The background and problem being addressed"
         >
           <div className="prose prose-sm max-w-none text-foreground">
-            {content.context.split('\n').map((paragraph, i) => (
+            {content.context.split("\n").map((paragraph, i) => (
               <p key={i}>{paragraph}</p>
             ))}
           </div>
@@ -154,7 +161,7 @@ export function DecisionContent({
           highlight
         >
           <div className="prose prose-sm max-w-none text-foreground">
-            {content.choice.split('\n').map((paragraph, i) => (
+            {content.choice.split("\n").map((paragraph, i) => (
               <p key={i}>{paragraph}</p>
             ))}
           </div>
@@ -167,7 +174,7 @@ export function DecisionContent({
           description="Why we made this choice"
         >
           <div className="prose prose-sm max-w-none text-foreground">
-            {content.rationale.split('\n').map((paragraph, i) => (
+            {content.rationale.split("\n").map((paragraph, i) => (
               <p key={i}>{paragraph}</p>
             ))}
           </div>
@@ -184,7 +191,7 @@ export function DecisionContent({
               {content.alternatives.map((alt, index) => (
                 <div
                   key={index}
-                  className="p-3 rounded-lg bg-muted/50 border border-border"
+                  className="p-3 rounded-xl bg-muted/50 border border-border"
                 >
                   <p className="font-medium text-foreground">{alt.name}</p>
                   <p className="text-sm text-muted-foreground mt-1">
@@ -205,7 +212,7 @@ export function DecisionContent({
             description="Expected outcomes and implications"
           >
             <div className="prose prose-sm max-w-none text-foreground">
-              {content.consequences.split('\n').map((paragraph, i) => (
+              {content.consequences.split("\n").map((paragraph, i) => (
                 <p key={i}>{paragraph}</p>
               ))}
             </div>
@@ -214,7 +221,7 @@ export function DecisionContent({
 
         {/* Review Date */}
         {content.review_date && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-blue-50 border border-blue-200">
             <Calendar className="h-5 w-5 text-blue-600" />
             <span className="text-sm text-blue-800">
               Scheduled for review on{" "}
@@ -250,10 +257,12 @@ function ContentSection({
     <Card className={cn(highlight && "border-primary/30 bg-primary/5")}>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          <Icon className={cn(
-            "h-5 w-5",
-            highlight ? "text-primary" : "text-muted-foreground"
-          )} />
+          <Icon
+            className={cn(
+              "h-5 w-5",
+              highlight ? "text-primary" : "text-muted-foreground",
+            )}
+          />
           <div>
             <h3 className="font-semibold text-foreground">{title}</h3>
             <p className="text-xs text-muted-foreground">{description}</p>

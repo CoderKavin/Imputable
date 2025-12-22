@@ -374,7 +374,7 @@ function NoOrganizationState() {
             </li>
             <li className="flex items-start gap-2">
               <span className="font-bold">2.</span>
-              Select "Create Organization" or join an existing one
+              Select &quot;Create Organization&quot; or join an existing one
             </li>
             <li className="flex items-start gap-2">
               <span className="font-bold">3.</span>

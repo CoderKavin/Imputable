@@ -34,16 +34,16 @@ export function UserMenu() {
   };
 
   if (loading) {
-    return (
-      <div className="h-9 w-9 rounded-full bg-gray-200 animate-pulse" />
-    );
+    return <div className="h-9 w-9 rounded-full bg-gray-200 animate-pulse" />;
   }
 
   if (!user) {
     return (
       <div className="flex items-center gap-2">
         <Link href="/sign-in">
-          <Button variant="ghost" size="sm">Sign in</Button>
+          <Button variant="ghost" size="sm">
+            Sign in
+          </Button>
         </Link>
         <Link href="/sign-up">
           <Button size="sm">Sign up</Button>
@@ -53,7 +53,12 @@ export function UserMenu() {
   }
 
   const initials = user.displayName
-    ? user.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    ? user.displayName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
     : user.email?.slice(0, 2).toUpperCase() || "U";
 
   return (
@@ -76,14 +81,12 @@ export function UserMenu() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 rounded-lg bg-white shadow-lg border border-gray-200 py-1 z-50">
+        <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-lg border border-gray-200 py-1 z-50">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-medium text-gray-900 truncate">
               {user.displayName || "User"}
             </p>
-            <p className="text-sm text-gray-500 truncate">
-              {user.email}
-            </p>
+            <p className="text-sm text-gray-500 truncate">{user.email}</p>
           </div>
 
           <div className="py-1">

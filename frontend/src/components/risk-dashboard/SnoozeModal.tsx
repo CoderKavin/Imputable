@@ -63,7 +63,7 @@ export function SnoozeModal({ decision, onClose }: SnoozeModalProps) {
 
         <CardContent className="space-y-6">
           {/* Decision Info */}
-          <div className="bg-gray-50 rounded-lg p-3">
+          <div className="bg-gray-50 rounded-xl p-3">
             <p className="text-sm font-medium text-gray-900 truncate">
               {decision.title}
             </p>
@@ -83,7 +83,7 @@ export function SnoozeModal({ decision, onClose }: SnoozeModalProps) {
                   key={option.days}
                   onClick={() => setSelectedDays(option.days)}
                   className={`
-                    px-3 py-2 text-sm font-medium rounded-lg border transition-colors
+                    px-3 py-2 text-sm font-medium rounded-xl border transition-colors
                     ${
                       selectedDays === option.days
                         ? "bg-indigo-50 border-indigo-500 text-indigo-700"
@@ -110,14 +110,15 @@ export function SnoozeModal({ decision, onClose }: SnoozeModalProps) {
               onChange={(e) => setReason(e.target.value)}
               placeholder="Explain why this decision review needs to be delayed..."
               rows={3}
-              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none ${
+              className={`w-full px-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none ${
                 reason.trim().length === 0
                   ? "border-gray-200"
                   : "border-green-300"
               }`}
             />
             <p className="text-xs text-gray-500 mt-1">
-              This explanation will be recorded in the decision's audit history.
+              This explanation will be recorded in the decision&apos;s audit
+              history.
             </p>
           </div>
 

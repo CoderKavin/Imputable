@@ -17,7 +17,7 @@ export function AppHeader({ title, subtitle, actions }: AppHeaderProps) {
   const { user } = useAuth();
 
   return (
-    <header className="sticky top-0 z-30 bg-gray-50/80 backdrop-blur-xl border-b border-gray-200/50">
+    <header className="sticky top-0 z-[102] bg-gray-50/80 backdrop-blur-xl border-b border-gray-200/50">
       <div className="px-8 py-4">
         <div className="flex items-center justify-between">
           {/* Left: Page Title */}

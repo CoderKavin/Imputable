@@ -23,10 +23,11 @@ export function RiskDashboard() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
 
   const { data: stats, isLoading: statsLoading } = useRiskStats();
-  const { data: expiringData, isLoading: expiringLoading } = useExpiringDecisions({
-    status_filter: statusFilter,
-    limit: 20,
-  });
+  const { data: expiringData, isLoading: expiringLoading } =
+    useExpiringDecisions({
+      status_filter: statusFilter,
+      limit: 20,
+    });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,7 +40,8 @@ export function RiskDashboard() {
                 Risk Dashboard
               </h1>
               <p className="mt-1 text-sm text-gray-500">
-                Monitor tech debt and expiring decisions across your organization
+                Monitor tech debt and expiring decisions across your
+                organization
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -113,8 +115,8 @@ export function RiskDashboard() {
                   {statusFilter === "expired"
                     ? "Expired Decisions"
                     : statusFilter === "at_risk"
-                    ? "At-Risk Decisions"
-                    : "Decisions Requiring Attention"}
+                      ? "At-Risk Decisions"
+                      : "Decisions Requiring Attention"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -137,7 +139,7 @@ export function RiskDashboard() {
                     {Object.entries(stats.by_team).map(([team, count]) => (
                       <div
                         key={team}
-                        className="bg-gray-50 rounded-lg p-4 text-center"
+                        className="bg-gray-50 rounded-2xl p-4 text-center"
                       >
                         <div className="text-2xl font-bold text-gray-900">
                           {count}

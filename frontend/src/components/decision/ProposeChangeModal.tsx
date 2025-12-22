@@ -213,8 +213,8 @@ export function ProposeChangeModal({
             </span>
           </div>
           <p className="text-xs text-gray-600 mb-3">
-            Explain what you're changing and why. This will be recorded in the
-            audit log.
+            Explain what you&apos;re changing and why. This will be recorded in
+            the audit log.
           </p>
           <textarea
             value={changeReason}

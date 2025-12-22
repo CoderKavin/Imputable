@@ -39,7 +39,7 @@ export function LandingNavbar() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm group-hover:scale-105 transition-transform">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm group-hover:scale-105 transition-transform">
                 IM
               </div>
               <span className="text-white font-semibold text-lg">
@@ -70,8 +70,8 @@ export function LandingNavbar() {
               </Link>
               <Link href="/sign-up" className="relative group">
                 {/* Button glow effect */}
-                <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500 to-purple-600 rounded-lg opacity-70 group-hover:opacity-100 blur-sm transition-opacity" />
-                <div className="relative bg-black px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/10 group-hover:border-transparent transition-colors">
+                <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500 to-purple-600 rounded-xl opacity-70 group-hover:opacity-100 blur-sm transition-opacity" />
+                <div className="relative bg-black px-4 py-2 rounded-xl text-sm font-medium text-white border border-white/10 group-hover:border-transparent transition-colors">
                   Get Started
                 </div>
               </Link>
@@ -146,7 +146,7 @@ export function LandingNavbar() {
                   <Link
                     href="/sign-up"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white font-medium py-3 px-6 rounded-lg text-center"
+                    className="bg-gradient-to-r from-cyan-500 to-purple-600 text-white font-medium py-3 px-6 rounded-xl text-center"
                   >
                     Get Started Free
                   </Link>

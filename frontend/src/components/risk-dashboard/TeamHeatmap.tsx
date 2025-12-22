@@ -8,7 +8,10 @@
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useTeamHeatmap, type TeamHeatmapItem } from "@/hooks/use-risk-dashboard";
+import {
+  useTeamHeatmap,
+  type TeamHeatmapItem,
+} from "@/hooks/use-risk-dashboard";
 
 export function TeamHeatmap() {
   const { data, isLoading } = useTeamHeatmap();
@@ -54,7 +57,9 @@ export function TeamHeatmap() {
             </div>
             <div className="flex items-center space-x-1">
               <div className="w-3 h-3 rounded-full bg-amber-500" />
-              <span className="text-gray-600">{yellowTeams.length} at risk</span>
+              <span className="text-gray-600">
+                {yellowTeams.length} at risk
+              </span>
             </div>
             <div className="flex items-center space-x-1">
               <div className="w-3 h-3 rounded-full bg-green-500" />
@@ -145,7 +150,7 @@ function TeamCard({ team }: { team: TeamHeatmapItem }) {
   const colors = colorClasses[team.color];
 
   return (
-    <div className={`${colors.bg} ${colors.border} border rounded-lg p-4`}>
+    <div className={`${colors.bg} ${colors.border} border rounded-2xl p-4`}>
       <div className="flex items-center justify-between mb-2">
         <h4 className="font-medium text-gray-900 truncate">{team.team_name}</h4>
         <span className={`text-sm font-bold ${colors.text}`}>
@@ -193,7 +198,10 @@ function TeamHeatmapSkeleton() {
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />
+            <div
+              key={i}
+              className="h-32 bg-gray-100 rounded-2xl animate-pulse"
+            />
           ))}
         </div>
       </CardContent>
@@ -203,7 +211,12 @@ function TeamHeatmapSkeleton() {
 
 function AlertIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -216,7 +229,12 @@ function AlertIcon({ className }: { className?: string }) {
 
 function WarningIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -229,7 +247,12 @@ function WarningIcon({ className }: { className?: string }) {
 
 function CheckIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"

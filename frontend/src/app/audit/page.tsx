@@ -297,6 +297,31 @@ export default function AuditExportPage() {
     }
   }, [user, decisionsLoading, router]);
 
+  // Show empty state if no organization selected
+  if (!currentOrganization) {
+    return (
+      <AppLayout
+        title="Audit Log"
+        subtitle="Generate compliance reports for SOC2, ISO 27001, and HIPAA audits"
+      >
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-6">
+              <Shield className="w-8 h-8 text-amber-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              No Organization Selected
+            </h2>
+            <p className="text-gray-500 mb-8">
+              To generate audit reports, you need to be part of an organization.
+              Use the organization switcher in the header to create or join one.
+            </p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout
       title="Audit Log"
@@ -699,7 +724,7 @@ export default function AuditExportPage() {
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-indigo-500" />
-              What's Included
+              What&apos;s Included
             </h4>
             <ul className="space-y-3 text-sm text-gray-600">
               {[

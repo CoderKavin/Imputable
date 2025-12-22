@@ -165,7 +165,7 @@ export function LockedFeatureCard({
   upgradeUrl = "/settings/billing",
 }: LockedFeatureCardProps) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-muted-foreground/25 bg-muted/10 p-8 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-muted-foreground/25 bg-muted/10 p-8 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30">
         <Lock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
       </div>

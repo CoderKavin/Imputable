@@ -110,8 +110,8 @@ export function DecisionView({
             Decision Not Found
           </h2>
           <p className="text-gray-500">
-            The decision you're looking for doesn't exist or you don't have
-            permission to view it.
+            The decision you&apos;re looking for doesn&apos;t exist or you
+            don&apos;t have permission to view it.
           </p>
           {onBack && (
             <Button

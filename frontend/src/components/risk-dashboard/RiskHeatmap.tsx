@@ -57,7 +57,7 @@ function ViewButton({
     <button
       onClick={onClick}
       className={`
-        px-3 py-1.5 text-sm font-medium rounded-lg transition-colors
+        px-3 py-1.5 text-sm font-medium rounded-xl transition-colors
         ${
           active
             ? "bg-indigo-100 text-indigo-700"
@@ -403,7 +403,7 @@ interface StatBoxProps {
 
 function StatBox({ label, value, sublabel }: StatBoxProps) {
   return (
-    <div className="bg-gray-50 rounded-lg p-4 text-center">
+    <div className="bg-gray-50 rounded-2xl p-4 text-center">
       <p className="text-sm text-gray-500">{label}</p>
       <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
       <p className="text-xs text-gray-400">{sublabel}</p>

@@ -70,7 +70,7 @@ export function ResolveModal({ decision, onClose }: ResolveModalProps) {
 
         <CardContent className="space-y-6">
           {/* Decision Info */}
-          <div className="bg-gray-50 rounded-lg p-3">
+          <div className="bg-gray-50 rounded-xl p-3">
             <p className="text-sm font-medium text-gray-900 truncate">
               {decision.title}
             </p>
@@ -92,7 +92,7 @@ export function ResolveModal({ decision, onClose }: ResolveModalProps) {
               onChange={(e) => setResolutionNote(e.target.value)}
               placeholder="Describe the actions taken to address the tech debt..."
               rows={4}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
             />
             <p className="text-xs text-gray-500 mt-1">
               This will be recorded in the audit log.
@@ -120,7 +120,7 @@ export function ResolveModal({ decision, onClose }: ResolveModalProps) {
                   value={newReviewDate}
                   onChange={(e) => setNewReviewDate(e.target.value)}
                   min={minDate}
-                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   The decision will be monitored again at this date.
