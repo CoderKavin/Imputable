@@ -262,6 +262,73 @@ async def debug_config():
     }
 
 
+@app.get("/debug/db-test", tags=["debug"])
+async def debug_db_test():
+    """Test database connectivity directly."""
+    import os
+    import socket
+    from urllib.parse import urlparse
+
+    db_url = os.getenv("DATABASE_URL", "")
+    result = {
+        "db_url_set": bool(db_url),
+        "db_url_preview": db_url[:50] + "..." if db_url else "NOT SET",
+    }
+
+    # Parse DB URL to get host
+    if db_url:
+        try:
+            parsed = urlparse(db_url.replace("postgresql://", "http://"))
+            host = parsed.hostname
+            port = parsed.port or 5432
+            result["parsed_host"] = host
+            result["parsed_port"] = port
+
+            # Try DNS resolution
+            try:
+                # Try IPv4 first
+                ipv4_addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+                result["ipv4_addresses"] = [addr[4][0] for addr in ipv4_addrs[:3]]
+            except Exception as e:
+                result["ipv4_error"] = str(e)
+
+            try:
+                # Try IPv6
+                ipv6_addrs = socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)
+                result["ipv6_addresses"] = [addr[4][0] for addr in ipv6_addrs[:3]]
+            except Exception as e:
+                result["ipv6_error"] = str(e)
+
+            # Try raw socket connection
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(10)
+                sock.connect((result.get("ipv4_addresses", [host])[0] if result.get("ipv4_addresses") else host, port))
+                sock.close()
+                result["tcp_connection"] = "SUCCESS"
+            except Exception as e:
+                result["tcp_connection"] = f"FAILED: {str(e)}"
+
+        except Exception as e:
+            result["parse_error"] = str(e)
+
+    # Try actual SQLAlchemy connection
+    try:
+        from sqlalchemy import text
+        from .core.database import engine
+
+        async with engine.connect() as conn:
+            row = await conn.execute(text("SELECT 1 as test"))
+            result["sqlalchemy_connection"] = "SUCCESS"
+            result["query_result"] = row.scalar()
+    except Exception as e:
+        import traceback
+        result["sqlalchemy_connection"] = f"FAILED: {str(e)}"
+        result["sqlalchemy_traceback"] = traceback.format_exc()[-500:]
+
+    return result
+
+
 # Include API routes
 app.include_router(api_router, prefix=settings.api_prefix)
 

@@ -30,9 +30,32 @@ settings = get_settings()
 # Add SSL requirement for cloud databases (Supabase, Neon, etc.)
 import ssl
 import os
+import socket
+from urllib.parse import urlparse, urlunparse
 
 connect_args = {}
 db_url = str(settings.database_url)
+
+# Force IPv4 for Railway/serverless platforms that have IPv6 issues
+def resolve_hostname_to_ipv4(url: str) -> str:
+    """Resolve hostname to IPv4 address to avoid IPv6 connectivity issues."""
+    try:
+        parsed = urlparse(url.replace("postgresql://", "http://").replace("postgresql+asyncpg://", "http://"))
+        hostname = parsed.hostname
+        if hostname:
+            # Try to resolve to IPv4
+            try:
+                ipv4_info = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+                if ipv4_info:
+                    ipv4_addr = ipv4_info[0][4][0]
+                    logger.info(f"Resolved {hostname} to IPv4: {ipv4_addr}")
+                    # Replace hostname with IP in URL
+                    return url.replace(hostname, ipv4_addr)
+            except socket.gaierror as e:
+                logger.warning(f"Could not resolve {hostname} to IPv4: {e}")
+    except Exception as e:
+        logger.warning(f"Error resolving hostname: {e}")
+    return url
 
 # Always use SSL for production/cloud databases
 if os.getenv("ENVIRONMENT") == "production" or "supabase" in db_url or "neon" in db_url or "pooler" in db_url:
@@ -46,10 +69,19 @@ if os.getenv("ENVIRONMENT") == "production" or "supabase" in db_url or "neon" in
     connect_args["statement_cache_size"] = 0
     logger.info(f"Using SSL for database connection with pgbouncer compatibility")
 
+    # Force IPv4 resolution to avoid "Network unreachable" errors on Railway
+    if os.getenv("FORCE_IPV4", "true").lower() == "true":
+        db_url = resolve_hostname_to_ipv4(db_url)
+        logger.info(f"Forced IPv4 resolution for database connection")
+
 logger.info(f"Database URL (masked): {db_url[:30]}...")
 
+# Build async URL from the (possibly IPv4-resolved) db_url
+db_url_async = db_url.replace("postgresql://", "postgresql+asyncpg://")
+logger.info(f"Async Database URL (masked): {db_url_async[:40]}...")
+
 engine = create_async_engine(
-    settings.database_url_async,
+    db_url_async,
     pool_size=10,  # Keep more connections ready
     max_overflow=20,  # Allow more overflow connections
     echo=settings.database_echo,
