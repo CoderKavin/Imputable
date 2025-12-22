@@ -19,8 +19,8 @@ import type {
   AmendDecisionRequest,
 } from "@/types/decision";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// Use same-origin for Vercel Python functions
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 /**
  * Hook that provides an authenticated API client

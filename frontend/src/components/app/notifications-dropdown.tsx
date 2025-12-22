@@ -66,8 +66,7 @@ export function NotificationsDropdown() {
     setLoading(true);
     try {
       const token = await getToken();
-      const API_BASE =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
       // Try to fetch from risk dashboard update requests as notifications
       const response = await fetch(

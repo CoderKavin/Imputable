@@ -209,8 +209,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
       setLoading(true);
       try {
         const token = await getToken();
-        const API_BASE =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
         const response = await fetch(
           `${API_BASE}/api/v1/decisions?page=1&page_size=10&search=${encodeURIComponent(searchQuery)}`,
@@ -244,8 +243,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
       if (!currentOrganization?.id) return;
       try {
         const token = await getToken();
-        const API_BASE =
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
         const response = await fetch(
           `${API_BASE}/api/v1/decisions?page=1&page_size=5`,
           {

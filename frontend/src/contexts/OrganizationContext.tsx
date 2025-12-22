@@ -69,9 +69,10 @@ export function OrganizationProvider({
         return;
       }
 
-      // Use same-origin API for Vercel Python functions, or external API if configured
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-      const apiBase = apiUrl ? apiUrl.replace(/\/api\/v1\/?$/, "") : "";
+      const apiBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(
+        /\/api\/v1\/?$/,
+        "",
+      );
       const response = await fetch(`${apiBase}/api/v1/me/organizations`, {
         headers: {
           Authorization: `Bearer ${token}`,

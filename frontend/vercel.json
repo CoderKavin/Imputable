@@ -5,7 +5,8 @@
   "outputDirectory": ".next",
   "functions": {
     "api/**/*.py": {
-      "runtime": "python3.11"
+      "runtime": "python3.11",
+      "maxDuration": 30
     }
   },
   "rewrites": [
@@ -13,9 +14,16 @@
       "source": "/api/v1/me/organizations",
       "destination": "/api/v1/me/organizations"
     },
+    { "source": "/api/v1/decisions", "destination": "/api/v1/decisions/index" },
     {
-      "source": "/api/health",
-      "destination": "/api/health"
-    }
+      "source": "/api/v1/decisions/:id/versions",
+      "destination": "/api/v1/decisions/[id]/versions"
+    },
+    {
+      "source": "/api/v1/decisions/:id",
+      "destination": "/api/v1/decisions/[id]"
+    },
+    { "source": "/api/v1/audit", "destination": "/api/v1/audit/index" },
+    { "source": "/api/health", "destination": "/api/health" }
   ]
 }

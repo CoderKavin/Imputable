@@ -24,7 +24,8 @@ import type {
 // CONFIGURATION
 // =============================================================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use same-origin for Vercel Python functions (empty string = same origin)
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 // =============================================================================
 // AUTH TYPES

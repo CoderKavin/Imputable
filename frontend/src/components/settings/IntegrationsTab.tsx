@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+// Use same-origin for Vercel Python functions
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 // =============================================================================
 // TYPES
