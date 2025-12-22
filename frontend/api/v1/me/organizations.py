@@ -1,263 +1,25 @@
-"""Organizations API - GET and POST /api/v1/me/organizations"""
+"""Organizations API - Simplified for Vercel"""
 
-import os
-import sys
-import re
-import json
-import asyncio
-import ssl
-import enum
-import logging
-from uuid import UUID, uuid4
-from datetime import datetime
 from http.server import BaseHTTPRequestHandler
-from contextlib import asynccontextmanager
+import json
+import os
 
-# SQLAlchemy
-from sqlalchemy import String, ForeignKey, Enum, func, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-# Firebase
-import firebase_admin
-from firebase_admin import credentials, auth
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# =============================================================================
-# DATABASE
-# =============================================================================
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-_engine = None
-_session_factory = None
-
-
-def get_engine():
-    global _engine
-    if _engine is None and DATABASE_URL:
-        db_url = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-        _engine = create_async_engine(
-            db_url, pool_size=1, max_overflow=2, pool_pre_ping=True,
-            connect_args={"ssl": ssl_ctx, "prepared_statement_cache_size": 0, "statement_cache_size": 0},
-        )
-    return _engine
-
-
-def get_session_factory():
-    global _session_factory
-    if _session_factory is None and get_engine():
-        _session_factory = async_sessionmaker(get_engine(), class_=AsyncSession, expire_on_commit=False)
-    return _session_factory
-
-
-@asynccontextmanager
-async def get_db():
-    factory = get_session_factory()
-    if not factory:
-        raise Exception("Database not configured")
-    async with factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except:
-            await session.rollback()
-            raise
-
-
-# =============================================================================
-# MODELS
-# =============================================================================
-
-class Base(DeclarativeBase):
-    pass
-
-
-class SubscriptionTier(str, enum.Enum):
-    FREE = "free"
-    PRO = "pro"
-    ENTERPRISE = "enterprise"
-
-
-class User(Base):
-    __tablename__ = "users"
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    avatar_url: Mapped[str | None] = mapped_column(String(500))
-    auth_provider: Mapped[str | None] = mapped_column(String(50))
-    auth_provider_id: Mapped[str | None] = mapped_column(String(255))
-    deleted_at: Mapped[datetime | None] = mapped_column()
-
-
-class Organization(Base):
-    __tablename__ = "organizations"
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    settings: Mapped[dict] = mapped_column(JSONB, default=dict)
-    subscription_tier: Mapped[SubscriptionTier] = mapped_column(
-        Enum(SubscriptionTier, name="subscription_tier", values_callable=lambda x: [e.value for e in x]),
-        default=SubscriptionTier.FREE
-    )
-    deleted_at: Mapped[datetime | None] = mapped_column()
-
-
-class OrganizationMember(Base):
-    __tablename__ = "organization_members"
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    organization_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id"))
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("users.id"))
-    role: Mapped[str] = mapped_column(String(50), default="member")
-
-
-# =============================================================================
-# FIREBASE AUTH
-# =============================================================================
-
-_firebase_app = None
-
-
-def init_firebase():
-    global _firebase_app
-    if _firebase_app:
-        return _firebase_app
-
-    project_id = os.environ.get("FIREBASE_PROJECT_ID")
-    client_email = os.environ.get("FIREBASE_CLIENT_EMAIL")
-    private_key = os.environ.get("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n")
-
-    if not all([project_id, client_email, private_key]):
-        return None
-
-    try:
-        cred = credentials.Certificate({
-            "type": "service_account",
-            "project_id": project_id,
-            "private_key": private_key,
-            "client_email": client_email,
-            "token_uri": "https://oauth2.googleapis.com/token",
-        })
-        _firebase_app = firebase_admin.initialize_app(cred)
-        return _firebase_app
-    except ValueError:
-        return firebase_admin.get_app()
-    except Exception as e:
-        logger.error(f"Firebase init error: {e}")
-        return None
-
-
-def verify_token(token: str):
-    if not init_firebase():
-        return None
-    try:
-        decoded = auth.verify_id_token(token)
-        return {
-            "uid": decoded.get("uid", decoded.get("user_id", "")),
-            "email": decoded.get("email"),
-            "name": decoded.get("name"),
-            "picture": decoded.get("picture"),
-        }
-    except Exception as e:
-        logger.error(f"Token error: {e}")
-        return None
-
-
-# =============================================================================
-# HANDLERS
-# =============================================================================
-
-async def get_or_create_user(session, fb_user):
-    result = await session.execute(
-        select(User).where(User.auth_provider == "firebase", User.auth_provider_id == fb_user["uid"], User.deleted_at.is_(None))
-    )
-    user = result.scalar_one_or_none()
-    if user:
-        return user
-
-    user = User(
-        id=uuid4(),
-        email=fb_user.get("email") or f"{fb_user['uid']}@firebase.local",
-        name=fb_user.get("name") or fb_user.get("email") or f"User {fb_user['uid'][-8:]}",
-        avatar_url=fb_user.get("picture"),
-        auth_provider="firebase",
-        auth_provider_id=fb_user["uid"],
-    )
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
-
-
-async def get_orgs(session, user_id):
-    result = await session.execute(
-        select(Organization, OrganizationMember.role)
-        .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
-        .where(OrganizationMember.user_id == user_id, Organization.deleted_at.is_(None))
-        .order_by(Organization.name)
-    )
-    return {"organizations": [{"id": str(o.id), "name": o.name, "slug": o.slug, "role": r} for o, r in result.all()]}
-
-
-async def create_org(session, user_id, name, slug):
-    slug = re.sub(r'[^a-z0-9-]', '-', slug.lower().strip())
-    slug = re.sub(r'-+', '-', slug).strip('-')
-
-    if len(slug) < 3:
-        return {"error": "Slug must be at least 3 characters"}, 400
-
-    existing = await session.execute(select(Organization).where(Organization.slug == slug))
-    if existing.scalar_one_or_none():
-        return {"error": "Slug already exists"}, 400
-
-    org = Organization(id=uuid4(), name=name, slug=slug, settings={}, subscription_tier=SubscriptionTier.FREE)
-    session.add(org)
-
-    member = OrganizationMember(id=uuid4(), organization_id=org.id, user_id=user_id, role="owner")
-    session.add(member)
-
-    await session.commit()
-    return {"id": str(org.id), "name": org.name, "slug": org.slug, "role": "owner"}, 201
-
-
-async def handle(method, headers, body):
-    auth_header = headers.get("Authorization", headers.get("authorization", ""))
-    if not auth_header.startswith("Bearer "):
-        return {"error": "Not authenticated"}, 401
-
-    fb_user = verify_token(auth_header[7:])
-    if not fb_user:
-        return {"error": "Invalid token"}, 401
-
-    async with get_db() as session:
-        user = await get_or_create_user(session, fb_user)
-
-        if method == "GET":
-            return await get_orgs(session, user.id), 200
-        elif method == "POST":
-            data = json.loads(body) if body else {}
-            name, slug = data.get("name", "").strip(), data.get("slug", "").strip()
-            if not name or not slug:
-                return {"error": "Name and slug required"}, 400
-            return await create_org(session, user.id, name, slug)
-
-    return {"error": "Method not allowed"}, 405
-
-
-# =============================================================================
-# HANDLER CLASS
-# =============================================================================
+def get_response(status, body):
+    """Helper to format response."""
+    return status, json.dumps(body)
 
 class handler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self._cors()
+    def _send(self, status, body):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Organization-ID")
         self.end_headers()
+        self.wfile.write(body.encode() if isinstance(body, str) else json.dumps(body).encode())
+
+    def do_OPTIONS(self):
+        self._send(204, "")
 
     def do_GET(self):
         self._handle("GET")
@@ -265,31 +27,148 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._handle("POST")
 
-    def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-
     def _handle(self, method):
         try:
-            content_len = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_len).decode() if content_len > 0 else None
+            # Check auth header
+            auth = self.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                self._send(401, {"error": "Not authenticated"})
+                return
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result, status = loop.run_until_complete(handle(method, dict(self.headers), body))
-            loop.close()
+            token = auth[7:]
 
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
+            # Import heavy deps only when needed
+            import ssl
+            import firebase_admin
+            from firebase_admin import credentials, auth as fb_auth
+            from sqlalchemy import create_engine, text
+
+            # Verify Firebase token
+            try:
+                # Initialize Firebase if needed
+                try:
+                    app = firebase_admin.get_app()
+                except ValueError:
+                    project_id = os.environ.get("FIREBASE_PROJECT_ID")
+                    client_email = os.environ.get("FIREBASE_CLIENT_EMAIL")
+                    private_key = os.environ.get("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n")
+
+                    if not all([project_id, client_email, private_key]):
+                        self._send(500, {"error": "Firebase not configured"})
+                        return
+
+                    cred = credentials.Certificate({
+                        "type": "service_account",
+                        "project_id": project_id,
+                        "private_key": private_key,
+                        "client_email": client_email,
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                    })
+                    firebase_admin.initialize_app(cred)
+
+                decoded = fb_auth.verify_id_token(token)
+                firebase_uid = decoded.get("uid") or decoded.get("user_id")
+                firebase_email = decoded.get("email")
+                firebase_name = decoded.get("name")
+            except Exception as e:
+                self._send(401, {"error": f"Invalid token: {str(e)}"})
+                return
+
+            # Connect to database (sync for simplicity)
+            db_url = os.environ.get("DATABASE_URL", "")
+            if not db_url:
+                self._send(500, {"error": "Database not configured"})
+                return
+
+            # Create sync engine with SSL
+            engine = create_engine(
+                db_url,
+                connect_args={"sslmode": "require"}
+            )
+
+            with engine.connect() as conn:
+                # Get or create user
+                result = conn.execute(text("""
+                    SELECT id, email, name FROM users
+                    WHERE auth_provider = 'firebase' AND auth_provider_id = :uid AND deleted_at IS NULL
+                """), {"uid": firebase_uid})
+                user_row = result.fetchone()
+
+                if user_row:
+                    user_id = user_row[0]
+                else:
+                    # Create user
+                    email = firebase_email or f"{firebase_uid}@firebase.local"
+                    name = firebase_name or email.split("@")[0]
+                    result = conn.execute(text("""
+                        INSERT INTO users (id, email, name, auth_provider, auth_provider_id, created_at, updated_at)
+                        VALUES (gen_random_uuid(), :email, :name, 'firebase', :uid, NOW(), NOW())
+                        RETURNING id
+                    """), {"email": email, "name": name, "uid": firebase_uid})
+                    user_id = result.fetchone()[0]
+                    conn.commit()
+
+                if method == "GET":
+                    # Get user's organizations
+                    result = conn.execute(text("""
+                        SELECT o.id, o.name, o.slug, om.role
+                        FROM organizations o
+                        JOIN organization_members om ON om.organization_id = o.id
+                        WHERE om.user_id = :user_id AND o.deleted_at IS NULL
+                        ORDER BY o.name
+                    """), {"user_id": user_id})
+
+                    orgs = [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3]} for r in result.fetchall()]
+                    self._send(200, {"organizations": orgs})
+
+                elif method == "POST":
+                    # Create organization
+                    content_len = int(self.headers.get("Content-Length", 0))
+                    body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
+
+                    name = body.get("name", "").strip()
+                    slug = body.get("slug", "").strip().lower()
+
+                    if not name or not slug:
+                        self._send(400, {"error": "Name and slug required"})
+                        return
+
+                    # Clean slug
+                    import re
+                    slug = re.sub(r'[^a-z0-9-]', '-', slug)
+                    slug = re.sub(r'-+', '-', slug).strip('-')
+
+                    if len(slug) < 3:
+                        self._send(400, {"error": "Slug must be at least 3 characters"})
+                        return
+
+                    # Check if slug exists
+                    result = conn.execute(text("SELECT id FROM organizations WHERE slug = :slug"), {"slug": slug})
+                    if result.fetchone():
+                        self._send(400, {"error": "Slug already exists"})
+                        return
+
+                    # Create org
+                    result = conn.execute(text("""
+                        INSERT INTO organizations (id, name, slug, settings, subscription_tier, created_at)
+                        VALUES (gen_random_uuid(), :name, :slug, '{}', 'free', NOW())
+                        RETURNING id
+                    """), {"name": name, "slug": slug})
+                    org_id = result.fetchone()[0]
+
+                    # Add user as owner
+                    conn.execute(text("""
+                        INSERT INTO organization_members (id, organization_id, user_id, role, created_at)
+                        VALUES (gen_random_uuid(), :org_id, :user_id, 'owner', NOW())
+                    """), {"org_id": org_id, "user_id": user_id})
+
+                    conn.commit()
+
+                    self._send(201, {"id": str(org_id), "name": name, "slug": slug, "role": "owner"})
+                else:
+                    self._send(405, {"error": "Method not allowed"})
+
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            self._send(500, {"error": str(e)})
