@@ -1,22 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Building2,
-  CreditCard,
-  Users,
-  Plug,
-  Bell,
-  Shield,
-} from "lucide-react";
+import { Building2, CreditCard, Users, Plug, Bell, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IntegrationsTab } from "@/components/settings/IntegrationsTab";
+import { GeneralTab } from "@/components/settings/GeneralTab";
+import { TeamTab } from "@/components/settings/TeamTab";
+import { NotificationsTab } from "@/components/settings/NotificationsTab";
+import { SecurityTab } from "@/components/settings/SecurityTab";
+import { BillingTab } from "@/components/settings/BillingTab";
 
 interface SettingsContentProps {
   hasOrg: boolean;
 }
 
-type TabId = "general" | "integrations" | "billing" | "team" | "notifications" | "security";
+type TabId =
+  | "general"
+  | "integrations"
+  | "billing"
+  | "team"
+  | "notifications"
+  | "security";
 
 interface Tab {
   id: TabId;
@@ -65,7 +69,7 @@ const tabs: Tab[] = [
 ];
 
 export function SettingsContent({ hasOrg }: SettingsContentProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("integrations");
+  const [activeTab, setActiveTab] = useState<TabId>("general");
 
   if (!hasOrg) {
     return <NoOrganizationState />;
@@ -88,12 +92,22 @@ export function SettingsContent({ hasOrg }: SettingsContentProps) {
                   "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200",
                   isActive
                     ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800",
                 )}
               >
-                <Icon className={cn("w-5 h-5", isActive && "text-indigo-600 dark:text-indigo-400")} />
+                <Icon
+                  className={cn(
+                    "w-5 h-5",
+                    isActive && "text-indigo-600 dark:text-indigo-400",
+                  )}
+                />
                 <div>
-                  <p className={cn("font-medium text-sm", isActive && "text-indigo-700 dark:text-indigo-300")}>
+                  <p
+                    className={cn(
+                      "font-medium text-sm",
+                      isActive && "text-indigo-700 dark:text-indigo-300",
+                    )}
+                  >
                     {tab.label}
                   </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-0.5 hidden lg:block">
@@ -121,111 +135,6 @@ export function SettingsContent({ hasOrg }: SettingsContentProps) {
   );
 }
 
-// =============================================================================
-// PLACEHOLDER TABS
-// =============================================================================
-
-function GeneralTab() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-          General Settings
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage your organization&apos;s basic information and preferences.
-        </p>
-      </div>
-      <PlaceholderContent icon={Building2} message="Organization settings coming soon" />
-    </div>
-  );
-}
-
-function BillingTab() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-          Billing & Subscription
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage your subscription plan, payment methods, and billing history.
-        </p>
-      </div>
-      <PlaceholderContent icon={CreditCard} message="Billing settings coming soon" />
-    </div>
-  );
-}
-
-function TeamTab() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-          Team Management
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Invite members, manage roles, and configure team permissions.
-        </p>
-      </div>
-      <PlaceholderContent icon={Users} message="Team management coming soon" />
-    </div>
-  );
-}
-
-function NotificationsTab() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-          Notification Preferences
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Configure how and when you receive notifications.
-        </p>
-      </div>
-      <PlaceholderContent icon={Bell} message="Notification settings coming soon" />
-    </div>
-  );
-}
-
-function SecurityTab() {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-          Security Settings
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage authentication methods and security policies.
-        </p>
-      </div>
-      <PlaceholderContent icon={Shield} message="Security settings coming soon" />
-    </div>
-  );
-}
-
-// =============================================================================
-// HELPER COMPONENTS
-// =============================================================================
-
-function PlaceholderContent({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ElementType;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
-        <Icon className="w-8 h-8 text-zinc-400 dark:text-zinc-500" />
-      </div>
-      <p className="text-zinc-500 dark:text-zinc-400">{message}</p>
-    </div>
-  );
-}
-
 function NoOrganizationState() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -237,8 +146,8 @@ function NoOrganizationState() {
           No Organization Selected
         </h2>
         <p className="text-zinc-500 dark:text-zinc-400 mb-8">
-          To access settings, you need to be part of an organization.
-          Use the organization switcher in the header to create or join one.
+          To access settings, you need to be part of an organization. Use the
+          organization switcher in the header to create or join one.
         </p>
       </div>
     </div>
