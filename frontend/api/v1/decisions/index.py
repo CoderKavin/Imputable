@@ -5,41 +5,33 @@ import sys
 import json
 import asyncio
 import hashlib
-from uuid import uuid4
+from uuid import UUID, uuid4
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
-# Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from flask import Flask, request, jsonify
 from sqlalchemy import select, func, desc
-
 from api.lib.db import (
-    get_db_session, User, Organization, OrganizationMember,
+    get_db_session, User, OrganizationMember,
     Decision, DecisionVersion, DecisionStatus, ImpactLevel
 )
-from api.lib.auth import verify_token, get_or_create_user, get_auth_from_request
-
-app = Flask(__name__)
+from api.lib.auth import verify_token, get_or_create_user
 
 
-def cors_headers():
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Organization-ID",
-    }
-
-
-@app.after_request
-def after_request(response):
-    for key, value in cors_headers().items():
-        response.headers[key] = value
-    return response
+def cors_response(handler, status=200, body=None):
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Organization-ID")
+    handler.end_headers()
+    if body:
+        handler.wfile.write(json.dumps(body).encode())
 
 
 async def get_next_decision_number(session, org_id) -> int:
-    """Get the next decision number for an organization."""
     result = await session.execute(
         select(func.coalesce(func.max(Decision.decision_number), 0))
         .where(Decision.organization_id == org_id)
@@ -48,19 +40,13 @@ async def get_next_decision_number(session, org_id) -> int:
 
 
 async def list_decisions(session, org_id, page: int, page_size: int, status_filter: str | None, search: str | None):
-    """List decisions with pagination."""
-    # Base query
     query = (
         select(Decision, DecisionVersion, User)
         .join(DecisionVersion, Decision.current_version_id == DecisionVersion.id)
         .join(User, Decision.created_by == User.id)
-        .where(
-            Decision.organization_id == org_id,
-            Decision.deleted_at.is_(None),
-        )
+        .where(Decision.organization_id == org_id, Decision.deleted_at.is_(None))
     )
 
-    # Apply status filter
     if status_filter:
         try:
             status = DecisionStatus(status_filter)
@@ -68,31 +54,18 @@ async def list_decisions(session, org_id, page: int, page_size: int, status_filt
         except ValueError:
             pass
 
-    # Apply search filter
     if search:
-        search_pattern = f"%{search}%"
-        query = query.where(DecisionVersion.title.ilike(search_pattern))
+        query = query.where(DecisionVersion.title.ilike(f"%{search}%"))
 
-    # Get total count
     count_query = select(func.count()).select_from(query.subquery())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar() or 0
+    total = (await session.execute(count_query)).scalar() or 0
 
-    # Apply pagination and ordering
-    query = query.order_by(desc(Decision.created_at))
-    query = query.offset((page - 1) * page_size).limit(page_size)
-
-    result = await session.execute(query)
-    rows = result.all()
+    query = query.order_by(desc(Decision.created_at)).offset((page - 1) * page_size).limit(page_size)
+    rows = (await session.execute(query)).all()
 
     items = []
     for decision, version, creator in rows:
-        # Get version count
-        version_count_result = await session.execute(
-            select(func.count()).where(DecisionVersion.decision_id == decision.id)
-        )
-        version_count = version_count_result.scalar() or 1
-
+        vc = (await session.execute(select(func.count()).where(DecisionVersion.decision_id == decision.id))).scalar() or 1
         items.append({
             "id": str(decision.id),
             "organization_id": str(decision.organization_id),
@@ -101,26 +74,18 @@ async def list_decisions(session, org_id, page: int, page_size: int, status_filt
             "title": version.title,
             "impact_level": version.impact_level.value if hasattr(version.impact_level, 'value') else version.impact_level,
             "tags": version.tags or [],
-            "created_by": {
-                "id": str(creator.id),
-                "name": creator.name,
-                "email": creator.email,
-            },
+            "created_by": {"id": str(creator.id), "name": creator.name, "email": creator.email},
             "created_at": decision.created_at.isoformat() if decision.created_at else None,
-            "version_count": version_count,
+            "version_count": vc,
         })
 
     return {
-        "items": items,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
+        "items": items, "total": total, "page": page, "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0,
     }
 
 
 async def create_decision(session, org_id, user_id, data: dict):
-    """Create a new decision."""
     title = data.get("title", "").strip()
     content = data.get("content", {})
     impact_level = data.get("impact_level", "medium")
@@ -129,143 +94,117 @@ async def create_decision(session, org_id, user_id, data: dict):
     if not title:
         return {"error": "Title is required"}, 400
 
-    # Get next decision number
     decision_number = await get_next_decision_number(session, org_id)
-
-    # Create decision
-    decision_id = uuid4()
-    version_id = uuid4()
+    decision_id, version_id = uuid4(), uuid4()
 
     decision = Decision(
-        id=decision_id,
-        organization_id=org_id,
-        decision_number=decision_number,
-        status=DecisionStatus.DRAFT,
-        created_by=user_id,
+        id=decision_id, organization_id=org_id, decision_number=decision_number,
+        status=DecisionStatus.DRAFT, created_by=user_id,
     )
     session.add(decision)
 
-    # Create content hash
-    content_str = json.dumps(content, sort_keys=True)
-    content_hash = hashlib.sha256(content_str.encode()).hexdigest()
+    content_hash = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
-    # Create first version
     version = DecisionVersion(
-        id=version_id,
-        decision_id=decision_id,
-        version_number=1,
-        title=title,
+        id=version_id, decision_id=decision_id, version_number=1, title=title,
         impact_level=ImpactLevel(impact_level) if impact_level in [e.value for e in ImpactLevel] else ImpactLevel.MEDIUM,
-        content=content,
-        tags=tags,
-        created_by=user_id,
-        change_summary="Initial version",
-        content_hash=content_hash,
+        content=content, tags=tags, created_by=user_id,
+        change_summary="Initial version", content_hash=content_hash,
     )
     session.add(version)
 
-    # Update decision with current version
     await session.flush()
     decision.current_version_id = version_id
-
     await session.commit()
 
-    # Fetch creator for response
-    creator_result = await session.execute(select(User).where(User.id == user_id))
-    creator = creator_result.scalar_one()
+    creator = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
 
     return {
-        "id": str(decision.id),
-        "organization_id": str(decision.organization_id),
-        "decision_number": decision.decision_number,
-        "status": decision.status.value,
-        "created_by": {
-            "id": str(creator.id),
-            "name": creator.name,
-            "email": creator.email,
-        },
+        "id": str(decision.id), "organization_id": str(decision.organization_id),
+        "decision_number": decision.decision_number, "status": decision.status.value,
+        "created_by": {"id": str(creator.id), "name": creator.name, "email": creator.email},
         "created_at": decision.created_at.isoformat() if decision.created_at else datetime.utcnow().isoformat(),
         "version": {
-            "id": str(version.id),
-            "version_number": version.version_number,
-            "title": version.title,
-            "impact_level": version.impact_level.value,
-            "content": version.content,
-            "tags": version.tags or [],
-            "content_hash": version.content_hash,
-            "created_by": {
-                "id": str(creator.id),
-                "name": creator.name,
-            },
+            "id": str(version.id), "version_number": 1, "title": version.title,
+            "impact_level": version.impact_level.value, "content": version.content,
+            "tags": version.tags or [], "content_hash": version.content_hash,
+            "created_by": {"id": str(creator.id), "name": creator.name},
             "created_at": version.created_at.isoformat() if version.created_at else datetime.utcnow().isoformat(),
-            "change_summary": version.change_summary,
-            "is_current": True,
+            "change_summary": version.change_summary, "is_current": True,
         },
         "version_count": 1,
     }, 201
 
 
-@app.route("/api/v1/decisions", methods=["GET", "POST", "OPTIONS"])
-def decisions_handler():
-    if request.method == "OPTIONS":
-        return "", 204
+async def handle_request(method, headers, body, query_params):
+    auth_header = headers.get("Authorization", headers.get("authorization", ""))
+    if not auth_header.startswith("Bearer "):
+        return {"error": "Not authenticated"}, 401
 
-    # Auth check
-    token = get_auth_from_request(dict(request.headers))
-    if not token:
-        return jsonify({"error": "Not authenticated"}), 401
-
-    firebase_user = verify_token(token)
+    firebase_user = verify_token(auth_header[7:])
     if not firebase_user:
-        return jsonify({"error": "Invalid token"}), 401
+        return {"error": "Invalid token"}, 401
 
-    org_id = request.headers.get("X-Organization-ID")
+    org_id = headers.get("X-Organization-ID", headers.get("x-organization-id", ""))
     if not org_id:
-        return jsonify({"error": "X-Organization-ID header required"}), 400
-
-    async def handle():
-        async with get_db_session() as session:
-            user = await get_or_create_user(session, firebase_user)
-
-            # Verify org membership
-            from uuid import UUID
-            try:
-                org_uuid = UUID(org_id)
-            except ValueError:
-                return {"error": "Invalid organization ID"}, 400
-
-            membership = await session.execute(
-                select(OrganizationMember).where(
-                    OrganizationMember.organization_id == org_uuid,
-                    OrganizationMember.user_id == user.id,
-                )
-            )
-            if not membership.scalar_one_or_none():
-                return {"error": "Not a member of this organization"}, 403
-
-            if request.method == "GET":
-                page = request.args.get("page", 1, type=int)
-                page_size = request.args.get("page_size", 20, type=int)
-                status = request.args.get("status")
-                search = request.args.get("search")
-
-                result = await list_decisions(session, org_uuid, page, page_size, status, search)
-                return result, 200
-
-            elif request.method == "POST":
-                data = request.get_json() or {}
-                return await create_decision(session, org_uuid, user.id, data)
+        return {"error": "X-Organization-ID header required"}, 400
 
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result, status = loop.run_until_complete(handle())
-        loop.close()
-        return jsonify(result), status
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        org_uuid = UUID(org_id)
+    except ValueError:
+        return {"error": "Invalid organization ID"}, 400
+
+    async with get_db_session() as session:
+        user = await get_or_create_user(session, firebase_user)
+
+        membership = await session.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == org_uuid,
+                OrganizationMember.user_id == user.id,
+            )
+        )
+        if not membership.scalar_one_or_none():
+            return {"error": "Not a member of this organization"}, 403
+
+        if method == "GET":
+            page = int(query_params.get("page", ["1"])[0])
+            page_size = int(query_params.get("page_size", ["20"])[0])
+            status = query_params.get("status", [None])[0]
+            search = query_params.get("search", [None])[0]
+            return await list_decisions(session, org_uuid, page, page_size, status, search), 200
+
+        elif method == "POST":
+            data = json.loads(body) if body else {}
+            return await create_decision(session, org_uuid, user.id, data)
+
+    return {"error": "Method not allowed"}, 405
 
 
-handler = app
+class handler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        cors_response(self, 204)
+
+    def do_GET(self):
+        self._handle("GET")
+
+    def do_POST(self):
+        self._handle("POST")
+
+    def _handle(self, method):
+        try:
+            parsed = urlparse(self.path)
+            query_params = parse_qs(parsed.query)
+
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode() if content_length > 0 else None
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result, status = loop.run_until_complete(handle_request(method, dict(self.headers), body, query_params))
+            loop.close()
+
+            cors_response(self, status, result)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            cors_response(self, 500, {"error": str(e)})
