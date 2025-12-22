@@ -69,9 +69,9 @@ export function OrganizationProvider({
         return;
       }
 
-      const apiBase = (
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-      ).replace(/\/api\/v1\/?$/, "");
+      // Use same-origin API for Vercel Python functions, or external API if configured
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const apiBase = apiUrl ? apiUrl.replace(/\/api\/v1\/?$/, "") : "";
       const response = await fetch(`${apiBase}/api/v1/me/organizations`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -136,9 +136,9 @@ export function OrganizationProvider({
         throw new Error("Not authenticated");
       }
 
-      const apiBase = (
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-      ).replace(/\/api\/v1\/?$/, "");
+      // Use same-origin API for Vercel Python functions, or external API if configured
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const apiBase = apiUrl ? apiUrl.replace(/\/api\/v1\/?$/, "") : "";
       const response = await fetch(`${apiBase}/api/v1/me/organizations`, {
         method: "POST",
         headers: {

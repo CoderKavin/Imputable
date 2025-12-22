@@ -2,5 +2,20 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "functions": {
+    "api/**/*.py": {
+      "runtime": "python3.11"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/v1/me/organizations",
+      "destination": "/api/v1/me/organizations"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    }
+  ]
 }
