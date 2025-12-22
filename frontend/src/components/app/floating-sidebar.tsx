@@ -63,8 +63,12 @@ export function FloatingSidebar() {
               <span className="text-white font-bold text-sm">IM</span>
             </div>
             <div>
-              <span className="font-semibold text-gray-900 text-lg">Imputable</span>
-              <span className="block text-xs text-gray-400">Decision Ledger</span>
+              <span className="font-semibold text-gray-900 text-lg">
+                Imputable
+              </span>
+              <span className="block text-xs text-gray-400">
+                Decision Ledger
+              </span>
             </div>
           </Link>
         </div>
@@ -73,7 +77,8 @@ export function FloatingSidebar() {
         <nav className="flex-1 px-3 py-2">
           <div className="space-y-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const isActive =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}
@@ -82,13 +87,17 @@ export function FloatingSidebar() {
                     "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200",
                     isActive
                       ? "bg-gray-900 text-white shadow-lg shadow-gray-900/10"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
                   )}
                 >
-                  <span className={cn(
-                    "transition-colors",
-                    isActive ? "text-white" : "text-gray-400 group-hover:text-gray-600"
-                  )}>
+                  <span
+                    className={cn(
+                      "transition-colors",
+                      isActive
+                        ? "text-white"
+                        : "text-gray-400 group-hover:text-gray-600",
+                    )}
+                  >
                     {item.icon}
                   </span>
                   {item.label}
@@ -102,14 +111,19 @@ export function FloatingSidebar() {
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="w-4 h-4 text-indigo-500" />
-                <span className="text-sm font-semibold text-gray-900">Upgrade to Pro</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  Upgrade to Pro
+                </span>
               </div>
               <p className="text-xs text-gray-500 mb-3">
                 Get unlimited decisions and advanced analytics.
               </p>
-              <button className="w-full py-2 px-3 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors">
+              <Link
+                href="/pricing"
+                className="block w-full py-2 px-3 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors text-center"
+              >
                 View Plans
-              </button>
+              </Link>
             </div>
           </div>
         </nav>
@@ -127,7 +141,7 @@ export function FloatingSidebar() {
                     "flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200",
                     isActive
                       ? "bg-gray-100 text-gray-900"
-                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                      : "text-gray-500 hover:bg-gray-50 hover:text-gray-700",
                   )}
                 >
                   <span className="text-gray-400">{item.icon}</span>
