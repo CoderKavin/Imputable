@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Plus, ChevronDown, Check, Building2 } from "lucide-react";
 
 export function OrganizationSwitcher() {
   const {
@@ -11,7 +12,7 @@ export function OrganizationSwitcher() {
     currentOrganization,
     loading,
     switchOrganization,
-    createOrganization
+    createOrganization,
   } = useOrganization();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -60,30 +61,88 @@ export function OrganizationSwitcher() {
       setShowCreateForm(false);
       setIsOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create organization");
+      setError(
+        err instanceof Error ? err.message : "Failed to create organization",
+      );
     } finally {
       setCreating(false);
     }
   };
 
+  const openCreateForm = () => {
+    setIsOpen(true);
+    setShowCreateForm(true);
+    setError(null);
+  };
+
   if (loading) {
-    return (
-      <div className="h-9 w-40 rounded-lg bg-gray-200 animate-pulse" />
-    );
+    return <div className="h-9 w-40 rounded-lg bg-gray-200 animate-pulse" />;
   }
 
+  // No organizations - show prominent create button
   if (!currentOrganization && organizations.length === 0) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          setIsOpen(true);
-          setShowCreateForm(true);
-        }}
-      >
-        Create Organization
-      </Button>
+      <div className="relative" ref={menuRef}>
+        <Button variant="outline" size="sm" onClick={openCreateForm}>
+          <Plus className="w-4 h-4 mr-2" />
+          Create Organization
+        </Button>
+
+        {isOpen && showCreateForm && (
+          <div className="absolute right-0 mt-2 w-80 rounded-lg bg-white shadow-lg border border-gray-200 p-4 z-50">
+            <div className="flex items-center gap-2 mb-4">
+              <Building2 className="w-5 h-5 text-gray-500" />
+              <p className="text-sm font-semibold text-gray-900">
+                Create Your Organization
+              </p>
+            </div>
+            <form onSubmit={handleCreateOrg}>
+              {error && (
+                <div className="mb-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded">
+                  {error}
+                </div>
+              )}
+              <Input
+                type="text"
+                placeholder="Organization name"
+                value={newOrgName}
+                onChange={(e) => setNewOrgName(e.target.value)}
+                disabled={creating}
+                className="mb-3"
+                autoFocus
+              />
+              <p className="text-xs text-gray-500 mb-3">
+                This will create a new workspace for your team.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsOpen(false);
+                    setShowCreateForm(false);
+                    setNewOrgName("");
+                    setError(null);
+                  }}
+                  disabled={creating}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={creating || !newOrgName.trim()}
+                  className="flex-1"
+                >
+                  {creating ? "Creating..." : "Create"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -99,18 +158,13 @@ export function OrganizationSwitcher() {
         <span className="text-sm font-medium text-gray-900 truncate flex-1 text-left">
           {currentOrganization?.name || "Select Organization"}
         </span>
-        <svg
+        <ChevronDown
           className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        />
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-64 rounded-lg bg-white shadow-lg border border-gray-200 py-1 z-50">
+        <div className="absolute right-0 mt-2 w-64 rounded-lg bg-white shadow-lg border border-gray-200 py-1 z-50">
           {!showCreateForm ? (
             <>
               <div className="px-3 py-2 border-b border-gray-100">
@@ -135,9 +189,7 @@ export function OrganizationSwitcher() {
                       {org.name}
                     </span>
                     {currentOrganization?.id === org.id && (
-                      <svg className="w-4 h-4 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
+                      <Check className="w-4 h-4 text-primary" />
                     )}
                   </button>
                 ))}
@@ -148,16 +200,16 @@ export function OrganizationSwitcher() {
                   onClick={() => setShowCreateForm(true)}
                   className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                 >
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
+                  <Plus className="w-5 h-5 text-gray-400" />
                   Create new organization
                 </button>
               </div>
             </>
           ) : (
             <div className="p-3">
-              <p className="text-sm font-medium text-gray-900 mb-3">Create Organization</p>
+              <p className="text-sm font-medium text-gray-900 mb-3">
+                Create Organization
+              </p>
               <form onSubmit={handleCreateOrg}>
                 {error && (
                   <div className="mb-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded">
