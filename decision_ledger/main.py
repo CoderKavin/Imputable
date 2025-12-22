@@ -72,8 +72,10 @@ cors_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:8000",
+    "http://127.0.0.1:3000",
     "https://imputable.vercel.app",
     "https://www.imputable.vercel.app",
+    "https://imputable-git-main-coderkavin.vercel.app",
 ]
 
 # Add any additional configured origins
