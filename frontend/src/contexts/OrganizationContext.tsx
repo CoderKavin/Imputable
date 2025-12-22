@@ -69,14 +69,14 @@ export function OrganizationProvider({
         return;
       }
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/me/organizations`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const apiBase = (
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      ).replace(/\/api\/v1\/?$/, "");
+      const response = await fetch(`${apiBase}/api/v1/me/organizations`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
         },
-      );
+      });
 
       if (!response.ok) {
         throw new Error("Failed to fetch organizations");
@@ -136,17 +136,17 @@ export function OrganizationProvider({
         throw new Error("Not authenticated");
       }
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/me/organizations`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name, slug }),
+      const apiBase = (
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      ).replace(/\/api\/v1\/?$/, "");
+      const response = await fetch(`${apiBase}/api/v1/me/organizations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ name, slug }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
