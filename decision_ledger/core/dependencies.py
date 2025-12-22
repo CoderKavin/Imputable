@@ -174,40 +174,46 @@ async def get_current_user(
 
     # Try Firebase authentication first if enabled
     if settings.firebase_enabled:
-        logger.info(f"Firebase enabled, attempting to decode token (first 50 chars): {token[:50]}...")
-        firebase_payload = decode_firebase_token(token)
-        if firebase_payload:
-            logger.info(f"Firebase token decoded for user: {firebase_payload.uid}, email: {firebase_payload.email}")
+        try:
+            logger.info(f"Firebase enabled, attempting to decode token (first 50 chars): {token[:50]}...")
+            firebase_payload = decode_firebase_token(token)
+            if firebase_payload:
+                logger.info(f"Firebase token decoded for user: {firebase_payload.uid}, email: {firebase_payload.email}")
 
-            # Get or create user from Firebase
-            user = await get_or_create_firebase_user(session, firebase_payload)
+                # Get or create user from Firebase
+                user = await get_or_create_firebase_user(session, firebase_payload)
 
-            # Handle organization context from header
-            if x_organization_id:
-                logger.info(f"Using X-Organization-ID header: {x_organization_id}")
-                try:
-                    org, role = await get_user_organization(session, user, x_organization_id)
+                # Handle organization context from header
+                if x_organization_id:
+                    logger.info(f"Using X-Organization-ID header: {x_organization_id}")
+                    try:
+                        org, role = await get_user_organization(session, user, x_organization_id)
+                        if org:
+                            org_id = org.id
+                            org_role = role
+                    except Exception as e:
+                        logger.error(f"Error processing X-Organization-ID '{x_organization_id}': {e}", exc_info=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to process organization: {str(e)}",
+                        )
+                else:
+                    # Get user's first organization if no header
+                    org, role = await get_user_organization(session, user)
                     if org:
                         org_id = org.id
                         org_role = role
-                except Exception as e:
-                    logger.error(f"Error processing X-Organization-ID '{x_organization_id}': {e}", exc_info=True)
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to process organization: {str(e)}",
-                    )
-            else:
-                # Get user's first organization if no header
-                org, role = await get_user_organization(session, user)
-                if org:
-                    org_id = org.id
-                    org_role = role
 
-            # Set RLS context if we have an org
-            if org_id:
-                await set_tenant_context(session, org_id, user.id)
+                # Set RLS context if we have an org
+                if org_id:
+                    await set_tenant_context(session, org_id, user.id)
 
-            return CurrentUser(user=user, organization_id=org_id, org_role=org_role)
+                return CurrentUser(user=user, organization_id=org_id, org_role=org_role)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Firebase auth error: {e}", exc_info=True)
+            # Don't crash, fall through to legacy auth
 
     # Fall back to legacy token authentication
     logger.info("Firebase auth failed or not enabled, trying legacy auth")
