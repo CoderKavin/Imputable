@@ -35,6 +35,14 @@ def get_firebase_app():
             if private_key:
                 # Replace escaped newlines with actual newlines
                 private_key = private_key.replace("\\n", "\n")
+                # Also handle double-escaped newlines
+                private_key = private_key.replace("\\\\n", "\n")
+
+            logger.info(f"Firebase init: project={settings.firebase_project_id}, email={settings.firebase_client_email}, key_len={len(private_key) if private_key else 0}")
+
+            if not private_key or "BEGIN PRIVATE KEY" not in private_key:
+                logger.error(f"Invalid private key format. Key starts with: {private_key[:50] if private_key else 'None'}...")
+                return None
 
             cred = credentials.Certificate({
                 "type": "service_account",
@@ -46,7 +54,7 @@ def get_firebase_app():
             _firebase_app = firebase_admin.initialize_app(cred)
             logger.info(f"Firebase Admin SDK initialized for project: {settings.firebase_project_id}")
         except Exception as e:
-            logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+            logger.error(f"Failed to initialize Firebase Admin SDK: {e}", exc_info=True)
             return None
 
     return _firebase_app
