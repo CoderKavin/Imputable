@@ -18,7 +18,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
@@ -86,7 +92,7 @@ export function TeamTab() {
       setLoading(true);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/organization/members`, {
+      const response = await fetch(`${API_BASE_URL}/me/members`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "X-Organization-ID": currentOrganization.id,
@@ -121,7 +127,7 @@ export function TeamTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/organization/members`, {
+      const response = await fetch(`${API_BASE_URL}/me/members`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -157,7 +163,7 @@ export function TeamTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/organization/members/${memberId}`, {
+      const response = await fetch(`${API_BASE_URL}/me/members/${memberId}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -190,7 +196,7 @@ export function TeamTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/organization/members/${memberId}`, {
+      const response = await fetch(`${API_BASE_URL}/me/members/${memberId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -219,7 +225,7 @@ export function TeamTab() {
     try {
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/organization/invites/${inviteId}`, {
+      const response = await fetch(`${API_BASE_URL}/me/invites/${inviteId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -257,8 +263,10 @@ export function TeamTab() {
   };
 
   const getRoleBadgeClass = (role: string) => {
-    if (role === "owner") return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400";
-    if (role === "admin") return "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400";
+    if (role === "owner")
+      return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400";
+    if (role === "admin")
+      return "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400";
     return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400";
   };
 
@@ -274,7 +282,10 @@ export function TeamTab() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowInviteModal(true)} className="rounded-xl">
+          <Button
+            onClick={() => setShowInviteModal(true)}
+            className="rounded-xl"
+          >
             <UserPlus className="mr-2 h-4 w-4" />
             Invite Member
           </Button>
@@ -298,54 +309,70 @@ export function TeamTab() {
       <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg">Members ({members.length})</CardTitle>
-          <CardDescription>People with access to this organization</CardDescription>
+          <CardDescription>
+            People with access to this organization
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {members.map((member) => (
-              <div key={member.id} className="flex items-center justify-between py-4 first:pt-0 last:pb-0">
+              <div
+                key={member.id}
+                className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
+              >
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-medium">
-                    {member.name?.charAt(0)?.toUpperCase() || member.email?.charAt(0)?.toUpperCase()}
+                    {member.name?.charAt(0)?.toUpperCase() ||
+                      member.email?.charAt(0)?.toUpperCase()}
                   </div>
                   <div>
-                    <p className="font-medium text-zinc-900 dark:text-zinc-100">{member.name}</p>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">{member.email}</p>
+                    <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {member.name}
+                    </p>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                      {member.email}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(member.role)}`}>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(member.role)}`}
+                  >
                     {getRoleIcon(member.role)}
                     {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                   </span>
 
-                  {isAdmin && member.role !== "owner" && member.user_id !== user?.uid && (
-                    <div className="flex items-center gap-1">
-                      <select
-                        value={member.role}
-                        onChange={(e) => handleChangeRole(member.id, e.target.value)}
-                        disabled={changingRole === member.id}
-                        className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
-                      >
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
-                        {isOwner && <option value="owner">Owner</option>}
-                      </select>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveMember(member.id)}
-                        disabled={removingMember === member.id}
-                        className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 hover:text-red-600"
-                      >
-                        {removingMember === member.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  )}
+                  {isAdmin &&
+                    member.role !== "owner" &&
+                    member.user_id !== user?.uid && (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={member.role}
+                          onChange={(e) =>
+                            handleChangeRole(member.id, e.target.value)
+                          }
+                          disabled={changingRole === member.id}
+                          className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800"
+                        >
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                          {isOwner && <option value="owner">Owner</option>}
+                        </select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveMember(member.id)}
+                          disabled={removingMember === member.id}
+                          className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 hover:text-red-600"
+                        >
+                          {removingMember === member.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
                 </div>
               </div>
             ))}
@@ -357,21 +384,29 @@ export function TeamTab() {
       {invites.length > 0 && (
         <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle className="text-lg">Pending Invites ({invites.length})</CardTitle>
+            <CardTitle className="text-lg">
+              Pending Invites ({invites.length})
+            </CardTitle>
             <CardDescription>Invitations awaiting response</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {invites.map((invite) => (
-                <div key={invite.id} className="flex items-center justify-between py-4 first:pt-0 last:pb-0">
+                <div
+                  key={invite.id}
+                  className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
+                >
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                       <Mail className="h-5 w-5 text-zinc-400" />
                     </div>
                     <div>
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100">{invite.email}</p>
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {invite.email}
+                      </p>
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        Invited as {invite.role} · Expires {new Date(invite.expires_at).toLocaleDateString()}
+                        Invited as {invite.role} · Expires{" "}
+                        {new Date(invite.expires_at).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -426,8 +461,12 @@ export function TeamTab() {
                   onChange={(e) => setInviteRole(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
                 >
-                  <option value="member">Member - Can view and create decisions</option>
-                  <option value="admin">Admin - Can manage members and settings</option>
+                  <option value="member">
+                    Member - Can view and create decisions
+                  </option>
+                  <option value="admin">
+                    Admin - Can manage members and settings
+                  </option>
                 </select>
               </div>
             </div>

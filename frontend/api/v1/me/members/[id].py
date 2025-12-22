@@ -1,4 +1,4 @@
-"""Organization Member API - PUT, DELETE /api/v1/me/organization/members/[id]"""
+"""Organization Member API - PUT, DELETE /api/v1/me/members/[id]"""
 
 from http.server import BaseHTTPRequestHandler
 import json

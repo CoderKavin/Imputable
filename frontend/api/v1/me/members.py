@@ -1,9 +1,8 @@
-"""Organization Members API - GET, POST /api/v1/me/organization/members"""
+"""Organization Members API - GET, POST /api/v1/me/members"""
 
 from http.server import BaseHTTPRequestHandler
 import json
 import os
-from urllib.parse import urlparse
 from uuid import uuid4
 
 
@@ -12,7 +11,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Organization-ID")
         self.end_headers()
         self.wfile.write(json.dumps(body).encode())
@@ -133,12 +132,9 @@ class handler(BaseHTTPRequestHandler):
                             "avatar_url": row[6]
                         })
 
-                    # For now, invites are not implemented - return empty
-                    invites = []
-
                     self._send(200, {
                         "members": members,
-                        "invites": invites,
+                        "invites": [],
                         "current_user_role": current_user_role
                     })
 
@@ -197,8 +193,6 @@ class handler(BaseHTTPRequestHandler):
                             "message": f"{existing_user[1]} has been added to the organization"
                         })
                     else:
-                        # User doesn't exist - in a real app, send invite email
-                        # For now, just return success message
                         self._send(201, {
                             "success": True,
                             "message": f"Invitation sent to {email}"
