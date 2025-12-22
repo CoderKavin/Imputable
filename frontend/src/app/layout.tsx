@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   title: "Imputable",
   description:
     "Imputable - A system of record for engineering and product decisions",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
