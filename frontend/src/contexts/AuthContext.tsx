@@ -4,25 +4,36 @@
  * Firebase Authentication Context
  *
  * Provides auth state and functions throughout the app
+ * Uses lazy initialization to work during SSR/build
  */
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 import {
-  auth,
+  auth as getAuth,
   onAuthStateChanged,
   signInWithEmail,
   signUpWithEmail,
   signInWithGoogle,
   logOut,
   getIdToken,
-  User
+  User,
 } from "@/lib/firebase";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, displayName?: string) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    displayName?: string,
+  ) => Promise<void>;
   signInGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   getToken: () => Promise<string | null>;
@@ -35,6 +46,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === "undefined") {
+      setLoading(false);
+      return;
+    }
+
+    const auth = getAuth();
+    if (!auth) {
+      // Firebase not available (missing config)
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
@@ -47,9 +71,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithEmail(email, password);
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, displayName?: string) => {
-    await signUpWithEmail(email, password, displayName);
-  }, []);
+  const signUp = useCallback(
+    async (email: string, password: string, displayName?: string) => {
+      await signUpWithEmail(email, password, displayName);
+    },
+    [],
+  );
 
   const signInGoogle = useCallback(async () => {
     await signInWithGoogle();
@@ -73,11 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getToken,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
