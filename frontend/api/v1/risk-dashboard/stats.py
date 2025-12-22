@@ -1,9 +1,8 @@
-"""Audit log API - GET /api/v1/audit"""
+"""Risk Dashboard Stats API - GET /api/v1/risk-dashboard/stats"""
 
 from http.server import BaseHTTPRequestHandler
 import json
 import os
-from urllib.parse import urlparse, parse_qs
 
 
 class handler(BaseHTTPRequestHandler):
@@ -14,10 +13,10 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Organization-ID")
         self.end_headers()
-        self.wfile.write(json.dumps(body).encode() if isinstance(body, (dict, list)) else body.encode())
+        self.wfile.write(json.dumps(body).encode())
 
     def do_OPTIONS(self):
-        self._send(204, "")
+        self._send(204, {})
 
     def do_GET(self):
         try:
@@ -31,8 +30,6 @@ class handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "X-Organization-ID header required"})
                 return
 
-            parsed = urlparse(self.path)
-            query_params = parse_qs(parsed.query)
             token = auth[7:]
 
             import firebase_admin
@@ -97,58 +94,68 @@ class handler(BaseHTTPRequestHandler):
                     self._send(403, {"error": "Not a member of this organization"})
                     return
 
-                # Parse pagination
-                page = int(query_params.get("page", ["1"])[0])
-                page_size = int(query_params.get("page_size", ["50"])[0])
-                offset = (page - 1) * page_size
-
-                # Get total count
+                # Get decision stats
                 result = conn.execute(text("""
-                    SELECT COUNT(*) FROM audit_log WHERE organization_id = :org_id
+                    SELECT
+                        COUNT(*) FILTER (WHERE deleted_at IS NULL) as total,
+                        COUNT(*) FILTER (WHERE status = 'draft' AND deleted_at IS NULL) as draft,
+                        COUNT(*) FILTER (WHERE status = 'pending_review' AND deleted_at IS NULL) as pending_review,
+                        COUNT(*) FILTER (WHERE status = 'approved' AND deleted_at IS NULL) as approved,
+                        COUNT(*) FILTER (WHERE status = 'deprecated' AND deleted_at IS NULL) as deprecated,
+                        COUNT(*) FILTER (WHERE status = 'superseded' AND deleted_at IS NULL) as superseded
+                    FROM decisions
+                    WHERE organization_id = :org_id
                 """), {"org_id": org_id})
-                total = result.fetchone()[0]
+                stats = result.fetchone()
 
-                # Get audit logs
+                # Get impact level distribution
                 result = conn.execute(text("""
-                    SELECT al.id, al.action, al.resource_type, al.resource_id,
-                           al.details, al.created_at,
-                           u.id as user_id, u.name as user_name, u.email as user_email
-                    FROM audit_log al
-                    LEFT JOIN users u ON al.user_id = u.id
-                    WHERE al.organization_id = :org_id
-                    ORDER BY al.created_at DESC
-                    LIMIT :limit OFFSET :offset
-                """), {"org_id": org_id, "limit": page_size, "offset": offset})
+                    SELECT dv.impact_level, COUNT(*) as count
+                    FROM decisions d
+                    JOIN decision_versions dv ON d.current_version_id = dv.id
+                    WHERE d.organization_id = :org_id AND d.deleted_at IS NULL
+                    GROUP BY dv.impact_level
+                """), {"org_id": org_id})
 
-                items = []
+                impact_levels = {"low": 0, "medium": 0, "high": 0, "critical": 0}
                 for row in result.fetchall():
-                    details = row[4]
-                    if isinstance(details, str):
-                        try:
-                            details = json.loads(details)
-                        except:
-                            details = {}
+                    if row[0] in impact_levels:
+                        impact_levels[row[0]] = row[1]
 
-                    items.append({
-                        "id": str(row[0]),
-                        "action": row[1],
-                        "resource_type": row[2],
-                        "resource_id": str(row[3]),
-                        "details": details or {},
-                        "created_at": row[5].isoformat() if row[5] else None,
-                        "user": {
-                            "id": str(row[6]),
-                            "name": row[7],
-                            "email": row[8]
-                        } if row[6] else None
-                    })
+                # Get recent activity (decisions created in last 30 days)
+                result = conn.execute(text("""
+                    SELECT COUNT(*) FROM decisions
+                    WHERE organization_id = :org_id
+                    AND deleted_at IS NULL
+                    AND created_at > NOW() - INTERVAL '30 days'
+                """), {"org_id": org_id})
+                recent_count = result.fetchone()[0]
+
+                # Calculate risk score (simple heuristic)
+                # More pending reviews + more high/critical impact = higher risk
+                total = stats[0] if stats[0] else 1
+                pending = stats[2] if stats[2] else 0
+                high_critical = impact_levels["high"] + impact_levels["critical"]
+
+                risk_score = min(100, int(
+                    (pending / total * 30) +  # Pending decisions contribute to risk
+                    (high_critical / total * 40) +  # High impact decisions
+                    (stats[1] / total * 20) if stats[1] else 0  # Draft decisions (undocumented)
+                ))
 
                 self._send(200, {
-                    "items": items,
-                    "total": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0
+                    "total_decisions": stats[0] or 0,
+                    "by_status": {
+                        "draft": stats[1] or 0,
+                        "pending_review": stats[2] or 0,
+                        "approved": stats[3] or 0,
+                        "deprecated": stats[4] or 0,
+                        "superseded": stats[5] or 0
+                    },
+                    "by_impact": impact_levels,
+                    "recent_activity": recent_count,
+                    "risk_score": risk_score,
+                    "decisions_only": False
                 })
 
         except Exception as e:

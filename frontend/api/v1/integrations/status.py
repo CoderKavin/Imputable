@@ -1,9 +1,8 @@
-"""Audit log API - GET /api/v1/audit"""
+"""Integrations Status API - GET /api/v1/integrations/status"""
 
 from http.server import BaseHTTPRequestHandler
 import json
 import os
-from urllib.parse import urlparse, parse_qs
 
 
 class handler(BaseHTTPRequestHandler):
@@ -14,10 +13,10 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Organization-ID")
         self.end_headers()
-        self.wfile.write(json.dumps(body).encode() if isinstance(body, (dict, list)) else body.encode())
+        self.wfile.write(json.dumps(body).encode())
 
     def do_OPTIONS(self):
-        self._send(204, "")
+        self._send(204, {})
 
     def do_GET(self):
         try:
@@ -31,8 +30,6 @@ class handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "X-Organization-ID header required"})
                 return
 
-            parsed = urlparse(self.path)
-            query_params = parse_qs(parsed.query)
             token = auth[7:]
 
             import firebase_admin
@@ -97,58 +94,30 @@ class handler(BaseHTTPRequestHandler):
                     self._send(403, {"error": "Not a member of this organization"})
                     return
 
-                # Parse pagination
-                page = int(query_params.get("page", ["1"])[0])
-                page_size = int(query_params.get("page_size", ["50"])[0])
-                offset = (page - 1) * page_size
-
-                # Get total count
+                # Check organization subscription tier
                 result = conn.execute(text("""
-                    SELECT COUNT(*) FROM audit_log WHERE organization_id = :org_id
+                    SELECT subscription_tier FROM organizations WHERE id = :org_id AND deleted_at IS NULL
                 """), {"org_id": org_id})
-                total = result.fetchone()[0]
+                org_row = result.fetchone()
 
-                # Get audit logs
-                result = conn.execute(text("""
-                    SELECT al.id, al.action, al.resource_type, al.resource_id,
-                           al.details, al.created_at,
-                           u.id as user_id, u.name as user_name, u.email as user_email
-                    FROM audit_log al
-                    LEFT JOIN users u ON al.user_id = u.id
-                    WHERE al.organization_id = :org_id
-                    ORDER BY al.created_at DESC
-                    LIMIT :limit OFFSET :offset
-                """), {"org_id": org_id, "limit": page_size, "offset": offset})
+                if not org_row:
+                    self._send(404, {"error": "Organization not found"})
+                    return
 
-                items = []
-                for row in result.fetchall():
-                    details = row[4]
-                    if isinstance(details, str):
-                        try:
-                            details = json.loads(details)
-                        except:
-                            details = {}
-
-                    items.append({
-                        "id": str(row[0]),
-                        "action": row[1],
-                        "resource_type": row[2],
-                        "resource_id": str(row[3]),
-                        "details": details or {},
-                        "created_at": row[5].isoformat() if row[5] else None,
-                        "user": {
-                            "id": str(row[6]),
-                            "name": row[7],
-                            "email": row[8]
-                        } if row[6] else None
-                    })
-
+                # For now, return empty integration status
+                # In a real implementation, you'd query an integrations table
                 self._send(200, {
-                    "items": items,
-                    "total": total,
-                    "page": page,
-                    "page_size": page_size,
-                    "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0
+                    "slack": {
+                        "connected": False,
+                        "team_name": None,
+                        "channel_name": None,
+                        "installed_at": None
+                    },
+                    "teams": {
+                        "connected": False,
+                        "channel_name": None,
+                        "installed_at": None
+                    }
                 })
 
         except Exception as e:
