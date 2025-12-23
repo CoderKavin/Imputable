@@ -430,23 +430,23 @@ function MetaRail({
     <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
       <h3 className="text-sm font-semibold text-gray-900">Details</h3>
 
-      <div className="space-y-3 text-sm">
+      <div className="space-y-4 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-gray-500 flex items-center gap-2">
             <User className="w-4 h-4" />
             Owner
           </span>
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-gray-900 text-right">
             {version.created_by.name}
           </span>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="space-y-1">
           <span className="text-gray-500 flex items-center gap-2">
             <Calendar className="w-4 h-4" />
             Created
           </span>
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-gray-900 block pl-6">
             {formatDateTime(version.created_at)}
           </span>
         </div>
