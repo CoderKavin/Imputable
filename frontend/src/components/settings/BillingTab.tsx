@@ -15,7 +15,13 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
@@ -92,12 +98,37 @@ export function BillingTab() {
   const [loading, setLoading] = useState(true);
   const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentOrganization?.id) {
       fetchBillingInfo();
     }
   }, [currentOrganization?.id]);
+
+  useEffect(() => {
+    if (upgradeMessage) {
+      const timer = setTimeout(() => setUpgradeMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [upgradeMessage]);
+
+  function handlePlanChange(planId: string) {
+    if (planId === "pro") {
+      setUpgradeMessage(
+        "Pro plan coming soon! Contact support@imputable.app to get early access.",
+      );
+    } else if (planId === "free") {
+      setUpgradeMessage(
+        "To downgrade your plan, please contact support@imputable.app",
+      );
+    }
+  }
+
+  function handleContactSales() {
+    window.location.href =
+      "mailto:sales@imputable.app?subject=Enterprise%20Plan%20Inquiry";
+  }
 
   async function fetchBillingInfo() {
     if (!currentOrganization?.id) return;
@@ -133,7 +164,8 @@ export function BillingTab() {
     );
   }
 
-  const currentPlan = plans.find((p) => p.id === billingInfo?.subscription_tier) || plans[0];
+  const currentPlan =
+    plans.find((p) => p.id === billingInfo?.subscription_tier) || plans[0];
   const isOwner = billingInfo?.user_role === "owner";
 
   return (
@@ -153,19 +185,31 @@ export function BillingTab() {
           {error}
         </div>
       )}
+      {upgradeMessage && (
+        <div className="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-3 text-sm text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400">
+          <Zap className="h-4 w-4 flex-shrink-0" />
+          {upgradeMessage}
+        </div>
+      )}
 
       {/* Current Plan */}
       <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg">Current Plan</CardTitle>
-          <CardDescription>Your organization&apos;s subscription details</CardDescription>
+          <CardDescription>
+            Your organization&apos;s subscription details
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
             <div>
-              <p className="text-sm font-medium text-indigo-100">Current Plan</p>
+              <p className="text-sm font-medium text-indigo-100">
+                Current Plan
+              </p>
               <p className="text-3xl font-bold">{currentPlan.name}</p>
-              <p className="mt-1 text-sm text-indigo-100">{currentPlan.description}</p>
+              <p className="mt-1 text-sm text-indigo-100">
+                {currentPlan.description}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold">{currentPlan.price}</p>
@@ -179,11 +223,14 @@ export function BillingTab() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Users className="h-5 w-5 text-zinc-400" />
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Team Members</span>
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Team Members
+                  </span>
                 </div>
                 <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                   {billingInfo?.member_count || 0}
-                  {currentPlan.limits.members !== Infinity && ` / ${currentPlan.limits.members}`}
+                  {currentPlan.limits.members !== Infinity &&
+                    ` / ${currentPlan.limits.members}`}
                 </span>
               </div>
               {currentPlan.limits.members !== Infinity && (
@@ -202,11 +249,14 @@ export function BillingTab() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-zinc-400" />
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Decisions</span>
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Decisions
+                  </span>
                 </div>
                 <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                   {billingInfo?.decision_count || 0}
-                  {currentPlan.limits.decisions !== Infinity && ` / ${currentPlan.limits.decisions}`}
+                  {currentPlan.limits.decisions !== Infinity &&
+                    ` / ${currentPlan.limits.decisions}`}
                 </span>
               </div>
               {currentPlan.limits.decisions !== Infinity && (
@@ -228,7 +278,9 @@ export function BillingTab() {
       <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg">Available Plans</CardTitle>
-          <CardDescription>Choose the plan that best fits your needs</CardDescription>
+          <CardDescription>
+            Choose the plan that best fits your needs
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
@@ -271,19 +323,32 @@ export function BillingTab() {
 
                   <ul className="mb-6 space-y-2">
                     {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2 text-sm">
+                      <li
+                        key={feature}
+                        className="flex items-center gap-2 text-sm"
+                      >
                         <Check className="h-4 w-4 flex-shrink-0 text-green-500" />
-                        <span className="text-zinc-600 dark:text-zinc-400">{feature}</span>
+                        <span className="text-zinc-600 dark:text-zinc-400">
+                          {feature}
+                        </span>
                       </li>
                     ))}
                   </ul>
 
                   {isCurrent ? (
-                    <Button disabled className="w-full rounded-xl" variant="outline">
+                    <Button
+                      disabled
+                      className="w-full rounded-xl"
+                      variant="outline"
+                    >
                       Current Plan
                     </Button>
                   ) : plan.id === "enterprise" ? (
-                    <Button className="w-full rounded-xl" variant="outline">
+                    <Button
+                      className="w-full rounded-xl"
+                      variant="outline"
+                      onClick={handleContactSales}
+                    >
                       Contact Sales
                       <ExternalLink className="ml-2 h-4 w-4" />
                     </Button>
@@ -292,6 +357,7 @@ export function BillingTab() {
                       className="w-full rounded-xl"
                       variant={plan.popular ? "default" : "outline"}
                       disabled={!isOwner}
+                      onClick={() => handlePlanChange(plan.id)}
                     >
                       {plan.id === "free" ? "Downgrade" : "Upgrade"}
                       <Zap className="ml-2 h-4 w-4" />
@@ -317,7 +383,10 @@ export function BillingTab() {
         </h3>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           Contact our support team at{" "}
-          <a href="mailto:support@imputable.app" className="text-indigo-600 hover:underline">
+          <a
+            href="mailto:support@imputable.app"
+            className="text-indigo-600 hover:underline"
+          >
             support@imputable.app
           </a>{" "}
           for any billing questions or to request custom enterprise pricing.
