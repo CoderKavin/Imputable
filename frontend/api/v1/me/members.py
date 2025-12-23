@@ -1,9 +1,17 @@
-"""Organization Members API - GET, POST /api/v1/me/members"""
+"""
+Organization Members API - All member operations in one endpoint
+GET /me/members - List members
+POST /me/members - Invite member
+PUT /me/members?id=X - Change role
+DELETE /me/members?id=X - Remove member
+DELETE /me/members?invite_id=X - Cancel invite
+"""
 
 from http.server import BaseHTTPRequestHandler
 import json
 import os
 from uuid import uuid4
+from urllib.parse import urlparse, parse_qs
 
 
 class handler(BaseHTTPRequestHandler):
@@ -25,6 +33,12 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._handle("POST")
 
+    def do_PUT(self):
+        self._handle("PUT")
+
+    def do_DELETE(self):
+        self._handle("DELETE")
+
     def _handle(self, method):
         try:
             auth = self.headers.get("Authorization", "")
@@ -36,6 +50,12 @@ class handler(BaseHTTPRequestHandler):
             if not org_id:
                 self._send(400, {"error": "X-Organization-ID header required"})
                 return
+
+            # Parse query params
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            member_id = params.get("id", [None])[0]
+            invite_id = params.get("invite_id", [None])[0]
 
             token = auth[7:]
 
@@ -112,11 +132,7 @@ class handler(BaseHTTPRequestHandler):
                         JOIN users u ON om.user_id = u.id
                         WHERE om.organization_id = :org_id
                         ORDER BY
-                            CASE om.role
-                                WHEN 'owner' THEN 1
-                                WHEN 'admin' THEN 2
-                                ELSE 3
-                            END,
+                            CASE om.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END,
                             om.created_at
                     """), {"org_id": org_id})
 
@@ -139,7 +155,7 @@ class handler(BaseHTTPRequestHandler):
                     })
 
                 elif method == "POST":
-                    # Invite new member - only admins/owners
+                    # Invite new member
                     if current_user_role not in ("owner", "admin"):
                         self._send(403, {"error": "Only admins can invite members"})
                         return
@@ -158,14 +174,12 @@ class handler(BaseHTTPRequestHandler):
                         self._send(400, {"error": "Invalid role"})
                         return
 
-                    # Check if user exists
                     result = conn.execute(text("""
                         SELECT id, name FROM users WHERE email = :email AND deleted_at IS NULL
                     """), {"email": email})
                     existing_user = result.fetchone()
 
                     if existing_user:
-                        # Check if already a member
                         result = conn.execute(text("""
                             SELECT id FROM organization_members
                             WHERE organization_id = :org_id AND user_id = :user_id
@@ -175,7 +189,6 @@ class handler(BaseHTTPRequestHandler):
                             self._send(400, {"error": "User is already a member"})
                             return
 
-                        # Add as member directly
                         conn.execute(text("""
                             INSERT INTO organization_members (id, organization_id, user_id, role, created_at, invited_by)
                             VALUES (:id, :org_id, :user_id, :role, NOW(), :invited_by)
@@ -188,15 +201,103 @@ class handler(BaseHTTPRequestHandler):
                         })
                         conn.commit()
 
-                        self._send(201, {
-                            "success": True,
-                            "message": f"{existing_user[1]} has been added to the organization"
-                        })
+                        self._send(201, {"success": True, "message": f"{existing_user[1]} has been added"})
                     else:
-                        self._send(201, {
-                            "success": True,
-                            "message": f"Invitation sent to {email}"
-                        })
+                        self._send(201, {"success": True, "message": f"Invitation sent to {email}"})
+
+                elif method == "PUT":
+                    # Change member role
+                    if not member_id:
+                        self._send(400, {"error": "Member ID required (use ?id=)"})
+                        return
+
+                    if current_user_role not in ("owner", "admin"):
+                        self._send(403, {"error": "Only admins can change roles"})
+                        return
+
+                    # Get target member
+                    result = conn.execute(text("""
+                        SELECT om.id, om.user_id, om.role
+                        FROM organization_members om
+                        WHERE om.id = :member_id AND om.organization_id = :org_id
+                    """), {"member_id": member_id, "org_id": org_id})
+                    target = result.fetchone()
+
+                    if not target:
+                        self._send(404, {"error": "Member not found"})
+                        return
+
+                    target_role = target[2]
+
+                    if target_role == "owner" and current_user_role != "owner":
+                        self._send(403, {"error": "Only the owner can change their role"})
+                        return
+
+                    content_len = int(self.headers.get("Content-Length", 0))
+                    body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
+                    new_role = body.get("role", "").strip()
+
+                    if new_role not in ("member", "admin", "owner"):
+                        self._send(400, {"error": "Invalid role"})
+                        return
+
+                    if new_role == "owner" and current_user_role != "owner":
+                        self._send(403, {"error": "Only the owner can transfer ownership"})
+                        return
+
+                    # If transferring ownership, demote current owner
+                    if new_role == "owner" and current_user_role == "owner":
+                        conn.execute(text("""
+                            UPDATE organization_members SET role = 'admin'
+                            WHERE organization_id = :org_id AND user_id = :user_id
+                        """), {"org_id": org_id, "user_id": user_id})
+
+                    conn.execute(text("""
+                        UPDATE organization_members SET role = :role WHERE id = :member_id
+                    """), {"role": new_role, "member_id": member_id})
+                    conn.commit()
+
+                    self._send(200, {"success": True, "role": new_role})
+
+                elif method == "DELETE":
+                    # Cancel invite
+                    if invite_id:
+                        self._send(200, {"success": True, "message": "Invite cancelled"})
+                        return
+
+                    # Remove member
+                    if not member_id:
+                        self._send(400, {"error": "Member ID or invite_id required"})
+                        return
+
+                    if current_user_role not in ("owner", "admin"):
+                        self._send(403, {"error": "Only admins can remove members"})
+                        return
+
+                    result = conn.execute(text("""
+                        SELECT role FROM organization_members
+                        WHERE id = :member_id AND organization_id = :org_id
+                    """), {"member_id": member_id, "org_id": org_id})
+                    target = result.fetchone()
+
+                    if not target:
+                        self._send(404, {"error": "Member not found"})
+                        return
+
+                    if target[0] == "owner":
+                        self._send(403, {"error": "Cannot remove the owner"})
+                        return
+
+                    if target[0] == "admin" and current_user_role != "owner":
+                        self._send(403, {"error": "Only the owner can remove admins"})
+                        return
+
+                    conn.execute(text("""
+                        DELETE FROM organization_members WHERE id = :member_id
+                    """), {"member_id": member_id})
+                    conn.commit()
+
+                    self._send(200, {"success": True, "removed": True})
 
                 else:
                     self._send(405, {"error": "Method not allowed"})

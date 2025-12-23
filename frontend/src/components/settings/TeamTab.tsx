@@ -163,15 +163,18 @@ export function TeamTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/members/${memberId}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          "X-Organization-ID": currentOrganization.id,
+      const response = await fetch(
+        `${API_BASE_URL}/me/members?id=${memberId}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "X-Organization-ID": currentOrganization.id,
+          },
+          body: JSON.stringify({ role: newRole }),
         },
-        body: JSON.stringify({ role: newRole }),
-      });
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -196,13 +199,16 @@ export function TeamTab() {
       setError(null);
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/members/${memberId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Organization-ID": currentOrganization.id,
+      const response = await fetch(
+        `${API_BASE_URL}/me/members?id=${memberId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-Organization-ID": currentOrganization.id,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         const data = await response.json();
@@ -225,13 +231,16 @@ export function TeamTab() {
     try {
       const token = await getToken();
 
-      const response = await fetch(`${API_BASE_URL}/me/invites/${inviteId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Organization-ID": currentOrganization.id,
+      const response = await fetch(
+        `${API_BASE_URL}/me/members?invite_id=${inviteId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-Organization-ID": currentOrganization.id,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         throw new Error("Failed to cancel invite");
