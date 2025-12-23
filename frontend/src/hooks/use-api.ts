@@ -142,10 +142,7 @@ export function useDecisionApi() {
       approval_progress: ApprovalProgress;
       decision_status: string;
     }> => {
-      const response = await client.post(
-        `/decisions/${decisionId}/approve`,
-        data,
-      );
+      const response = await client.post(`/decisions/${decisionId}`, data);
       return response.data;
     },
     [client],
