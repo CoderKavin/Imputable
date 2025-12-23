@@ -7,6 +7,140 @@ import hashlib
 from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 from datetime import datetime
+import urllib.request
+
+
+def send_slack_decision_created(
+    slack_token: str,
+    channel_id: str,
+    decision_number: int,
+    decision_id: str,
+    title: str,
+    impact_level: str,
+    creator_name: str,
+    org_name: str,
+    tags: list,
+):
+    """Send notification to Slack when a decision is created."""
+    try:
+        from cryptography.fernet import Fernet
+        encryption_key = os.environ.get("ENCRYPTION_KEY", "")
+        if encryption_key:
+            f = Fernet(encryption_key.encode())
+            token = f.decrypt(slack_token.encode()).decode()
+        else:
+            token = slack_token
+    except Exception:
+        token = slack_token
+
+    if not token or not channel_id:
+        return
+
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "📋 New Decision Created", "emoji": True}
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*<{decision_url}|DEC-{decision_number}: {title}>*"
+            }
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Status:*\nDraft"},
+                {"type": "mrkdwn", "text": f"*Impact:*\n{impact_level.capitalize()}"},
+                {"type": "mrkdwn", "text": f"*Created by:*\n{creator_name}"},
+                {"type": "mrkdwn", "text": f"*Organization:*\n{org_name}"}
+            ]
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"Tags: {', '.join(tags) if tags else 'None'}"}]
+        },
+        {
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Details", "emoji": True},
+                "url": decision_url,
+                "style": "primary"
+            }]
+        }
+    ]
+
+    payload = json.dumps({
+        "channel": channel_id,
+        "text": f"New decision created: DEC-{decision_number} - {title}",
+        "attachments": [{"color": "808080", "blocks": blocks}]
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
+def send_teams_decision_created(
+    webhook_url: str,
+    decision_number: int,
+    decision_id: str,
+    title: str,
+    impact_level: str,
+    creator_name: str,
+    org_name: str,
+    tags: list,
+):
+    """Send notification to Teams when a decision is created."""
+    if not webhook_url:
+        return
+
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    card = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "808080",
+        "summary": f"New Decision: DEC-{decision_number}",
+        "sections": [{
+            "activityTitle": "📋 New Decision Created",
+            "activitySubtitle": f"DEC-{decision_number}: {title}",
+            "facts": [
+                {"name": "Status", "value": "Draft"},
+                {"name": "Impact", "value": impact_level.capitalize()},
+                {"name": "Created by", "value": creator_name},
+                {"name": "Organization", "value": org_name},
+                {"name": "Tags", "value": ", ".join(tags) if tags else "None"},
+            ],
+            "markdown": True
+        }],
+        "potentialAction": [{
+            "@type": "OpenUri",
+            "name": "View Details",
+            "targets": [{"os": "default", "uri": decision_url}]
+        }]
+    }
+
+    payload = json.dumps(card).encode()
+    req = urllib.request.Request(
+        webhook_url,
+        data=payload,
+        headers={"Content-Type": "application/json"}
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
 
 
 class handler(BaseHTTPRequestHandler):
@@ -256,6 +390,17 @@ class handler(BaseHTTPRequestHandler):
                         self._send(400, {"error": "Title is required"})
                         return
 
+                    # Get organization details for notifications
+                    org_result = conn.execute(text("""
+                        SELECT name, slack_access_token, slack_channel_id, teams_webhook_url
+                        FROM organizations WHERE id = :org_id
+                    """), {"org_id": org_id})
+                    org_row = org_result.fetchone()
+                    org_name = org_row[0] if org_row else "Unknown"
+                    slack_token = org_row[1] if org_row else None
+                    slack_channel_id = org_row[2] if org_row else None
+                    teams_webhook_url = org_row[3] if org_row else None
+
                     # Get next decision number
                     result = conn.execute(text("""
                         SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions
@@ -297,6 +442,38 @@ class handler(BaseHTTPRequestHandler):
                         """), {"version_id": version_id, "reviewer_id": reviewer_id, "user_id": user_id})
 
                     conn.commit()
+
+                    # Send notifications to Slack and Teams (non-blocking)
+                    try:
+                        if slack_token and slack_channel_id:
+                            send_slack_decision_created(
+                                slack_token=slack_token,
+                                channel_id=slack_channel_id,
+                                decision_number=decision_number,
+                                decision_id=decision_id,
+                                title=title,
+                                impact_level=impact_level,
+                                creator_name=user_name,
+                                org_name=org_name,
+                                tags=tags,
+                            )
+                    except Exception:
+                        pass
+
+                    try:
+                        if teams_webhook_url:
+                            send_teams_decision_created(
+                                webhook_url=teams_webhook_url,
+                                decision_number=decision_number,
+                                decision_id=decision_id,
+                                title=title,
+                                impact_level=impact_level,
+                                creator_name=user_name,
+                                org_name=org_name,
+                                tags=tags,
+                            )
+                    except Exception:
+                        pass
 
                     self._send(201, {
                         "id": decision_id,

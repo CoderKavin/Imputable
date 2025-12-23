@@ -4,6 +4,198 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 from uuid import uuid4
+from datetime import datetime
+import urllib.request
+import urllib.error
+
+
+def send_slack_approval_notification(
+    slack_token: str,
+    channel_id: str,
+    decision_number: int,
+    decision_id: str,
+    title: str,
+    approver_name: str,
+    approval_status: str,
+    comment: str,
+    approved_count: int,
+    required_count: int,
+    decision_became_approved: bool,
+):
+    """Send approval notification to Slack."""
+    try:
+        from cryptography.fernet import Fernet
+        encryption_key = os.environ.get("ENCRYPTION_KEY", "")
+        if encryption_key:
+            f = Fernet(encryption_key.encode())
+            token = f.decrypt(slack_token.encode()).decode()
+        else:
+            token = slack_token
+    except Exception:
+        token = slack_token
+
+    if not token or not channel_id:
+        return
+
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    # Choose emoji and color based on approval status
+    if approval_status == "approved":
+        emoji = "✅"
+        color = "10b981"
+        action_text = "approved"
+    elif approval_status == "rejected":
+        emoji = "❌"
+        color = "ef4444"
+        action_text = "rejected"
+    else:
+        emoji = "⏭️"
+        color = "6b7280"
+        action_text = "abstained from"
+
+    # Build the header based on whether decision is fully approved
+    if decision_became_approved:
+        header_text = "🎉 Decision Approved"
+        progress_text = f"All {required_count} required reviewers have approved!"
+    else:
+        header_text = f"{emoji} Vote Submitted"
+        progress_text = f"Progress: {approved_count}/{required_count} approved"
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": header_text, "emoji": True}
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*<{decision_url}|DEC-{decision_number}: {title}>*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{approver_name}* {action_text} this decision."
+            }
+        },
+    ]
+
+    if comment:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"_\"{comment}\"_"}
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": progress_text}]
+    })
+
+    blocks.append({
+        "type": "actions",
+        "elements": [{
+            "type": "button",
+            "text": {"type": "plain_text", "text": "View Decision", "emoji": True},
+            "url": decision_url,
+            "style": "primary"
+        }]
+    })
+
+    payload = json.dumps({
+        "channel": channel_id,
+        "text": f"{approver_name} {action_text} DEC-{decision_number}",
+        "attachments": [{"color": color, "blocks": blocks}]
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
+def send_teams_approval_notification(
+    webhook_url: str,
+    decision_number: int,
+    decision_id: str,
+    title: str,
+    approver_name: str,
+    approval_status: str,
+    comment: str,
+    approved_count: int,
+    required_count: int,
+    decision_became_approved: bool,
+):
+    """Send approval notification to Teams."""
+    if not webhook_url:
+        return
+
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    # Choose color based on status
+    if decision_became_approved:
+        color = "10b981"
+        header = "🎉 Decision Approved"
+    elif approval_status == "approved":
+        color = "10b981"
+        header = "✅ Vote Submitted"
+    elif approval_status == "rejected":
+        color = "ef4444"
+        header = "❌ Vote Submitted"
+    else:
+        color = "6b7280"
+        header = "⏭️ Vote Submitted"
+
+    action_text = {
+        "approved": "approved",
+        "rejected": "rejected",
+        "abstained": "abstained from"
+    }.get(approval_status, "voted on")
+
+    facts = [
+        {"name": "Action", "value": f"{approver_name} {action_text} this decision"},
+        {"name": "Progress", "value": f"{approved_count}/{required_count} approved"},
+    ]
+    if comment:
+        facts.append({"name": "Comment", "value": comment})
+
+    card = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": color,
+        "summary": f"{approver_name} {action_text} DEC-{decision_number}",
+        "sections": [{
+            "activityTitle": header,
+            "activitySubtitle": f"DEC-{decision_number}: {title}",
+            "facts": facts,
+            "markdown": True
+        }],
+        "potentialAction": [{
+            "@type": "OpenUri",
+            "name": "View Decision",
+            "targets": [{"os": "default", "uri": decision_url}]
+        }]
+    }
+
+    payload = json.dumps(card).encode()
+    req = urllib.request.Request(
+        webhook_url,
+        data=payload,
+        headers={"Content-Type": "application/json"}
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
 
 
 class handler(BaseHTTPRequestHandler):
@@ -108,10 +300,14 @@ class handler(BaseHTTPRequestHandler):
                     self._send(403, {"error": "Not a member of this organization"})
                     return
 
-                # Get decision and current version
+                # Get decision, current version, and org notification settings
                 result = conn.execute(text("""
-                    SELECT d.id, d.status, d.current_version_id, d.organization_id
+                    SELECT d.id, d.status, d.current_version_id, d.organization_id,
+                           d.decision_number, dv.title,
+                           o.slack_access_token, o.slack_channel_id, o.teams_webhook_url
                     FROM decisions d
+                    JOIN decision_versions dv ON d.current_version_id = dv.id
+                    JOIN organizations o ON d.organization_id = o.id
                     WHERE d.id = :decision_id AND d.deleted_at IS NULL
                 """), {"decision_id": decision_id})
                 decision_row = result.fetchone()
@@ -126,6 +322,11 @@ class handler(BaseHTTPRequestHandler):
 
                 current_version_id = decision_row[2]
                 decision_status = decision_row[1]
+                decision_number = decision_row[4]
+                decision_title = decision_row[5]
+                slack_token = decision_row[6]
+                slack_channel_id = decision_row[7]
+                teams_webhook_url = decision_row[8]
 
                 # Check if user is a required reviewer for this version
                 result = conn.execute(text("""
@@ -191,13 +392,51 @@ class handler(BaseHTTPRequestHandler):
 
                 # Auto-transition decision status if all required reviewers approved
                 new_decision_status = decision_status
+                decision_became_approved = False
                 if required_count > 0 and approved_count >= required_count:
                     conn.execute(text("""
                         UPDATE decisions SET status = 'approved' WHERE id = :decision_id
                     """), {"decision_id": decision_id})
                     new_decision_status = "approved"
+                    decision_became_approved = True
 
                 conn.commit()
+
+                # Send notifications to Slack and Teams (non-blocking)
+                try:
+                    if slack_token and slack_channel_id:
+                        send_slack_approval_notification(
+                            slack_token=slack_token,
+                            channel_id=slack_channel_id,
+                            decision_number=decision_number,
+                            decision_id=decision_id,
+                            title=decision_title,
+                            approver_name=user_name,
+                            approval_status=approval_status,
+                            comment=comment,
+                            approved_count=approved_count,
+                            required_count=required_count,
+                            decision_became_approved=decision_became_approved,
+                        )
+                except Exception:
+                    pass  # Don't fail the request if notification fails
+
+                try:
+                    if teams_webhook_url:
+                        send_teams_approval_notification(
+                            webhook_url=teams_webhook_url,
+                            decision_number=decision_number,
+                            decision_id=decision_id,
+                            title=decision_title,
+                            approver_name=user_name,
+                            approval_status=approval_status,
+                            comment=comment,
+                            approved_count=approved_count,
+                            required_count=required_count,
+                            decision_became_approved=decision_became_approved,
+                        )
+                except Exception:
+                    pass  # Don't fail the request if notification fails
 
                 self._send(200, {
                     "success": True,
