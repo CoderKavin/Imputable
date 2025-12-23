@@ -234,8 +234,8 @@ class handler(BaseHTTPRequestHandler):
                     content_hash = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
                     conn.execute(text("""
                         INSERT INTO decision_versions
-                        (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, change_summary, content_hash)
-                        VALUES (:id, :did, 1, :title, :impact, :content, :tags, :user_id, NOW(), 'Initial version', :hash)
+                        (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, change_summary, content_hash, custom_fields)
+                        VALUES (:id, :did, 1, :title, :impact, :content, :tags, :user_id, NOW(), 'Initial version', :hash, '{}')
                     """), {
                         "id": version_id, "did": decision_id, "title": title,
                         "impact": impact_level, "content": json.dumps(content),
