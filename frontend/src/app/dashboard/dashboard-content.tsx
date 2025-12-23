@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { StatCard, ColoredStatCard } from "@/components/app";
+import { AwaitingReviewWidget } from "@/components/dashboard/awaiting-review-widget";
 import {
   FileText,
   Clock,
@@ -104,40 +105,10 @@ export function DashboardContent({ hasOrg }: DashboardContentProps) {
         />
       </div>
 
-      {/* Main Content Grid */}
+      {/* Awaiting Review Widget - Prominent placement */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Quick Actions */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 p-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">
-            Quick Actions
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <QuickActionCard
-              href="/decisions"
-              icon={<FileText className="w-5 h-5" />}
-              title="View All Decisions"
-              description="Browse and search your decision records"
-            />
-            <QuickActionCard
-              href="/decisions/new"
-              icon={<Plus className="w-5 h-5" />}
-              title="Create Decision"
-              description="Document a new engineering decision"
-              highlight
-            />
-            <QuickActionCard
-              href="/audit"
-              icon={<Clock className="w-5 h-5" />}
-              title="Audit Log"
-              description="Review activity and changes"
-            />
-            <QuickActionCard
-              href="/settings"
-              icon={<Users className="w-5 h-5" />}
-              title="Manage Team"
-              description="Invite members and set permissions"
-            />
-          </div>
+        <div className="lg:col-span-2">
+          <AwaitingReviewWidget />
         </div>
 
         {/* Getting Started */}
@@ -165,6 +136,40 @@ export function DashboardContent({ hasOrg }: DashboardContentProps) {
               completed={totalDecisions > 0}
             />
           </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-white rounded-3xl border border-gray-100 p-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">
+          Quick Actions
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <QuickActionCard
+            href="/decisions"
+            icon={<FileText className="w-5 h-5" />}
+            title="View All Decisions"
+            description="Browse and search your decision records"
+          />
+          <QuickActionCard
+            href="/decisions/new"
+            icon={<Plus className="w-5 h-5" />}
+            title="Create Decision"
+            description="Document a new engineering decision"
+            highlight
+          />
+          <QuickActionCard
+            href="/audit"
+            icon={<Clock className="w-5 h-5" />}
+            title="Audit Log"
+            description="Review activity and changes"
+          />
+          <QuickActionCard
+            href="/settings"
+            icon={<Users className="w-5 h-5" />}
+            title="Manage Team"
+            description="Invite members and set permissions"
+          />
         </div>
       </div>
 

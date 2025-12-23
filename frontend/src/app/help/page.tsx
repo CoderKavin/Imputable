@@ -12,9 +12,7 @@ import {
   Book,
   FileText,
   MessageCircle,
-  Video,
   ExternalLink,
-  Search,
   ChevronRight,
   Keyboard,
   Zap,
@@ -32,29 +30,13 @@ export default function HelpPage() {
       subtitle="Learn how to use Imputable effectively"
     >
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search help articles..."
-            className="w-full pl-12 pr-4 py-3 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
-          />
-        </div>
-
         {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <QuickLink
             icon={Book}
             title="Documentation"
             description="Full product documentation"
             href="/docs"
-          />
-          <QuickLink
-            icon={Video}
-            title="Video Tutorials"
-            description="Watch how-to guides"
-            href="#tutorials"
           />
           <QuickLink
             icon={MessageCircle}
@@ -298,13 +280,10 @@ function HelpArticle({
   description: string;
 }) {
   return (
-    <button className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-gray-50 transition-colors text-left">
-      <div>
-        <h4 className="font-medium text-gray-900">{title}</h4>
-        <p className="text-sm text-gray-500">{description}</p>
-      </div>
-      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-    </button>
+    <div className="p-4 rounded-xl bg-gray-50/50">
+      <h4 className="font-medium text-gray-900">{title}</h4>
+      <p className="text-sm text-gray-500 mt-1">{description}</p>
+    </div>
   );
 }
 
@@ -324,7 +303,9 @@ function Shortcut({
             <kbd className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-700">
               {key}
             </kbd>
-            {i < keys.length - 1 && <span className="mx-1 text-gray-400">+</span>}
+            {i < keys.length - 1 && (
+              <span className="mx-1 text-gray-400">+</span>
+            )}
           </span>
         ))}
       </div>

@@ -244,11 +244,12 @@ class SlackModals:
     """Factory for creating Slack Modal views."""
 
     @staticmethod
-    def create_decision(prefill_title: str = "") -> dict:
+    def create_decision(prefill_title: str = "", channel_id: str = "") -> dict:
         """Build the create decision modal view."""
         return {
             "type": "modal",
             "callback_id": "create_decision_modal",
+            "private_metadata": channel_id,  # Store channel_id for source tracking
             "title": {
                 "type": "plain_text",
                 "text": "Create Decision",
@@ -497,7 +498,7 @@ class SlackCommandRouter:
             return await self._handle_list(org)
 
         elif intent == "add":
-            return await self._handle_add(trigger_id, argument)
+            return await self._handle_add(trigger_id, argument, channel_id)
 
         return self._handle_help()
 
@@ -558,9 +559,9 @@ class SlackCommandRouter:
             "blocks": SlackBlocks.decision_list(decisions),
         }
 
-    async def _handle_add(self, trigger_id: str, prefill_title: str) -> dict:
+    async def _handle_add(self, trigger_id: str, prefill_title: str, channel_id: str = "") -> dict:
         """Open the create decision modal with prefilled title."""
-        modal = SlackModals.create_decision(prefill_title=prefill_title)
+        modal = SlackModals.create_decision(prefill_title=prefill_title, channel_id=channel_id)
         await self._open_modal(trigger_id, modal)
 
         return {"response_type": "ephemeral", "text": ""}
@@ -605,6 +606,9 @@ class SlackSubmissionHandler:
         """
         # Extract values from the submission
         values = payload.get("view", {}).get("state", {}).get("values", {})
+
+        # Extract channel_id from private_metadata (for source tracking)
+        channel_id = payload.get("view", {}).get("private_metadata", "") or ""
 
         title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
         context = values.get("context_block", {}).get("context_input", {}).get("value", "") or ""
@@ -676,12 +680,14 @@ class SlackSubmissionHandler:
         )
         max_num = max_num_result.scalar() or 0
 
-        # Create the decision
+        # Create the decision with Slack source tracking
         decision = Decision(
             organization_id=org.id,
             decision_number=max_num + 1,
             status=DecisionStatus.DRAFT,
             created_by=admin_member.user_id,
+            source="slack",
+            slack_channel_id=channel_id if channel_id else None,
         )
         self.session.add(decision)
         await self.session.flush()

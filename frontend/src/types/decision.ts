@@ -43,6 +43,29 @@ export interface TeamRef {
 }
 
 // =============================================================================
+// REVIEWER & APPROVAL
+// =============================================================================
+
+export interface ReviewerInfo {
+  id: string;
+  name: string;
+  email?: string;
+  status: ApprovalStatus;
+  comment?: string;
+}
+
+export interface ApprovalProgress {
+  required: number;
+  approved: number;
+  rejected: number;
+}
+
+export interface ApproveDecisionRequest {
+  status: "approved" | "rejected" | "abstained";
+  comment?: string;
+}
+
+// =============================================================================
 // DECISION CONTENT
 // =============================================================================
 
@@ -103,6 +126,14 @@ export interface Decision {
   version: DecisionVersion;
   version_count: number;
   requested_version?: number;
+  // Reviewer & approval data
+  reviewers?: ReviewerInfo[];
+  is_reviewer?: boolean;
+  current_user_approval?: ApprovalStatus;
+  approval_progress?: ApprovalProgress;
+  // Source tracking
+  source?: "web" | "slack";
+  slack_link?: string;
 }
 
 export interface DecisionSummary {
@@ -117,6 +148,10 @@ export interface DecisionSummary {
   created_by: UserRef;
   created_at: string;
   version_count: number;
+  // Reviewer & approval data (for decision cards)
+  reviewers?: ReviewerInfo[];
+  approval_progress?: ApprovalProgress;
+  source?: "web" | "slack";
 }
 
 // =============================================================================

@@ -26,6 +26,7 @@ import type {
   SupersedeResponse,
   PaginatedResponse,
   DecisionLineage,
+  ApproveDecisionRequest,
 } from "@/types/decision";
 
 // =============================================================================
@@ -251,6 +252,61 @@ export function useSupersedeDecision() {
     },
   });
 }
+
+/**
+ * Approve, reject, or abstain from a decision
+ */
+export function useApproveDecision(decisionId: string) {
+  const queryClient = useQueryClient();
+  const { approveDecision } = useDecisionApi();
+
+  return useMutation({
+    mutationFn: (data: ApproveDecisionRequest) =>
+      approveDecision(decisionId, data),
+    onSuccess: () => {
+      // Invalidate the decision detail to refresh reviewer/approval status
+      queryClient.invalidateQueries({
+        queryKey: decisionKeys.detail(decisionId),
+      });
+      // Invalidate lists (status might have changed)
+      queryClient.invalidateQueries({ queryKey: decisionKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Fetch pending approvals for the current user
+ */
+export function usePendingApprovals() {
+  const { user } = useAuth();
+  const { currentOrganization } = useOrganization();
+  const client = useApiClient();
+
+  return useQuery({
+    queryKey: ["pending-approvals", currentOrganization?.id],
+    queryFn: async () => {
+      const response = await client.get("/decisions/pending-approvals");
+      return response.data as {
+        items: Array<{
+          id: string;
+          decision_number: number;
+          version_id: string;
+          title: string;
+          impact_level: string;
+          status: string;
+          created_at: string;
+          created_by: { id: string; name: string; email: string };
+        }>;
+        total: number;
+      };
+    },
+    staleTime: 30_000, // 30 seconds
+    enabled: !!user && !!currentOrganization?.id,
+  });
+}
+
+// Need to import useApiClient for usePendingApprovals
+import { useApiClient } from "./use-api";
 
 // =============================================================================
 // OPTIMISTIC VERSION SWITCHING

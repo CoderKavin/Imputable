@@ -136,13 +136,16 @@ class handler(BaseHTTPRequestHandler):
                     version_num = query_params.get("version", [None])[0]
                     version_num = int(version_num) if version_num else None
 
-                    # Get decision
+                    # Get decision (including source and slack fields for "View in Slack" link)
                     result = conn.execute(text("""
                         SELECT d.id, d.organization_id, d.decision_number, d.status,
                                d.current_version_id, d.created_at,
-                               u.id as creator_id, u.name as creator_name, u.email as creator_email
+                               u.id as creator_id, u.name as creator_name, u.email as creator_email,
+                               d.source, d.slack_channel_id, d.slack_message_ts,
+                               o.slack_team_id
                         FROM decisions d
                         JOIN users u ON d.created_by = u.id
+                        JOIN organizations o ON d.organization_id = o.id
                         WHERE d.id = :did AND d.deleted_at IS NULL
                     """), {"did": decision_id})
                     decision = result.fetchone()
@@ -187,6 +190,44 @@ class handler(BaseHTTPRequestHandler):
                     """), {"did": decision_id})
                     version_count = result.fetchone()[0]
 
+                    # Get reviewers and their approval status for current version
+                    current_version_id = decision[4]
+                    result = conn.execute(text("""
+                        SELECT rr.user_id, u.name, u.email,
+                               COALESCE(a.status, 'pending') as approval_status,
+                               a.comment as approval_comment
+                        FROM required_reviewers rr
+                        JOIN users u ON rr.user_id = u.id
+                        LEFT JOIN approvals a ON a.decision_version_id = rr.decision_version_id
+                                             AND a.user_id = rr.user_id
+                        WHERE rr.decision_version_id = :version_id
+                    """), {"version_id": current_version_id})
+
+                    reviewers = []
+                    for row in result.fetchall():
+                        reviewers.append({
+                            "id": str(row[0]),
+                            "name": row[1],
+                            "email": row[2],
+                            "status": row[3],
+                            "comment": row[4]
+                        })
+
+                    # Check if current user is a required reviewer
+                    is_reviewer = any(r["id"] == str(user_id) for r in reviewers)
+
+                    # Get current user's approval status if they are a reviewer
+                    current_user_approval = None
+                    for r in reviewers:
+                        if r["id"] == str(user_id):
+                            current_user_approval = r["status"]
+                            break
+
+                    # Calculate approval progress
+                    required_count = len(reviewers)
+                    approved_count = sum(1 for r in reviewers if r["status"] == "approved")
+                    rejected_count = sum(1 for r in reviewers if r["status"] == "rejected")
+
                     # Parse content if it's a string
                     content = version[4]
                     if isinstance(content, str):
@@ -194,6 +235,17 @@ class handler(BaseHTTPRequestHandler):
                             content = json.loads(content)
                         except:
                             content = {}
+
+                    # Build Slack link if decision was created from Slack
+                    # decision[9] = source, decision[10] = slack_channel_id,
+                    # decision[11] = slack_message_ts, decision[12] = slack_team_id
+                    source = decision[9] or "web"
+                    slack_link = None
+                    if source == "slack" and decision[10] and decision[12]:
+                        # Slack deep link format: slack://channel?team=T123&id=C123&message=1234567890.123456
+                        slack_link = f"slack://channel?team={decision[12]}&id={decision[10]}"
+                        if decision[11]:  # slack_message_ts
+                            slack_link += f"&message={decision[11]}"
 
                     self._send(200, {
                         "id": str(decision[0]),
@@ -223,7 +275,17 @@ class handler(BaseHTTPRequestHandler):
                             "is_current": str(version[0]) == str(decision[4])
                         },
                         "version_count": version_count,
-                        "requested_version": version_num
+                        "requested_version": version_num,
+                        "reviewers": reviewers,
+                        "is_reviewer": is_reviewer,
+                        "current_user_approval": current_user_approval,
+                        "approval_progress": {
+                            "required": required_count,
+                            "approved": approved_count,
+                            "rejected": rejected_count
+                        },
+                        "source": source,
+                        "slack_link": slack_link
                     })
 
                 elif method == "PUT":

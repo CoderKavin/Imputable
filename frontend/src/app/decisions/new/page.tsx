@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { cn } from "@/lib/utils";
 import { useCreateDecision } from "@/hooks/use-decisions";
-import { AppLayout } from "@/components/app";
+import { AppLayout, ReviewerPicker } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import type {
   ImpactLevel,
@@ -50,6 +50,7 @@ export default function NewDecisionPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [impactLevel, setImpactLevel] = useState<ImpactLevel>("medium");
   const [tagInput, setTagInput] = useState("");
+  const [reviewerIds, setReviewerIds] = useState<string[]>([]);
 
   // Handle form submission
   const handleSubmit = useCallback(async () => {
@@ -73,6 +74,7 @@ export default function NewDecisionPage() {
       },
       impact_level: impactLevel,
       tags,
+      reviewer_ids: reviewerIds.length > 0 ? reviewerIds : undefined,
     };
 
     try {
@@ -370,6 +372,16 @@ export default function NewDecisionPage() {
                 </div>
               </div>
             </FormSection>
+
+            {/* Reviewers */}
+            <div className="pt-4 border-t border-gray-100">
+              <ReviewerPicker
+                selectedIds={reviewerIds}
+                onChange={setReviewerIds}
+                excludeCurrentUser={true}
+                placeholder="Select team members to review this decision..."
+              />
+            </div>
           </div>
 
           {/* Footer */}

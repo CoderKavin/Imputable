@@ -350,6 +350,28 @@ class Decision(Base, UUIDMixin, SoftDeleteMixin):
         comment="Flag indicating this is a temporary/expedient decision"
     )
 
+    # Source tracking (for Slack integration)
+    source: Mapped[str] = mapped_column(
+        String(20),
+        default="web",
+        comment="Origin of the decision: web, slack"
+    )
+    slack_channel_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack channel ID where decision was created"
+    )
+    slack_message_ts: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack message timestamp for deep linking"
+    )
+    slack_thread_ts: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack thread timestamp if created in a thread"
+    )
+
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="decisions")
     owner_team: Mapped["Team | None"] = relationship(back_populates="owned_decisions")

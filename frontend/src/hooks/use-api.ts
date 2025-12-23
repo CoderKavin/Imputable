@@ -17,6 +17,8 @@ import type {
   VersionCompareResponse,
   CreateDecisionRequest,
   AmendDecisionRequest,
+  ApproveDecisionRequest,
+  ApprovalProgress,
 } from "@/types/decision";
 
 // Use same-origin for Vercel Python functions
@@ -131,6 +133,24 @@ export function useDecisionApi() {
     [client],
   );
 
+  const approveDecision = useCallback(
+    async (
+      decisionId: string,
+      data: ApproveDecisionRequest,
+    ): Promise<{
+      success: boolean;
+      approval_progress: ApprovalProgress;
+      decision_status: string;
+    }> => {
+      const response = await client.post(
+        `/decisions/${decisionId}/approve`,
+        data,
+      );
+      return response.data;
+    },
+    [client],
+  );
+
   return {
     listDecisions,
     getDecision,
@@ -138,5 +158,6 @@ export function useDecisionApi() {
     amendDecision,
     getVersionHistory,
     compareVersions,
+    approveDecision,
   };
 }

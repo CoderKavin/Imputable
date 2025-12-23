@@ -170,14 +170,44 @@ class handler(BaseHTTPRequestHandler):
 
                     items = []
                     for row in result.fetchall():
+                        decision_id = row[0]
+                        version_id = row[5]
+
                         # Get version count
                         vc_result = conn.execute(text("""
                             SELECT COUNT(*) FROM decision_versions WHERE decision_id = :did
-                        """), {"did": row[0]})
+                        """), {"did": decision_id})
                         version_count = vc_result.fetchone()[0]
 
-                        items.append({
-                            "id": str(row[0]),
+                        # Get reviewers and their approval status
+                        reviewers_result = conn.execute(text("""
+                            SELECT rr.user_id, u.name, u.email,
+                                   COALESCE(a.status, 'pending') as approval_status
+                            FROM required_reviewers rr
+                            JOIN users u ON rr.user_id = u.id
+                            LEFT JOIN approvals a ON a.decision_version_id = rr.decision_version_id
+                                                 AND a.user_id = rr.user_id
+                            WHERE rr.decision_version_id = :version_id
+                        """), {"version_id": version_id})
+
+                        reviewers = []
+                        approved_count = 0
+                        rejected_count = 0
+                        for r in reviewers_result.fetchall():
+                            status = r[3]
+                            reviewers.append({
+                                "id": str(r[0]),
+                                "name": r[1],
+                                "email": r[2],
+                                "status": status
+                            })
+                            if status == "approved":
+                                approved_count += 1
+                            elif status == "rejected":
+                                rejected_count += 1
+
+                        item = {
+                            "id": str(decision_id),
                             "organization_id": str(row[1]),
                             "decision_number": row[2],
                             "status": row[3],
@@ -191,7 +221,18 @@ class handler(BaseHTTPRequestHandler):
                                 "email": row[11]
                             },
                             "version_count": version_count
-                        })
+                        }
+
+                        # Only include reviewer data if there are reviewers
+                        if reviewers:
+                            item["reviewers"] = reviewers
+                            item["approval_progress"] = {
+                                "required": len(reviewers),
+                                "approved": approved_count,
+                                "rejected": rejected_count
+                            }
+
+                        items.append(item)
 
                     self._send(200, {
                         "items": items,
@@ -209,6 +250,7 @@ class handler(BaseHTTPRequestHandler):
                     content = body.get("content", {})
                     impact_level = body.get("impact_level", "medium")
                     tags = body.get("tags", [])
+                    reviewer_ids = body.get("reviewer_ids", [])
 
                     if not title:
                         self._send(400, {"error": "Title is required"})
@@ -246,6 +288,13 @@ class handler(BaseHTTPRequestHandler):
                     conn.execute(text("""
                         UPDATE decisions SET current_version_id = :vid WHERE id = :did
                     """), {"vid": version_id, "did": decision_id})
+
+                    # Add required reviewers if specified
+                    for reviewer_id in reviewer_ids:
+                        conn.execute(text("""
+                            INSERT INTO required_reviewers (id, decision_version_id, user_id, added_by, added_at)
+                            VALUES (gen_random_uuid(), :version_id, :reviewer_id, :user_id, NOW())
+                        """), {"version_id": version_id, "reviewer_id": reviewer_id, "user_id": user_id})
 
                     conn.commit()
 

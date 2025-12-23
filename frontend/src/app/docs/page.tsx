@@ -52,22 +52,23 @@ const docCategories = [
     icon: Rocket,
     title: "Getting Started",
     description: "Learn the basics and get up and running in minutes.",
-    links: [
-      { title: "Quick Start Guide", href: "#quick-start" },
-      { title: "Core Concepts", href: "#concepts" },
-      { title: "Creating Your First Decision", href: "#first-decision" },
+    topics: [
+      "Quick Start Guide",
+      "Core Concepts",
+      "Creating Your First Decision",
     ],
     gradient: "from-cyan-500 to-blue-600",
   },
   {
     icon: FileText,
     title: "Decision Management",
-    description: "Everything about creating, editing, and organizing decisions.",
-    links: [
-      { title: "Decision Structure", href: "#structure" },
-      { title: "Version History", href: "#versions" },
-      { title: "Supersession & Lineage", href: "#supersession" },
-      { title: "Tags & Search", href: "#search" },
+    description:
+      "Everything about creating, editing, and organizing decisions.",
+    topics: [
+      "Decision Structure",
+      "Version History",
+      "Supersession & Lineage",
+      "Tags & Search",
     ],
     gradient: "from-purple-500 to-pink-600",
   },
@@ -75,45 +76,32 @@ const docCategories = [
     icon: Users,
     title: "Team Collaboration",
     description: "Working with your team on decisions.",
-    links: [
-      { title: "Roles & Permissions", href: "#roles" },
-      { title: "Approval Workflows", href: "#approvals" },
-      { title: "Team Assignment", href: "#teams" },
-    ],
+    topics: ["Roles & Permissions", "Approval Workflows", "Team Assignment"],
     gradient: "from-green-500 to-emerald-600",
   },
   {
     icon: Webhook,
     title: "Integrations",
     description: "Connect Imputable to your existing tools.",
-    links: [
-      { title: "Slack Integration", href: "#slack" },
-      { title: "Microsoft Teams", href: "#teams-integration" },
-      { title: "Webhooks", href: "#webhooks" },
-    ],
+    topics: ["Slack Integration", "Microsoft Teams", "Webhooks"],
     gradient: "from-orange-500 to-red-600",
   },
   {
     icon: Code2,
     title: "API Reference",
     description: "Build custom integrations with our REST API.",
-    links: [
-      { title: "Authentication", href: "#auth" },
-      { title: "Decisions API", href: "#decisions-api" },
-      { title: "Audit API", href: "#audit-api" },
-      { title: "Rate Limits", href: "#rate-limits" },
-    ],
+    topics: ["Authentication", "Decisions API", "Audit API", "Rate Limits"],
     gradient: "from-indigo-500 to-purple-600",
   },
   {
     icon: Shield,
     title: "Security & Compliance",
     description: "How we keep your data safe and compliant.",
-    links: [
-      { title: "Data Encryption", href: "#encryption" },
-      { title: "Audit Exports", href: "#exports" },
-      { title: "SOC 2 Compliance", href: "#soc2" },
-      { title: "SSO Configuration", href: "#sso" },
+    topics: [
+      "Data Encryption",
+      "Audit Exports",
+      "SOC 2 Compliance",
+      "SSO Configuration",
     ],
     gradient: "from-slate-500 to-zinc-600",
   },
@@ -164,20 +152,6 @@ export default function DocsPage() {
               Everything you need to know about documenting and managing your
               engineering decisions.
             </p>
-
-            {/* Search Bar */}
-            <div className="max-w-xl mx-auto">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search documentation..."
-                  className="w-full px-6 py-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/30 transition-colors"
-                />
-                <kbd className="absolute right-4 top-1/2 -translate-y-1/2 px-2 py-1 rounded bg-white/10 text-xs text-gray-500">
-                  ⌘K
-                </kbd>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -226,15 +200,13 @@ export default function DocsPage() {
                     {category.description}
                   </p>
                   <ul className="space-y-2">
-                    {category.links.map((link) => (
-                      <li key={link.title}>
-                        <a
-                          href={link.href}
-                          className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-                        >
-                          <ArrowRight className="w-3 h-3" />
-                          {link.title}
-                        </a>
+                    {category.topics.map((topic) => (
+                      <li
+                        key={topic}
+                        className="text-sm text-gray-400 flex items-center gap-2"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                        {topic}
                       </li>
                     ))}
                   </ul>
@@ -259,10 +231,7 @@ export default function DocsPage() {
               </div>
               <div className="divide-y divide-white/10">
                 {slackCommands.map((cmd) => (
-                  <div
-                    key={cmd.command}
-                    className="p-4 flex items-start gap-4"
-                  >
+                  <div key={cmd.command} className="p-4 flex items-start gap-4">
                     <code className="px-3 py-1 rounded-lg bg-zinc-900 text-cyan-400 text-sm font-mono whitespace-nowrap">
                       {cmd.command}
                     </code>
@@ -294,7 +263,7 @@ export default function DocsPage() {
               </div>
               <pre className="p-6 text-sm overflow-x-auto">
                 <code className="text-gray-300">
-{`curl -X POST https://api.imputable.io/v1/decisions \\
+                  {`curl -X POST https://api.imputable.io/v1/decisions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

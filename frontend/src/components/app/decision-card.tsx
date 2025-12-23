@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { StatusPill } from "./status-pill";
+import { AvatarStack } from "./avatar-stack";
+import { ApprovalProgress } from "./approval-progress";
 import type { DecisionSummary } from "@/types/decision";
 
 interface DecisionCardProps {
@@ -151,6 +153,24 @@ export function DecisionCard({ decision, className }: DecisionCardProps) {
               <span className="text-xs text-gray-400">
                 +{decision.tags.length - 4}
               </span>
+            )}
+          </div>
+        )}
+
+        {/* Reviewers & Approval Progress - only show if reviewers exist */}
+        {decision.reviewers && decision.reviewers.length > 0 && (
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">Reviewers:</span>
+              <AvatarStack users={decision.reviewers} max={4} size="sm" />
+            </div>
+            {decision.approval_progress && (
+              <ApprovalProgress
+                required={decision.approval_progress.required}
+                approved={decision.approval_progress.approved}
+                rejected={decision.approval_progress.rejected}
+                variant="compact"
+              />
             )}
           </div>
         )}
