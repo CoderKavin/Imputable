@@ -226,8 +226,8 @@ class handler(BaseHTTPRequestHandler):
 
                     # Create decision
                     conn.execute(text("""
-                        INSERT INTO decisions (id, organization_id, decision_number, status, created_by, created_at)
-                        VALUES (:id, :org_id, :num, 'draft', :user_id, NOW())
+                        INSERT INTO decisions (id, organization_id, decision_number, status, created_by, created_at, is_temporary)
+                        VALUES (:id, :org_id, :num, 'draft', :user_id, NOW(), false)
                     """), {"id": decision_id, "org_id": org_id, "num": decision_number, "user_id": user_id})
 
                     # Create version

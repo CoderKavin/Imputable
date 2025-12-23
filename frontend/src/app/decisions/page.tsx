@@ -51,54 +51,52 @@ export default function DecisionsPage() {
     setPage(1);
   };
 
-  const pageActions = (
-    <Button
-      className="rounded-2xl px-4 gap-2"
-      onClick={() => router.push("/decisions/new")}
-    >
-      <Plus className="w-4 h-4" />
-      New Decision
-    </Button>
-  );
-
   return (
     <AppLayout
       title="Decisions"
       subtitle="Engineering and product decision records"
-      actions={pageActions}
     >
       {noOrganization ? (
         <NoOrganizationState />
       ) : (
         <div className="space-y-6">
           {/* Filters Bar */}
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="rounded-xl gap-2">
-              <Filter className="w-4 h-4" />
-              Filters
-            </Button>
-            <div className="flex items-center gap-2">
-              <FilterPill
-                label="All Status"
-                active={statusFilter === "all"}
-                onClick={() => handleFilterChange("all")}
-              />
-              <FilterPill
-                label="Approved"
-                active={statusFilter === "approved"}
-                onClick={() => handleFilterChange("approved")}
-              />
-              <FilterPill
-                label="In Review"
-                active={statusFilter === "pending_review"}
-                onClick={() => handleFilterChange("pending_review")}
-              />
-              <FilterPill
-                label="Draft"
-                active={statusFilter === "draft"}
-                onClick={() => handleFilterChange("draft")}
-              />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" className="rounded-xl gap-2">
+                <Filter className="w-4 h-4" />
+                Filters
+              </Button>
+              <div className="flex items-center gap-2">
+                <FilterPill
+                  label="All Status"
+                  active={statusFilter === "all"}
+                  onClick={() => handleFilterChange("all")}
+                />
+                <FilterPill
+                  label="Approved"
+                  active={statusFilter === "approved"}
+                  onClick={() => handleFilterChange("approved")}
+                />
+                <FilterPill
+                  label="In Review"
+                  active={statusFilter === "pending_review"}
+                  onClick={() => handleFilterChange("pending_review")}
+                />
+                <FilterPill
+                  label="Draft"
+                  active={statusFilter === "draft"}
+                  onClick={() => handleFilterChange("draft")}
+                />
+              </div>
             </div>
+            <Button
+              className="rounded-2xl px-4 gap-2"
+              onClick={() => router.push("/decisions/new")}
+            >
+              <Plus className="w-4 h-4" />
+              New Decision
+            </Button>
           </div>
 
           {/* Content */}
