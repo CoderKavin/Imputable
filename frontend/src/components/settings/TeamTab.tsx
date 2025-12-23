@@ -142,7 +142,8 @@ export function TeamTab() {
         throw new Error(data.error || "Failed to send invite");
       }
 
-      setSuccess(`Invitation sent to ${inviteEmail}`);
+      const data = await response.json();
+      setSuccess(data.message || `Added ${inviteEmail} to the organization`);
       setShowInviteModal(false);
       setInviteEmail("");
       setInviteRole("member");
@@ -438,75 +439,88 @@ export function TeamTab() {
 
       {/* Invite Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-zinc-900">
-            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              Invite Team Member
-            </h3>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Send an invitation to join your organization.
-            </p>
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50 bg-black/50"
+            onClick={() => {
+              setShowInviteModal(false);
+              setInviteEmail("");
+              setInviteRole("member");
+            }}
+          />
+          {/* Modal */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-zinc-900 shadow-xl pointer-events-auto mx-4">
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Add Team Member
+              </h3>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                Add a user to your organization. They must already have an
+                account.
+              </p>
 
-            <div className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Email Address
-                </label>
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="colleague@company.com"
+              <div className="mt-4 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Email Address
+                  </label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="colleague@company.com"
+                    className="rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Role
+                  </label>
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <option value="member">
+                      Member - Can view and create decisions
+                    </option>
+                    <option value="admin">
+                      Admin - Can manage members and settings
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteEmail("");
+                    setInviteRole("member");
+                  }}
                   className="rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Role
-                </label>
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
                 >
-                  <option value="member">
-                    Member - Can view and create decisions
-                  </option>
-                  <option value="admin">
-                    Admin - Can manage members and settings
-                  </option>
-                </select>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleInvite}
+                  disabled={inviting || !inviteEmail.trim()}
+                  className="rounded-xl"
+                >
+                  {inviting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="mr-2 h-4 w-4" />
+                  )}
+                  Add Member
+                </Button>
               </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowInviteModal(false);
-                  setInviteEmail("");
-                  setInviteRole("member");
-                }}
-                className="rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleInvite}
-                disabled={inviting || !inviteEmail.trim()}
-                className="rounded-xl"
-              >
-                {inviting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Mail className="mr-2 h-4 w-4" />
-                )}
-                Send Invite
-              </Button>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
