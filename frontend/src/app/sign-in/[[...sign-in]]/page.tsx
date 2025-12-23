@@ -72,13 +72,7 @@ export default function SignInPage() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
         {/* Logo */}
         <div className="flex justify-center mb-6">
-          <Image
-            src="/icon.png"
-            alt="Imputable"
-            width={72}
-            height={72}
-            className="rounded-2xl shadow-lg"
-          />
+          <Image src="/icon.png" alt="Imputable" width={72} height={72} />
         </div>
 
         {/* Header */}
