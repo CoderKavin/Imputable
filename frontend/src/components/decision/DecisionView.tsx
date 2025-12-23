@@ -19,8 +19,6 @@ import { StatusPill, ImpactPill } from "@/components/app";
 import {
   FileEdit,
   GitCompare,
-  Share2,
-  MoreHorizontal,
   Loader2,
   AlertCircle,
   ArrowLeft,
@@ -178,13 +176,6 @@ export function DecisionView({
                 Propose Change
               </Button>
             )}
-
-            <Button variant="ghost" size="icon" className="rounded-xl">
-              <Share2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="rounded-xl">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
           </div>
         </div>
       </header>

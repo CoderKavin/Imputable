@@ -62,33 +62,27 @@ export default function DecisionsPage() {
         <div className="space-y-6">
           {/* Filters Bar */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" className="rounded-xl gap-2">
-                <Filter className="w-4 h-4" />
-                Filters
-              </Button>
-              <div className="flex items-center gap-2">
-                <FilterPill
-                  label="All Status"
-                  active={statusFilter === "all"}
-                  onClick={() => handleFilterChange("all")}
-                />
-                <FilterPill
-                  label="Approved"
-                  active={statusFilter === "approved"}
-                  onClick={() => handleFilterChange("approved")}
-                />
-                <FilterPill
-                  label="In Review"
-                  active={statusFilter === "pending_review"}
-                  onClick={() => handleFilterChange("pending_review")}
-                />
-                <FilterPill
-                  label="Draft"
-                  active={statusFilter === "draft"}
-                  onClick={() => handleFilterChange("draft")}
-                />
-              </div>
+            <div className="flex items-center gap-2">
+              <FilterPill
+                label="All Status"
+                active={statusFilter === "all"}
+                onClick={() => handleFilterChange("all")}
+              />
+              <FilterPill
+                label="Approved"
+                active={statusFilter === "approved"}
+                onClick={() => handleFilterChange("approved")}
+              />
+              <FilterPill
+                label="In Review"
+                active={statusFilter === "pending_review"}
+                onClick={() => handleFilterChange("pending_review")}
+              />
+              <FilterPill
+                label="Draft"
+                active={statusFilter === "draft"}
+                onClick={() => handleFilterChange("draft")}
+              />
             </div>
             <Button
               className="rounded-2xl px-4 gap-2"
@@ -254,7 +248,11 @@ function ErrorState() {
       <p className="text-gray-500 mb-6">
         Something went wrong. Please try again.
       </p>
-      <Button variant="outline" className="rounded-2xl">
+      <Button
+        variant="outline"
+        className="rounded-2xl"
+        onClick={() => window.location.reload()}
+      >
         Retry
       </Button>
     </div>
