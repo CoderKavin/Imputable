@@ -48,12 +48,12 @@ export function SnoozeModal({ decision, onClose }: SnoozeModalProps) {
   newDate.setDate(newDate.getDate() + selectedDays);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <Card className="relative z-10 w-full max-w-md mx-4 shadow-xl">
+      <Card className="relative z-[201] w-full max-w-md mx-4 shadow-xl">
         <CardHeader>
           <CardTitle className="text-lg">Snooze Decision</CardTitle>
           <p className="text-sm text-gray-500 mt-1">

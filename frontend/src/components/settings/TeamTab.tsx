@@ -442,7 +442,7 @@ export function TeamTab() {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-50 bg-black/50"
+            className="fixed inset-0 z-[200] bg-black/50"
             onClick={() => {
               setShowInviteModal(false);
               setInviteEmail("");
@@ -450,7 +450,7 @@ export function TeamTab() {
             }}
           />
           {/* Modal */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="fixed inset-0 z-[201] flex items-center justify-center pointer-events-none">
             <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-zinc-900 shadow-xl pointer-events-auto mx-4">
               <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                 Add Team Member
