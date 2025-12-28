@@ -644,21 +644,7 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
             thread_ts = message.get("thread_ts")
             channel_id = channel.get("id", "")
 
-            # Check duplicate
-            if message_ts and channel_id:
-                result = conn.execute(text("""
-                    SELECT lm.decision_id, d.decision_number, dv.title
-                    FROM logged_messages lm
-                    JOIN decisions d ON lm.decision_id = d.id
-                    JOIN decision_versions dv ON d.current_version_id = dv.id
-                    WHERE lm.source = 'slack' AND lm.message_id = :msg_id AND lm.channel_id = :channel_id
-                """), {"msg_id": message_ts, "channel_id": channel_id})
-                existing = result.fetchone()
-
-                if existing:
-                    return {"response_type": "ephemeral", "blocks": SlackBlocks.duplicate_warning(str(existing[0]), existing[1], existing[2])}
-
-            # Open modal
+            # Open modal FIRST (trigger_id expires in 3 seconds!)
             if token and trigger_id:
                 prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
                 modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
@@ -687,90 +673,88 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
 
             message_text = message.get("text", "")
             message_ts = message.get("ts", "")
-            thread_ts = message.get("thread_ts") or message_ts  # Use message as thread root if not in thread
+            thread_ts = message.get("thread_ts") or message_ts
             channel_id = channel.get("id", "")
             channel_name = channel.get("name", "")
-
-            # Check duplicate using thread_ts
-            check_ts = thread_ts or message_ts
-            if check_ts and channel_id:
-                result = conn.execute(text("""
-                    SELECT lm.decision_id, d.decision_number, dv.title
-                    FROM logged_messages lm
-                    JOIN decisions d ON lm.decision_id = d.id
-                    JOIN decision_versions dv ON d.current_version_id = dv.id
-                    WHERE lm.source = 'slack' AND lm.message_id = :msg_id AND lm.channel_id = :channel_id
-                """), {"msg_id": check_ts, "channel_id": channel_id})
-                existing = result.fetchone()
-
-                if existing:
-                    return {"response_type": "ephemeral", "blocks": SlackBlocks.duplicate_warning(str(existing[0]), existing[1], existing[2])}
 
             if not token:
                 return {"response_type": "ephemeral", "text": ":x: Bot token not available."}
 
-            # Check if AI is configured
-            gemini_key = os.environ.get("GEMINI_API_KEY", "")
-            if not gemini_key:
-                # Fallback to regular log modal
-                if trigger_id:
-                    prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
-                    modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
-                    payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
-                    req = urllib.request.Request(
-                        "https://slack.com/api/views.open",
-                        data=payload_data,
-                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                    )
-                    try:
-                        urllib.request.urlopen(req, timeout=10)
-                    except Exception:
-                        pass
-                return {}
+            # Open a loading modal IMMEDIATELY (trigger expires in 3 seconds!)
+            loading_modal = {
+                "type": "modal",
+                "callback_id": "ai_loading_modal",
+                "title": {"type": "plain_text", "text": "Analyzing..."},
+                "close": {"type": "plain_text", "text": "Cancel"},
+                "blocks": [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the conversation...*\n\nThis may take a few seconds."}}
+                ]
+            }
 
+            view_id = None
+            if trigger_id:
+                payload_data = json.dumps({"trigger_id": trigger_id, "view": loading_modal}).encode()
+                req = urllib.request.Request(
+                    "https://slack.com/api/views.open",
+                    data=payload_data,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                )
+                try:
+                    resp = urllib.request.urlopen(req, timeout=10)
+                    resp_data = json.loads(resp.read().decode())
+                    print(f"[SLACK] Loading modal response: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
+                    if resp_data.get("ok"):
+                        view_id = resp_data.get("view", {}).get("id")
+                except Exception as e:
+                    print(f"[SLACK] Failed to open loading modal: {e}")
+                    return {}
+
+            # Now do the slow AI analysis
             try:
-                # Fetch the thread
-                if thread_ts and thread_ts != message_ts:
-                    messages = fetch_slack_thread(token, channel_id, thread_ts)
+                gemini_key = os.environ.get("GEMINI_API_KEY", "")
+
+                if gemini_key:
+                    # Fetch the thread
+                    if thread_ts and thread_ts != message_ts:
+                        messages = fetch_slack_thread(token, channel_id, thread_ts)
+                    else:
+                        messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
+
+                    messages = resolve_slack_user_names(token, messages)
+                    analysis = analyze_with_gemini(messages, channel_name)
                 else:
-                    # Just the single message
-                    messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
+                    analysis = None
 
-                # Resolve user names
-                messages = resolve_slack_user_names(token, messages)
-
-                # Analyze with AI
-                analysis = analyze_with_gemini(messages, channel_name)
-
-                if not analysis:
-                    # Fallback to regular modal if AI fails
+                if analysis:
+                    modal = SlackModals.ai_prefilled_modal(analysis, channel_id, message_ts, thread_ts)
+                else:
                     prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
                     modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
-                else:
-                    # Use AI-prefilled modal
-                    modal = SlackModals.ai_prefilled_modal(analysis, channel_id, message_ts, thread_ts)
 
-                if trigger_id:
-                    payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
+                # Update the loading modal with the actual content
+                if view_id:
+                    payload_data = json.dumps({"view_id": view_id, "view": modal}).encode()
                     req = urllib.request.Request(
-                        "https://slack.com/api/views.open",
+                        "https://slack.com/api/views.update",
                         data=payload_data,
                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                     )
                     try:
-                        urllib.request.urlopen(req, timeout=10)
+                        resp = urllib.request.urlopen(req, timeout=10)
+                        resp_data = json.loads(resp.read().decode())
+                        print(f"[SLACK] views.update response: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
                     except Exception as e:
-                        print(f"Failed to open modal: {e}")
+                        print(f"[SLACK] Failed to update modal: {e}")
 
             except Exception as e:
                 print(f"AI analysis error: {e}")
-                # Fallback to regular modal
-                if trigger_id:
+                # Update with fallback modal
+                if view_id:
                     prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
                     modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
-                    payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
+                    payload_data = json.dumps({"view_id": view_id, "view": modal}).encode()
                     req = urllib.request.Request(
-                        "https://slack.com/api/views.open",
+                        "https://slack.com/api/views.update",
                         data=payload_data,
                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                     )
