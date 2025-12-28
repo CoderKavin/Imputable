@@ -670,9 +670,13 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 )
                 try:
-                    urllib.request.urlopen(req, timeout=10)
-                except Exception:
-                    pass
+                    resp = urllib.request.urlopen(req, timeout=10)
+                    resp_data = json.loads(resp.read().decode())
+                    print(f"[SLACK] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
+                except Exception as e:
+                    print(f"[SLACK] views.open failed: {e}")
+            else:
+                print(f"[SLACK] Cannot open modal: token={bool(token)}, trigger_id={bool(trigger_id)}")
 
             return {}
 
