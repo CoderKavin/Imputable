@@ -592,128 +592,15 @@ async def handle_slack_command(
             "text": ":warning: This Slack workspace is not connected to Imputable. Please install the app first.",
         }
 
-    # Route based on intent
-    if intent == "help":
-        return {
-            "response_type": "ephemeral",
-            "blocks": SlackBlocks.help_message(),
-        }
-
-    elif intent == "menu":
-        # Return main menu inline (modal requires bot token)
-        return {
-            "response_type": "ephemeral",
-            "blocks": SlackBlocks.main_menu(),
-        }
-
-    elif intent == "list":
-        # Fetch recent decisions
-        decisions_result = await session.execute(
-            select(Decision)
-            .where(Decision.organization_id == org.id)
-            .where(Decision.deleted_at.is_(None))
-            .order_by(Decision.created_at.desc())
-            .limit(10)
-        )
-        decisions_db = decisions_result.scalars().all()
-
-        decisions = []
-        for d in decisions_db:
-            title = d.current_version.title if d.current_version else "Untitled"
-            decisions.append({
-                "id": str(d.id),
-                "number": d.decision_number,
-                "title": title,
-                "status": d.status.value if d.status else "draft",
-                "url": f"{settings.frontend_url}/decisions/{d.id}",
-                "created_at": d.created_at.strftime("%b %d, %Y") if d.created_at else "Unknown",
-            })
-
-        return {
-            "response_type": "ephemeral",
-            "blocks": SlackBlocks.decision_list(decisions),
-        }
-
-    elif intent == "add":
-        # Create decision directly (argument is the title)
-        title = argument if argument else "Untitled Decision"
-
-        from ..models import OrganizationMember
-        from sqlalchemy import func
-
-        # Get an admin user for this org
-        admin_result = await session.execute(
-            select(OrganizationMember)
-            .where(OrganizationMember.organization_id == org.id)
-            .where(OrganizationMember.role == "admin")
-            .limit(1)
-        )
-        admin_member = admin_result.scalar_one_or_none()
-
-        if not admin_member:
-            return {
-                "response_type": "ephemeral",
-                "text": ":x: Unable to create decision: No admin found for this organization.",
-            }
-
-        # Get next decision number
-        max_num_result = await session.execute(
-            select(func.max(Decision.decision_number))
-            .where(Decision.organization_id == org.id)
-        )
-        max_num = max_num_result.scalar() or 0
-
-        # Create the decision
-        from ..models import DecisionVersion, ImpactLevel
-
-        decision = Decision(
-            organization_id=org.id,
-            decision_number=max_num + 1,
-            status=DecisionStatus.DRAFT,
-            created_by=admin_member.user_id,
-        )
-        session.add(decision)
-        await session.flush()
-
-        # Create initial version
-        version = DecisionVersion(
-            decision_id=decision.id,
-            version_number=1,
-            title=title,
-            impact_level=ImpactLevel.MEDIUM,
-            content={
-                "context": f"Created via Slack by @{user_name}",
-                "choice": "",
-                "rationale": "",
-                "alternatives": [],
-            },
-            tags=["slack-created"],
-            created_by=admin_member.user_id,
-            change_summary="Created via Slack command",
-        )
-        session.add(version)
-        await session.flush()
-
-        # Link current version
-        decision.current_version_id = version.id
-        await session.commit()
-
-        # Return success message
-        return {
-            "response_type": "in_channel",
-            "blocks": SlackBlocks.decision_created(
-                decision_number=decision.decision_number,
-                title=title,
-                decision_id=str(decision.id),
-                user_id=user_id,
-            ),
-        }
-
-    # Default: show help
-    return {
-        "response_type": "ephemeral",
-        "blocks": SlackBlocks.help_message(),
-    }
+    # Use the SlackCommandRouter to handle all intents
+    # This routes to: menu, help, list, search, poll, add
+    return await router_service.route(
+        text=text,
+        team_id=team_id,
+        user_id=user_id,
+        trigger_id=trigger_id,
+        channel_id=channel_id,
+    )
 
 
 @router.post("/slack/interactions")
@@ -724,14 +611,20 @@ async def handle_slack_interactions(
     x_slack_request_timestamp: Annotated[str | None, Header()] = None,
 ):
     """
-    Handle Slack interactive components (button clicks, modal submissions).
+    Handle Slack interactive components (button clicks, modal submissions, shortcuts).
 
     This endpoint receives:
-    - block_actions: When users click buttons
+    - block_actions: When users click buttons (including poll votes)
     - view_submission: When users submit modals
+    - message_action: When users trigger message shortcuts (context menu)
+    - shortcut: When users trigger global shortcuts
     """
     import json
-    from ..services.slack_service import SlackInteractionHandler, SlackBlocks
+    from ..services.slack_service import (
+        SlackInteractionHandler,
+        SlackMessageShortcutHandler,
+        SlackBlocks,
+    )
 
     # Get raw body for signature verification
     body = await request.body()
@@ -759,19 +652,43 @@ async def handle_slack_interactions(
     team_id = payload.get("team", {}).get("id")
     user_id = payload.get("user", {}).get("id")
 
+    # Get organization and bot token for API calls
+    bot_token = None
+    if team_id:
+        result = await session.execute(
+            select(Organization).where(Organization.slack_team_id == team_id)
+        )
+        org = result.scalar_one_or_none()
+        if org and org.slack_access_token:
+            bot_token = decrypt_token(org.slack_access_token)
+
+    # Handle message shortcuts (context menu actions)
+    if interaction_type == "message_action":
+        callback_id = payload.get("callback_id")
+
+        if callback_id == "log_message_as_decision":
+            handler = SlackMessageShortcutHandler(session)
+            return await handler.handle_log_as_decision(payload, bot_token=bot_token)
+
+        elif callback_id == "ai_summarize_decision":
+            handler = SlackMessageShortcutHandler(session)
+            return await handler.handle_ai_summarize_decision(payload, bot_token=bot_token)
+
     # Handle view submissions (modal forms)
-    if interaction_type == "view_submission":
-        callback_id = payload.get("view", {}).get("callback_id")
+    elif interaction_type == "view_submission":
+        handler = SlackInteractionHandler(session)
+        result = await handler.handle(payload)
+        return result if result else {}
 
-        if callback_id == "create_decision_modal":
-            handler = SlackInteractionHandler(session)
-            result = await handler.handle(payload)
-            return result if result else {}
-
-    # Handle block actions (button clicks)
+    # Handle block actions (button clicks including poll votes)
     elif interaction_type == "block_actions":
-        actions = payload.get("actions", [])
+        handler = SlackInteractionHandler(session)
+        result = await handler.handle(payload)
+        if result:
+            return result
 
+        # Fallback for any unhandled actions
+        actions = payload.get("actions", [])
         for action in actions:
             action_id = action.get("action_id")
 
@@ -783,6 +700,154 @@ async def handle_slack_interactions(
                 }
 
     # Default: acknowledge without response
+    return {}
+
+
+# =============================================================================
+# MICROSOFT TEAMS BOT FRAMEWORK ENDPOINT
+# =============================================================================
+
+
+@router.post("/teams/messages")
+async def handle_teams_messages(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """
+    Handle Microsoft Teams Bot Framework activities.
+
+    This endpoint receives:
+    - message: Bot commands (search, poll, help)
+    - invoke: Card actions (poll votes, log as decision form)
+    - composeExtension: Messaging extension actions (Log as Decision)
+
+    Authentication is handled via Bot Framework JWT tokens.
+    """
+    from ..integrations.teams import TeamsBotService
+
+    # Get authorization header
+    auth_header = request.headers.get("Authorization", "")
+
+    # Parse request body
+    try:
+        activity = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body"
+        )
+
+    activity_type = activity.get("type")
+    conversation = activity.get("conversation", {})
+    tenant_id = conversation.get("tenantId") or activity.get("channelData", {}).get("tenant", {}).get("id")
+
+    # Initialize bot service
+    bot_service = TeamsBotService(session)
+
+    # Skip auth in development if not configured
+    if settings.environment != "development" or bot_service.is_configured:
+        if not bot_service.is_configured:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Teams Bot Framework is not configured"
+            )
+
+        # Verify JWT token
+        claims = await bot_service.verify_token(auth_header)
+        if not claims:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired Bot Framework token"
+            )
+
+    # Get organization by tenant ID
+    org = await bot_service.get_organization_by_tenant(tenant_id) if tenant_id else None
+
+    if not org:
+        # Try to find org by service URL (fallback for initial setup)
+        service_url = activity.get("serviceUrl", "")
+        if service_url:
+            result = await session.execute(
+                select(Organization).where(Organization.teams_service_url == service_url)
+            )
+            org = result.scalar_one_or_none()
+
+    if not org:
+        return {
+            "type": "message",
+            "text": "This Teams workspace is not connected to Imputable. Please install the app from your organization's settings.",
+        }
+
+    # Store service URL for future API calls (may change per tenant)
+    if activity.get("serviceUrl") and org.teams_service_url != activity.get("serviceUrl"):
+        org.teams_service_url = activity.get("serviceUrl")
+        await session.commit()
+
+    # Route by activity type
+    if activity_type == "message":
+        # Bot command
+        response = await bot_service.process_message_activity(activity, org)
+        return response
+
+    elif activity_type == "invoke":
+        invoke_name = activity.get("name", "")
+
+        # Compose extension (messaging extension)
+        if invoke_name == "composeExtension/fetchTask":
+            response = await bot_service.process_compose_extension(activity, org)
+            return response
+
+        elif invoke_name == "composeExtension/submitAction":
+            # Form submission from compose extension
+            response = await bot_service.process_card_action(activity, org)
+            return {
+                "task": {
+                    "type": "message",
+                    "value": "Decision logged successfully!" if response else "Failed to log decision",
+                }
+            }
+
+        elif invoke_name == "adaptiveCard/action":
+            # Adaptive Card action (button click)
+            response = await bot_service.process_card_action(activity, org)
+            return {
+                "statusCode": 200,
+                "type": "application/vnd.microsoft.card.adaptive",
+                "value": response.get("attachments", [{}])[0].get("content", {}),
+            }
+
+        else:
+            # Unknown invoke
+            return {"statusCode": 200}
+
+    elif activity_type == "conversationUpdate":
+        # Bot added to conversation - send welcome message
+        members_added = activity.get("membersAdded", [])
+        bot_id = activity.get("recipient", {}).get("id")
+
+        for member in members_added:
+            if member.get("id") == bot_id:
+                # Bot was added - store tenant info
+                if tenant_id and not org.teams_tenant_id:
+                    org.teams_tenant_id = tenant_id
+                    org.teams_bot_id = bot_id
+                    org.teams_service_url = activity.get("serviceUrl")
+                    await session.commit()
+
+                from ..integrations.teams import TeamsCards
+                return {
+                    "type": "message",
+                    "attachments": [
+                        {
+                            "contentType": "application/vnd.microsoft.card.adaptive",
+                            "content": TeamsCards.help_card(),
+                        }
+                    ],
+                }
+
+        return {}
+
+    # Default acknowledgment
     return {}
 
 

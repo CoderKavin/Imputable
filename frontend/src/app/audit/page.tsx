@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Audit Export Page
+ * Audit Log Page
  *
- * Enterprise feature for generating SOC2/ISO/HIPAA compliant audit reports.
- * Now with proper Firebase authentication and real API integration.
+ * Shows real audit trail of all actions in the organization.
+ * Also provides compliance report generation for SOC2/ISO/HIPAA audits.
  */
 
 import { useState, useCallback, useEffect } from "react";
@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
+import { useApiClient } from "@/hooks/use-api";
+import { useQuery } from "@tanstack/react-query";
 import {
   Calendar,
   Filter,
@@ -33,8 +35,28 @@ import {
   Tag,
   ArrowRight,
   RefreshCw,
+  Activity,
+  User,
+  Edit,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Audit log entry type
+interface AuditLogEntry {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: Record<string, unknown>;
+  created_at: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
 
 // =============================================================================
 // TYPES
@@ -63,8 +85,34 @@ export default function AuditExportPage() {
   const router = useRouter();
   const { user, getToken } = useAuth();
   const { currentOrganization } = useOrganization();
+  const apiClient = useApiClient();
 
-  // Fetch decisions for preview
+  // Tab state - show audit log or report generator
+  const [activeTab, setActiveTab] = useState<"log" | "report">("log");
+
+  // Fetch audit log entries
+  const {
+    data: auditData,
+    isLoading: auditLoading,
+    refetch: refetchAudit,
+  } = useQuery({
+    queryKey: ["audit-log", currentOrganization?.id],
+    queryFn: async () => {
+      const response = await apiClient.get("/audit", {
+        params: { page: 1, page_size: 50 },
+      });
+      return response.data as {
+        items: AuditLogEntry[];
+        total: number;
+        page: number;
+        page_size: number;
+      };
+    },
+    enabled: !!user && !!currentOrganization?.id,
+    staleTime: 30_000,
+  });
+
+  // Fetch decisions for report generation
   const {
     data: decisionsData,
     isLoading: decisionsLoading,
@@ -134,13 +182,21 @@ export default function AuditExportPage() {
       return true;
     }) || [];
 
-  // Calculate stats
-  const stats = {
+  // Calculate stats for decisions
+  const decisionStats = {
     total: filteredDecisions.length,
     approved: filteredDecisions.filter((d) => d.status === "approved").length,
     pending: filteredDecisions.filter((d) => d.status === "pending_review")
       .length,
     draft: filteredDecisions.filter((d) => d.status === "draft").length,
+  };
+
+  // Calculate stats for audit log
+  const auditStats = {
+    total: auditData?.total || 0,
+    creates: auditData?.items?.filter((a) => a.action === "create").length || 0,
+    updates: auditData?.items?.filter((a) => a.action === "update").length || 0,
+    reads: auditData?.items?.filter((a) => a.action === "read").length || 0,
   };
 
   // Get all unique tags from decisions
@@ -230,7 +286,7 @@ export default function AuditExportPage() {
         },
         summary: {
           total_decisions: filteredDecisions.length,
-          by_status: stats,
+          by_status: decisionStats,
         },
         decisions: filteredDecisions.map((d) => ({
           decision_number: d.decision_number,
@@ -279,7 +335,7 @@ export default function AuditExportPage() {
     user,
     selectedStatuses,
     selectedTags,
-    stats,
+    decisionStats,
   ]);
 
   const statuses = [
@@ -337,7 +393,7 @@ export default function AuditExportPage() {
                 <div>
                   <p className="text-sm text-gray-500">Total</p>
                   <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {decisionsLoading ? "..." : stats.total}
+                    {decisionsLoading ? "..." : decisionStats.total}
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
@@ -350,7 +406,7 @@ export default function AuditExportPage() {
                 <div>
                   <p className="text-sm text-gray-500">Approved</p>
                   <p className="text-2xl font-bold text-emerald-600 mt-1">
-                    {decisionsLoading ? "..." : stats.approved}
+                    {decisionsLoading ? "..." : decisionStats.approved}
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
@@ -363,7 +419,7 @@ export default function AuditExportPage() {
                 <div>
                   <p className="text-sm text-gray-500">Pending</p>
                   <p className="text-2xl font-bold text-amber-600 mt-1">
-                    {decisionsLoading ? "..." : stats.pending}
+                    {decisionsLoading ? "..." : decisionStats.pending}
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
@@ -376,7 +432,7 @@ export default function AuditExportPage() {
                 <div>
                   <p className="text-sm text-gray-500">Draft</p>
                   <p className="text-2xl font-bold text-gray-600 mt-1">
-                    {decisionsLoading ? "..." : stats.draft}
+                    {decisionsLoading ? "..." : decisionStats.draft}
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">

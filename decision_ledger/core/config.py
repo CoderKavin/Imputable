@@ -106,6 +106,23 @@ class Settings(BaseSettings):
         """Check if Slack integration is configured."""
         return bool(self.slack_client_id and self.slack_client_secret)
 
+    # Microsoft Teams Bot Framework
+    teams_app_id: str | None = Field(default=None, alias="TEAMS_APP_ID")
+    teams_app_password: str | None = Field(default=None, alias="TEAMS_APP_PASSWORD")
+
+    @property
+    def teams_bot_enabled(self) -> bool:
+        """Check if Teams Bot Framework is configured."""
+        return bool(self.teams_app_id and self.teams_app_password)
+
+    # Google Gemini AI (for AI-powered decision extraction)
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+
+    @property
+    def ai_enabled(self) -> bool:
+        """Check if AI analysis is configured."""
+        return bool(self.gemini_api_key)
+
     # Encryption key for storing sensitive tokens
     encryption_key: str | None = Field(
         default=None,

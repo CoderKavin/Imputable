@@ -174,32 +174,69 @@ class handler(BaseHTTPRequestHandler):
                         self._send(400, {"error": "Invalid role"})
                         return
 
+                    # Check plan limits before adding member
+                    org_result = conn.execute(text("""
+                        SELECT COALESCE(subscription_tier, 'free') as subscription_tier
+                        FROM organizations WHERE id = :org_id
+                    """), {"org_id": org_id})
+                    org_row = org_result.fetchone()
+                    subscription_tier = org_row[0] if org_row else "free"
+
+                    if subscription_tier == "free":
+                        # Check member count limit (5 for free plan)
+                        count_result = conn.execute(text("""
+                            SELECT COUNT(*) FROM organization_members
+                            WHERE organization_id = :org_id
+                        """), {"org_id": org_id})
+                        member_count = count_result.fetchone()[0]
+
+                        if member_count >= 5:
+                            self._send(403, {
+                                "error": "Member limit reached",
+                                "message": "Free plan is limited to 5 team members. Upgrade to Pro for unlimited members.",
+                                "limit": 5,
+                                "current": member_count
+                            })
+                            return
+
                     result = conn.execute(text("""
                         SELECT id, name FROM users WHERE email = :email AND deleted_at IS NULL
                     """), {"email": email})
                     existing_user = result.fetchone()
 
                     if existing_user:
-                        result = conn.execute(text("""
-                            SELECT id FROM organization_members
-                            WHERE organization_id = :org_id AND user_id = :user_id
-                        """), {"org_id": org_id, "user_id": existing_user[0]})
+                        # Add member with retry logic for race conditions
+                        for attempt in range(3):
+                            try:
+                                result = conn.execute(text("""
+                                    SELECT id FROM organization_members
+                                    WHERE organization_id = :org_id AND user_id = :user_id
+                                """), {"org_id": org_id, "user_id": existing_user[0]})
 
-                        if result.fetchone():
-                            self._send(400, {"error": "User is already a member"})
-                            return
+                                if result.fetchone():
+                                    self._send(400, {"error": "User is already a member"})
+                                    return
 
-                        conn.execute(text("""
-                            INSERT INTO organization_members (id, organization_id, user_id, role, created_at, invited_by)
-                            VALUES (:id, :org_id, :user_id, :role, NOW(), :invited_by)
-                        """), {
-                            "id": str(uuid4()),
-                            "org_id": org_id,
-                            "user_id": existing_user[0],
-                            "role": role,
-                            "invited_by": user_id
-                        })
-                        conn.commit()
+                                conn.execute(text("""
+                                    INSERT INTO organization_members (id, organization_id, user_id, role, created_at, invited_by)
+                                    VALUES (:id, :org_id, :user_id, :role, NOW(), :invited_by)
+                                """), {
+                                    "id": str(uuid4()),
+                                    "org_id": org_id,
+                                    "user_id": existing_user[0],
+                                    "role": role,
+                                    "invited_by": user_id
+                                })
+                                conn.commit()
+                                break  # Success
+                            except Exception as insert_error:
+                                error_str = str(insert_error).lower()
+                                if "duplicate" in error_str or "unique" in error_str:
+                                    conn.rollback()
+                                    # User was added between check and insert
+                                    self._send(400, {"error": "User is already a member"})
+                                    return
+                                raise
 
                         self._send(201, {"success": True, "message": f"{existing_user[1]} has been added"})
                     else:

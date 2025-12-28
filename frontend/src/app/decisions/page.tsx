@@ -8,8 +8,8 @@
  * Protected route - requires authentication
  */
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
 import { AppLayout, DecisionCard } from "@/components/app";
@@ -18,13 +18,27 @@ import { DecisionListSkeleton } from "@/components/ui/skeleton";
 import { Plus, Filter, FileText, Building2 } from "lucide-react";
 import type { DecisionSummary } from "@/types/decision";
 
-type StatusFilter = "all" | "approved" | "pending_review" | "draft";
+type StatusFilter = "all" | "approved" | "pending_review" | "draft" | "at_risk";
 
 export default function DecisionsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const { currentOrganization, loading: orgLoading } = useOrganization();
+
+  // Read status filter from URL query params on mount and when URL changes
+  useEffect(() => {
+    const statusParam = searchParams.get("status");
+    if (
+      statusParam &&
+      ["all", "approved", "pending_review", "draft", "at_risk"].includes(
+        statusParam,
+      )
+    ) {
+      setStatusFilter(statusParam as StatusFilter);
+    }
+  }, [searchParams]);
   const { data, isLoading, error } = useDecisionList(page, 100); // Fetch more to filter client-side
 
   // Show message if no organization selected
@@ -82,6 +96,11 @@ export default function DecisionsPage() {
                 label="Draft"
                 active={statusFilter === "draft"}
                 onClick={() => handleFilterChange("draft")}
+              />
+              <FilterPill
+                label="At Risk"
+                active={statusFilter === "at_risk"}
+                onClick={() => handleFilterChange("at_risk")}
               />
             </div>
             <Button
@@ -215,6 +234,7 @@ function NoMatchState({
     approved: "approved",
     pending_review: "pending review",
     draft: "draft",
+    at_risk: "at risk",
   };
 
   return (

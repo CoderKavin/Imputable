@@ -1,0 +1,94 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "{{TEAMS_APP_ID}}",
+  "packageName": "com.imputable.teams",
+  "developer": {
+    "name": "Imputable",
+    "websiteUrl": "https://imputable.app",
+    "privacyUrl": "https://imputable.app/privacy",
+    "termsOfUseUrl": "https://imputable.app/terms"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "Imputable",
+    "full": "Imputable Decision Ledger"
+  },
+  "description": {
+    "short": "Track and manage technical decisions",
+    "full": "Imputable helps engineering teams document, track, and recall important decisions. Log discussions as decisions, run consensus polls, and search your decision history - all from within Microsoft Teams."
+  },
+  "accentColor": "#6366f1",
+  "bots": [
+    {
+      "botId": "{{TEAMS_APP_ID}}",
+      "scopes": ["team", "personal", "groupchat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["team", "groupchat"],
+          "commands": [
+            {
+              "title": "search",
+              "description": "Search for decisions (e.g., 'search API design')"
+            },
+            {
+              "title": "poll",
+              "description": "Start a consensus poll (e.g., 'poll Should we use Redis?')"
+            },
+            {
+              "title": "help",
+              "description": "Show available commands"
+            }
+          ]
+        },
+        {
+          "scopes": ["personal"],
+          "commands": [
+            {
+              "title": "search",
+              "description": "Search for decisions"
+            },
+            {
+              "title": "help",
+              "description": "Show available commands"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeExtensions": [
+    {
+      "botId": "{{TEAMS_APP_ID}}",
+      "commands": [
+        {
+          "id": "logAsDecision",
+          "type": "action",
+          "title": "Log as Decision",
+          "description": "Save this message as a decision record in Imputable",
+          "context": ["message"],
+          "fetchTask": true,
+          "parameters": []
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "imputable.app",
+    "*.imputable.app"
+  ],
+  "webApplicationInfo": {
+    "id": "{{TEAMS_APP_ID}}",
+    "resource": "api://imputable.app/{{TEAMS_APP_ID}}"
+  }
+}

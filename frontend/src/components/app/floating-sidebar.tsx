@@ -124,7 +124,7 @@ export function FloatingSidebar() {
                 Get unlimited decisions and advanced analytics.
               </p>
               <Link
-                href="/pricing"
+                href="/settings?tab=billing"
                 className="block w-full py-2 px-3 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors text-center"
               >
                 View Plans

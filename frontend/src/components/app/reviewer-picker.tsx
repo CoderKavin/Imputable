@@ -38,6 +38,8 @@ export function ReviewerPicker({
 
   // Fetch org members
   useEffect(() => {
+    const abortController = new AbortController();
+
     async function fetchMembers() {
       if (!currentOrganization) return;
 
@@ -51,6 +53,7 @@ export function ReviewerPicker({
             Authorization: `Bearer ${token}`,
             "X-Organization-ID": currentOrganization.id,
           },
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -60,6 +63,7 @@ export function ReviewerPicker({
         const data = await response.json();
         setMembers(data.members || []);
       } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         setError("Failed to load team members");
         console.error(err);
       } finally {
@@ -68,6 +72,8 @@ export function ReviewerPicker({
     }
 
     fetchMembers();
+
+    return () => abortController.abort();
   }, [currentOrganization, getToken]);
 
   // Close dropdown on outside click

@@ -204,13 +204,13 @@ function CalendarGrid({ currentDate, decisionsByDate }: CalendarGridProps) {
 
       {/* Calendar Days */}
       <div className="grid grid-cols-7 gap-1">
-        {days.map((day, index) => {
+        {days.map((day) => {
           const dayData = decisionsByDate.get(day.dateString);
           const count = dayData?.decisions.length || 0;
 
           return (
             <CalendarDayCell
-              key={index}
+              key={day.dateString}
               day={day.date.getDate()}
               isCurrentMonth={day.isCurrentMonth}
               isToday={day.isToday}

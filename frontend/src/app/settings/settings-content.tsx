@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Building2, CreditCard, Users, Plug, Bell, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IntegrationsTab } from "@/components/settings/IntegrationsTab";
@@ -69,7 +70,26 @@ const tabs: Tab[] = [
 ];
 
 export function SettingsContent({ hasOrg }: SettingsContentProps) {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>("general");
+
+  // Read tab from URL query params on mount
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (
+      tabParam &&
+      [
+        "general",
+        "integrations",
+        "billing",
+        "team",
+        "notifications",
+        "security",
+      ].includes(tabParam)
+    ) {
+      setActiveTab(tabParam as TabId);
+    }
+  }, [searchParams]);
 
   if (!hasOrg) {
     return <NoOrganizationState />;

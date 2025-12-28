@@ -10,6 +10,203 @@ from datetime import datetime
 import urllib.request
 
 
+# Email sending via Resend
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Imputable <notifications@imputable.io>")
+
+
+def send_email_notification(to_email: str, subject: str, html_content: str):
+    """Send an email notification via Resend API."""
+    if not RESEND_API_KEY:
+        return False
+    try:
+        payload = json.dumps({
+            "from": EMAIL_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        print(f"Failed to send email to {to_email}: {e}")
+        return False
+
+
+def send_status_change_emails(conn, org_id: str, decision_id: str, decision_number: int,
+                              title: str, old_status: str, new_status: str,
+                              changer_name: str, changer_id: str, org_name: str):
+    """Send email notifications for status changes to org members who have it enabled."""
+    from sqlalchemy import text
+    if not RESEND_API_KEY:
+        return
+    try:
+        result = conn.execute(text("""
+            SELECT u.id, u.email, u.name, u.settings
+            FROM organization_members om
+            JOIN users u ON om.user_id = u.id
+            WHERE om.organization_id = :org_id AND u.id != :changer_id AND u.deleted_at IS NULL
+        """), {"org_id": org_id, "changer_id": changer_id})
+
+        decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+        status_colors = {"draft": "#6b7280", "pending_review": "#f59e0b", "approved": "#10b981", "deprecated": "#ef4444", "superseded": "#8b5cf6"}
+
+        for row in result.fetchall():
+            user_id, email, name, settings = row[0], row[1], row[2], row[3]
+            if settings:
+                user_settings = settings if isinstance(settings, dict) else json.loads(settings) if settings else {}
+                if not user_settings.get("notifications", {}).get("email_status_change", True):
+                    continue
+
+            html_content = f"""
+            <!DOCTYPE html><html><head><meta charset="utf-8"></head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">Decision Status Changed</h1>
+                </div>
+                <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                    <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
+                    <p style="margin: 0 0 20px;">A decision status has been updated in <strong>{org_name}</strong>:</p>
+                    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DEC-{decision_number}: {title}</h2>
+                        <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">Changed by {changer_name}</p>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background: {status_colors.get(old_status, '#6b7280')}20; color: {status_colors.get(old_status, '#6b7280')}; padding: 4px 12px; border-radius: 20px; font-size: 12px; text-decoration: line-through;">{old_status.replace('_', ' ').title()}</span>
+                            <span style="color: #9ca3af;">→</span>
+                            <span style="background: {status_colors.get(new_status, '#6b7280')}20; color: {status_colors.get(new_status, '#6b7280')}; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">{new_status.replace('_', ' ').title()}</span>
+                        </div>
+                    </div>
+                    <a href="{decision_url}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; margin-top: 10px;">View Decision</a>
+                    <p style="margin: 30px 0 0; color: #9ca3af; font-size: 12px;">
+                        You're receiving this because you have status change notifications enabled for {org_name}.<br>
+                        <a href="https://app.imputable.io/settings?tab=notifications" style="color: #6366f1;">Manage notification preferences</a>
+                    </p>
+                </div>
+            </body></html>
+            """
+            send_email_notification(email, f"[{org_name}] Decision Status Changed: DEC-{decision_number} is now {new_status.replace('_', ' ').title()}", html_content)
+    except Exception as e:
+        print(f"Error sending status change emails: {e}")
+
+
+def send_decision_updated_emails(conn, org_id: str, decision_id: str, decision_number: int,
+                                 title: str, version_number: int, change_summary: str,
+                                 updater_name: str, updater_id: str, org_name: str):
+    """Send email notifications for decision updates to org members who have it enabled."""
+    from sqlalchemy import text
+    if not RESEND_API_KEY:
+        return
+    try:
+        result = conn.execute(text("""
+            SELECT u.id, u.email, u.name, u.settings
+            FROM organization_members om
+            JOIN users u ON om.user_id = u.id
+            WHERE om.organization_id = :org_id AND u.id != :updater_id AND u.deleted_at IS NULL
+        """), {"org_id": org_id, "updater_id": updater_id})
+
+        decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+        for row in result.fetchall():
+            user_id, email, name, settings = row[0], row[1], row[2], row[3]
+            if settings:
+                user_settings = settings if isinstance(settings, dict) else json.loads(settings) if settings else {}
+                if not user_settings.get("notifications", {}).get("email_decision_updated", True):
+                    continue
+
+            html_content = f"""
+            <!DOCTYPE html><html><head><meta charset="utf-8"></head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">Decision Updated</h1>
+                </div>
+                <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                    <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
+                    <p style="margin: 0 0 20px;">A decision has been amended in <strong>{org_name}</strong>:</p>
+                    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DEC-{decision_number}: {title}</h2>
+                        <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">Updated by {updater_name} • Version {version_number}</p>
+                        <div style="background: #f3f4f6; border-left: 3px solid #6366f1; padding: 12px 16px; margin: 15px 0;">
+                            <p style="margin: 0; font-size: 14px; color: #374151;"><strong>Change Summary:</strong><br>{change_summary}</p>
+                        </div>
+                    </div>
+                    <a href="{decision_url}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; margin-top: 10px;">View Changes</a>
+                    <p style="margin: 30px 0 0; color: #9ca3af; font-size: 12px;">
+                        You're receiving this because you have decision update notifications enabled for {org_name}.<br>
+                        <a href="https://app.imputable.io/settings?tab=notifications" style="color: #6366f1;">Manage notification preferences</a>
+                    </p>
+                </div>
+            </body></html>
+            """
+            send_email_notification(email, f"[{org_name}] Decision Updated: DEC-{decision_number} - {title} (v{version_number})", html_content)
+    except Exception as e:
+        print(f"Error sending decision updated emails: {e}")
+
+
+def send_approval_emails(conn, org_id: str, decision_id: str, decision_number: int,
+                         title: str, approver_name: str, approver_id: str, approval_status: str,
+                         comment: str, org_name: str, decision_became_approved: bool, creator_id: str):
+    """Send email notifications for approvals to decision creator and org admins."""
+    from sqlalchemy import text
+    if not RESEND_API_KEY:
+        return
+    try:
+        # Notify the decision creator (if not the approver) and admins
+        result = conn.execute(text("""
+            SELECT DISTINCT u.id, u.email, u.name, u.settings
+            FROM users u
+            LEFT JOIN organization_members om ON u.id = om.user_id AND om.organization_id = :org_id
+            WHERE u.deleted_at IS NULL
+              AND u.id != :approver_id
+              AND (u.id = :creator_id OR om.role = 'admin')
+        """), {"org_id": org_id, "approver_id": approver_id, "creator_id": creator_id})
+
+        decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+        status_emoji = {"approved": "✅", "rejected": "❌", "abstained": "⏭️"}.get(approval_status, "")
+        status_color = {"approved": "#10b981", "rejected": "#ef4444", "abstained": "#6b7280"}.get(approval_status, "#6b7280")
+
+        for row in result.fetchall():
+            user_id, email, name, settings = row[0], row[1], row[2], row[3]
+            if settings:
+                user_settings = settings if isinstance(settings, dict) else json.loads(settings) if settings else {}
+                if not user_settings.get("notifications", {}).get("email_status_change", True):
+                    continue
+
+            if decision_became_approved:
+                subject = f"[{org_name}] 🎉 Decision Approved: DEC-{decision_number} - {title}"
+                header = "🎉 Decision Fully Approved"
+                message = f"Great news! <strong>DEC-{decision_number}: {title}</strong> has received all required approvals and is now officially approved."
+            else:
+                subject = f"[{org_name}] {status_emoji} Vote on DEC-{decision_number}: {approver_name} {approval_status}"
+                header = f"{status_emoji} Vote Submitted"
+                message = f"<strong>{approver_name}</strong> has {approval_status} <strong>DEC-{decision_number}: {title}</strong>."
+
+            html_content = f"""
+            <!DOCTYPE html><html><head><meta charset="utf-8"></head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, {status_color} 0%, {'#059669' if decision_became_approved else status_color} 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">{header}</h1>
+                </div>
+                <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                    <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
+                    <p style="margin: 0 0 20px;">{message}</p>
+                    {'<div style="background: #f3f4f6; border-left: 3px solid ' + status_color + '; padding: 12px 16px; margin: 15px 0;"><p style="margin: 0; font-size: 14px; color: #374151;"><em>"' + comment + '"</em></p></div>' if comment else ''}
+                    <a href="{decision_url}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; margin-top: 10px;">View Decision</a>
+                    <p style="margin: 30px 0 0; color: #9ca3af; font-size: 12px;">
+                        <a href="https://app.imputable.io/settings?tab=notifications" style="color: #6366f1;">Manage notification preferences</a>
+                    </p>
+                </div>
+            </body></html>
+            """
+            send_email_notification(email, subject, html_content)
+    except Exception as e:
+        print(f"Error sending approval emails: {e}")
+
+
 def send_slack_approval_notification(
     slack_token: str,
     channel_id: str,
@@ -201,10 +398,13 @@ class handler(BaseHTTPRequestHandler):
 
                 decoded = fb_auth.verify_id_token(token)
                 firebase_uid = decoded.get("uid") or decoded.get("user_id")
+                if not firebase_uid:
+                    self._send(401, {"error": "Invalid token: missing user ID"})
+                    return
                 firebase_email = decoded.get("email")
                 firebase_name = decoded.get("name")
             except Exception as e:
-                self._send(401, {"error": f"Invalid token: {str(e)}"})
+                self._send(401, {"error": "Invalid token"})
                 return
 
             db_url = os.environ.get("DATABASE_URL", "")
@@ -254,13 +454,15 @@ class handler(BaseHTTPRequestHandler):
                     version_num = query_params.get("version", [None])[0]
                     version_num = int(version_num) if version_num else None
 
-                    # Get decision (including source and slack fields for "View in Slack" link)
+                    # Get decision (including source and slack/teams fields for "View in Slack/Teams" links)
                     result = conn.execute(text("""
                         SELECT d.id, d.organization_id, d.decision_number, d.status,
                                d.current_version_id, d.created_at,
                                u.id as creator_id, u.name as creator_name, u.email as creator_email,
                                d.source, d.slack_channel_id, d.slack_message_ts,
-                               o.slack_team_id
+                               o.slack_team_id,
+                               d.teams_conversation_id, d.teams_message_id,
+                               o.teams_tenant_id
                         FROM decisions d
                         JOIN users u ON d.created_by = u.id
                         JOIN organizations o ON d.organization_id = o.id
@@ -282,7 +484,7 @@ class handler(BaseHTTPRequestHandler):
                         result = conn.execute(text("""
                             SELECT dv.id, dv.version_number, dv.title, dv.impact_level,
                                    dv.content, dv.tags, dv.created_at, dv.change_summary, dv.content_hash,
-                                   u.id as author_id, u.name as author_name
+                                   u.id as author_id, u.name as author_name, dv.custom_fields
                             FROM decision_versions dv
                             JOIN users u ON dv.created_by = u.id
                             WHERE dv.decision_id = :did AND dv.version_number = :vnum
@@ -291,7 +493,7 @@ class handler(BaseHTTPRequestHandler):
                         result = conn.execute(text("""
                             SELECT dv.id, dv.version_number, dv.title, dv.impact_level,
                                    dv.content, dv.tags, dv.created_at, dv.change_summary, dv.content_hash,
-                                   u.id as author_id, u.name as author_name
+                                   u.id as author_id, u.name as author_name, dv.custom_fields
                             FROM decision_versions dv
                             JOIN users u ON dv.created_by = u.id
                             WHERE dv.id = :vid
@@ -354,9 +556,30 @@ class handler(BaseHTTPRequestHandler):
                         except:
                             content = {}
 
+                    # Parse custom_fields for AI metadata
+                    custom_fields = version[11] if len(version) > 11 else None
+                    if isinstance(custom_fields, str):
+                        try:
+                            custom_fields = json.loads(custom_fields)
+                        except:
+                            custom_fields = {}
+
+                    # Extract AI metadata from custom_fields
+                    ai_metadata = None
+                    if custom_fields and custom_fields.get("ai_generated"):
+                        ai_metadata = {
+                            "ai_generated": custom_fields.get("ai_generated", False),
+                            "ai_confidence_score": custom_fields.get("ai_confidence_score", 0.0),
+                            "verified_by_user": custom_fields.get("verified_by_user", False),
+                            "verified_by_slack_user_id": custom_fields.get("verified_by_slack_user_id"),
+                            "verified_by_teams_user_id": custom_fields.get("verified_by_teams_user_id"),
+                        }
+
                     # Build Slack link if decision was created from Slack
                     # decision[9] = source, decision[10] = slack_channel_id,
                     # decision[11] = slack_message_ts, decision[12] = slack_team_id
+                    # decision[13] = teams_conversation_id, decision[14] = teams_message_id,
+                    # decision[15] = teams_tenant_id
                     source = decision[9] or "web"
                     slack_link = None
                     if source == "slack" and decision[10] and decision[12]:
@@ -364,6 +587,33 @@ class handler(BaseHTTPRequestHandler):
                         slack_link = f"slack://channel?team={decision[12]}&id={decision[10]}"
                         if decision[11]:  # slack_message_ts
                             slack_link += f"&message={decision[11]}"
+
+                    # Build Teams link if decision was created from Teams
+                    teams_link = None
+                    if source == "teams" and decision[13] and decision[15]:
+                        # Teams deep link format
+                        teams_link = f"https://teams.microsoft.com/l/message/{decision[13]}/{decision[14] or ''}"
+
+                    # Get poll votes from poll_votes table
+                    poll_votes = None
+                    try:
+                        poll_result = conn.execute(text("""
+                            SELECT vote_type, COUNT(*) as count
+                            FROM poll_votes
+                            WHERE decision_id = :did
+                            GROUP BY vote_type
+                        """), {"did": decision_id})
+                        vote_counts = {"agree": 0, "concern": 0, "block": 0}
+                        for row in poll_result.fetchall():
+                            vote_type = row[0]
+                            count = row[1]
+                            if vote_type in vote_counts:
+                                vote_counts[vote_type] = count
+                        if sum(vote_counts.values()) > 0:
+                            poll_votes = vote_counts
+                    except Exception:
+                        # poll_votes table may not exist yet
+                        pass
 
                     self._send(200, {
                         "id": str(decision[0]),
@@ -390,7 +640,8 @@ class handler(BaseHTTPRequestHandler):
                                 "id": str(version[9]),
                                 "name": version[10]
                             },
-                            "is_current": str(version[0]) == str(decision[4])
+                            "is_current": str(version[0]) == str(decision[4]),
+                            "ai_metadata": ai_metadata
                         },
                         "version_count": version_count,
                         "requested_version": version_num,
@@ -403,7 +654,9 @@ class handler(BaseHTTPRequestHandler):
                             "rejected": rejected_count
                         },
                         "source": source,
-                        "slack_link": slack_link
+                        "slack_link": slack_link,
+                        "teams_link": teams_link,
+                        "poll_votes": poll_votes
                     })
 
                 elif method == "PUT":
@@ -420,10 +673,35 @@ class handler(BaseHTTPRequestHandler):
                             self._send(400, {"error": f"Invalid status. Must be one of: {valid_statuses}"})
                             return
 
+                        # Get current status, decision details, and org name for email notification
+                        result = conn.execute(text("""
+                            SELECT d.status, d.decision_number, dv.title, o.name as org_name
+                            FROM decisions d
+                            JOIN decision_versions dv ON d.current_version_id = dv.id
+                            JOIN organizations o ON d.organization_id = o.id
+                            WHERE d.id = :did
+                        """), {"did": decision_id})
+                        dec_info = result.fetchone()
+                        old_status = dec_info[0] if dec_info else "unknown"
+                        dec_number = dec_info[1] if dec_info else 0
+                        dec_title = dec_info[2] if dec_info else "Unknown"
+                        org_name = dec_info[3] if dec_info else "Your Organization"
+
                         conn.execute(text("""
                             UPDATE decisions SET status = :status WHERE id = :did
                         """), {"status": new_status, "did": decision_id})
                         conn.commit()
+
+                        # Send email notifications for status change
+                        try:
+                            send_status_change_emails(
+                                conn=conn, org_id=org_id, decision_id=decision_id,
+                                decision_number=dec_number, title=dec_title,
+                                old_status=old_status, new_status=new_status,
+                                changer_name=user_name, changer_id=str(user_id), org_name=org_name
+                            )
+                        except Exception:
+                            pass
 
                         self._send(200, {"success": True, "status": new_status})
                         return
@@ -443,26 +721,56 @@ class handler(BaseHTTPRequestHandler):
                         self._send(400, {"error": "Change summary is required for amendments"})
                         return
 
-                    # Get current max version
+                    # Get decision info for notification
                     result = conn.execute(text("""
-                        SELECT COALESCE(MAX(version_number), 0) + 1 FROM decision_versions
-                        WHERE decision_id = :did
+                        SELECT d.decision_number, o.name as org_name
+                        FROM decisions d
+                        JOIN organizations o ON d.organization_id = o.id
+                        WHERE d.id = :did
                     """), {"did": decision_id})
-                    new_version_num = result.fetchone()[0]
+                    dec_info = result.fetchone()
+                    decision_number = dec_info[0] if dec_info else 0
+                    org_name = dec_info[1] if dec_info else "Your Organization"
 
-                    version_id = str(uuid4())
                     content_hash = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
-                    # Create new version
-                    conn.execute(text("""
-                        INSERT INTO decision_versions
-                        (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, change_summary, content_hash)
-                        VALUES (:id, :did, :vnum, :title, :impact, :content, :tags, :user_id, NOW(), :summary, :hash)
-                    """), {
-                        "id": version_id, "did": decision_id, "vnum": new_version_num,
-                        "title": title, "impact": impact_level, "content": json.dumps(content),
-                        "tags": tags, "user_id": user_id, "summary": change_summary, "hash": content_hash
-                    })
+                    # Create new version with retry logic for race conditions
+                    version_id = str(uuid4())
+                    new_version_num = None
+                    for attempt in range(3):  # Retry up to 3 times
+                        try:
+                            # Get current max version number
+                            result = conn.execute(text("""
+                                SELECT COALESCE(MAX(version_number), 0) + 1
+                                FROM decision_versions
+                                WHERE decision_id = :did
+                            """), {"did": decision_id})
+                            new_version_num = result.fetchone()[0]
+
+                            # Create new version
+                            conn.execute(text("""
+                                INSERT INTO decision_versions
+                                (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, change_summary, content_hash)
+                                VALUES (:id, :did, :vnum, :title, :impact, :content, :tags, :user_id, NOW(), :summary, :hash)
+                            """), {
+                                "id": version_id, "did": decision_id, "vnum": new_version_num,
+                                "title": title, "impact": impact_level, "content": json.dumps(content),
+                                "tags": tags, "user_id": user_id, "summary": change_summary, "hash": content_hash
+                            })
+                            break  # Success, exit retry loop
+                        except Exception as insert_error:
+                            error_str = str(insert_error).lower()
+                            if "duplicate" in error_str or "unique" in error_str:
+                                if attempt < 2:
+                                    # Regenerate version_id and retry
+                                    version_id = str(uuid4())
+                                    conn.rollback()
+                                    continue
+                            raise  # Re-raise if not a duplicate error or max retries reached
+                    else:
+                        # If we exhausted all retries without success
+                        self._send(500, {"error": "Failed to create version after retries"})
+                        return
 
                     # Update decision's current version
                     conn.execute(text("""
@@ -470,6 +778,17 @@ class handler(BaseHTTPRequestHandler):
                     """), {"vid": version_id, "did": decision_id})
 
                     conn.commit()
+
+                    # Send email notifications for decision update
+                    try:
+                        send_decision_updated_emails(
+                            conn=conn, org_id=org_id, decision_id=decision_id,
+                            decision_number=decision_number, title=title,
+                            version_number=new_version_num, change_summary=change_summary,
+                            updater_name=user_name, updater_id=str(user_id), org_name=org_name
+                        )
+                    except Exception:
+                        pass
 
                     self._send(200, {
                         "success": True,
@@ -583,6 +902,28 @@ class handler(BaseHTTPRequestHandler):
                     try:
                         if teams_webhook_url:
                             send_teams_approval_notification(teams_webhook_url, decision_number, decision_id, decision_title, user_name, approval_status, comment, approved_count, required_count, decision_became_approved)
+                    except Exception:
+                        pass
+
+                    # Send email notifications for approval
+                    try:
+                        # Get org name and creator_id for email notifications
+                        org_info = conn.execute(text("""
+                            SELECT o.name, d.created_by FROM organizations o
+                            JOIN decisions d ON d.organization_id = o.id
+                            WHERE d.id = :did
+                        """), {"did": decision_id}).fetchone()
+                        org_name = org_info[0] if org_info else "Your Organization"
+                        creator_id = str(org_info[1]) if org_info else ""
+
+                        send_approval_emails(
+                            conn=conn, org_id=org_id, decision_id=decision_id,
+                            decision_number=decision_number, title=decision_title,
+                            approver_name=user_name, approver_id=str(user_id),
+                            approval_status=approval_status, comment=comment,
+                            org_name=org_name, decision_became_approved=decision_became_approved,
+                            creator_id=creator_id
+                        )
                     except Exception:
                         pass
 

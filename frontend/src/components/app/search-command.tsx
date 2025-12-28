@@ -149,37 +149,59 @@ export function SearchCommand({ className }: SearchCommandProps) {
     });
   }, []);
 
-  // Handle keyboard shortcut (Cmd+K)
+  // Handle keyboard shortcuts - both global and when search is open
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Open search
+      // Don't trigger shortcuts when typing in inputs/textareas (except for specific keys)
+      const target = e.target as HTMLElement;
+      const isTyping =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
+
+      // Open search with Cmd+K (always works)
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setOpen(true);
         return;
       }
 
-      // Quick shortcuts when search is open
-      if (open && (e.metaKey || e.ctrlKey)) {
+      // Escape closes the search
+      if (e.key === "Escape") {
+        if (open) {
+          setOpen(false);
+          setQuery("");
+        }
+        return;
+      }
+
+      // Show help with ? (when not typing)
+      if (e.key === "?" && !isTyping && !open) {
+        e.preventDefault();
+        router.push("/help");
+        return;
+      }
+
+      // Global shortcuts with Cmd/Ctrl (work both when search is open and closed)
+      if (e.metaKey || e.ctrlKey) {
         const action = quickActions.find(
           (a) => a.shortcut?.toLowerCase() === e.key.toLowerCase(),
         );
         if (action) {
+          // Cmd+N for new decision should always work (unless typing in input)
+          if (e.key.toLowerCase() === "n" && isTyping) {
+            return; // Allow default browser behavior in inputs
+          }
           e.preventDefault();
           action.action();
           return;
         }
       }
-
-      if (e.key === "Escape") {
-        setOpen(false);
-        setQuery("");
-      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, quickActions]);
+  }, [open, quickActions, router]);
 
   // Focus input when modal opens
   useEffect(() => {
@@ -239,6 +261,10 @@ export function SearchCommand({ className }: SearchCommandProps) {
 
   // Fetch recent decisions on mount
   useEffect(() => {
+    if (!open) return;
+
+    const abortController = new AbortController();
+
     const fetchRecent = async () => {
       if (!currentOrganization?.id) return;
       try {
@@ -251,19 +277,22 @@ export function SearchCommand({ className }: SearchCommandProps) {
               Authorization: `Bearer ${token}`,
               "X-Organization-ID": currentOrganization.id,
             },
+            signal: abortController.signal,
           },
         );
         if (response.ok) {
           const data = await response.json();
           setRecentDecisions(data.items || []);
         }
-      } catch {
-        // Ignore errors for recent fetch
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        // Ignore other errors for recent fetch
       }
     };
-    if (open) {
-      fetchRecent();
-    }
+
+    fetchRecent();
+
+    return () => abortController.abort();
   }, [open, currentOrganization?.id, getToken]);
 
   // Debounced search

@@ -5,6 +5,7 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { StatusPill } from "./status-pill";
 import { AvatarStack } from "./avatar-stack";
 import { ApprovalProgress } from "./approval-progress";
+import { Sparkles, ShieldCheck } from "lucide-react";
 import type { DecisionSummary } from "@/types/decision";
 
 interface DecisionCardProps {
@@ -141,17 +142,31 @@ export function DecisionCard({ decision, className }: DecisionCardProps) {
         {/* Tags */}
         {decision.tags && decision.tags.length > 0 && (
           <div className="flex items-center gap-1.5 mt-3">
-            {decision.tags.slice(0, 4).map((tag) => (
-              <span
-                key={tag}
-                className="px-2 py-0.5 bg-gray-50 text-gray-500 text-xs rounded-full"
-              >
-                {tag}
+            {/* Show AI badge prominently if AI-generated */}
+            {decision.tags.includes("ai-generated") && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded-full font-medium">
+                <Sparkles className="w-3 h-3" />
+                AI
               </span>
-            ))}
-            {decision.tags.length > 4 && (
+            )}
+            {/* Regular tags (excluding ai-generated which is shown above) */}
+            {decision.tags
+              .filter((tag) => tag !== "ai-generated")
+              .slice(0, 3)
+              .map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-0.5 bg-gray-50 text-gray-500 text-xs rounded-full"
+                >
+                  {tag}
+                </span>
+              ))}
+            {decision.tags.filter((tag) => tag !== "ai-generated").length >
+              3 && (
               <span className="text-xs text-gray-400">
-                +{decision.tags.length - 4}
+                +
+                {decision.tags.filter((tag) => tag !== "ai-generated").length -
+                  3}
               </span>
             )}
           </div>

@@ -142,27 +142,45 @@ class handler(BaseHTTPRequestHandler):
                         self._send(400, {"error": "Slug must be at least 3 characters"})
                         return
 
-                    # Check if slug exists
-                    result = conn.execute(text("SELECT id FROM organizations WHERE slug = :slug"), {"slug": slug})
-                    if result.fetchone():
-                        self._send(400, {"error": "Slug already exists"})
+                    # Create org with retry logic for slug uniqueness race condition
+                    org_id = None
+                    for attempt in range(3):
+                        try:
+                            # Check if slug exists
+                            result = conn.execute(text("SELECT id FROM organizations WHERE slug = :slug"), {"slug": slug})
+                            if result.fetchone():
+                                self._send(400, {"error": "Slug already exists"})
+                                return
+
+                            # Create org
+                            result = conn.execute(text("""
+                                INSERT INTO organizations (id, name, slug, settings, subscription_tier, created_at)
+                                VALUES (gen_random_uuid(), :name, :slug, '{}', 'free', NOW())
+                                RETURNING id
+                            """), {"name": name, "slug": slug})
+                            org_id = result.fetchone()[0]
+
+                            # Add user as owner
+                            conn.execute(text("""
+                                INSERT INTO organization_members (id, organization_id, user_id, role, created_at)
+                                VALUES (gen_random_uuid(), :org_id, :user_id, 'owner', NOW())
+                            """), {"org_id": org_id, "user_id": user_id})
+
+                            conn.commit()
+                            break  # Success
+                        except Exception as insert_error:
+                            error_str = str(insert_error).lower()
+                            if "duplicate" in error_str or "unique" in error_str:
+                                if attempt < 2:
+                                    conn.rollback()
+                                    # Slug was taken between check and insert
+                                    self._send(400, {"error": "Slug already exists"})
+                                    return
+                            raise
+
+                    if org_id is None:
+                        self._send(500, {"error": "Failed to create organization"})
                         return
-
-                    # Create org
-                    result = conn.execute(text("""
-                        INSERT INTO organizations (id, name, slug, settings, subscription_tier, created_at)
-                        VALUES (gen_random_uuid(), :name, :slug, '{}', 'free', NOW())
-                        RETURNING id
-                    """), {"name": name, "slug": slug})
-                    org_id = result.fetchone()[0]
-
-                    # Add user as owner
-                    conn.execute(text("""
-                        INSERT INTO organization_members (id, organization_id, user_id, role, created_at)
-                        VALUES (gen_random_uuid(), :org_id, :user_id, 'owner', NOW())
-                    """), {"org_id": org_id, "user_id": user_id})
-
-                    conn.commit()
 
                     self._send(201, {"id": str(org_id), "name": name, "slug": slug, "role": "owner"})
                 else:

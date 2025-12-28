@@ -1,4 +1,4 @@
-# Slack App Manifest for Decision Ledger
+# Slack App Manifest for Imputable (Decision Ledger)
 #
 # This manifest defines the permissions and features for the Slack integration.
 # To install: Go to api.slack.com/apps -> Create New App -> From Manifest
@@ -7,19 +7,21 @@
 #   SLACK_BOT_TOKEN - Bot User OAuth Token (xoxb-...)
 #   SLACK_SIGNING_SECRET - Used to verify requests from Slack
 #   SLACK_APP_TOKEN - For Socket Mode (xapp-...) [optional]
-#   APP_BASE_URL - Your app's base URL (e.g., https://ledger.app)
+#   APP_BASE_URL - Your app's base URL (e.g., https://app.imputable.io)
 
 display_information:
-  name: Decision Ledger
-  description: Search and track engineering decisions from Slack
+  name: Imputable
+  description: Track engineering decisions and build consensus from Slack
   background_color: "#4F46E5"
   long_description: |
-    Decision Ledger is your team's System of Record for engineering and product decisions.
+    Imputable is your team's System of Record for engineering and product decisions.
 
     Features:
-    - Search decisions with /decision [query]
+    - Log any Slack message as a decision with one click
+    - Search decisions with /decisions search [query]
+    - Run consensus polls with /decisions poll [question]
     - Rich link previews when sharing decision URLs
-    - Automatic notifications when decisions expire
+    - Automatic notifications when decisions need review
     - View decision status, owner, and impact at a glance
 
 features:
@@ -28,52 +30,69 @@ features:
     messages_tab_enabled: false
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Decision Ledger
+    display_name: Imputable
     always_online: true
+  # Message shortcuts (actions) - allows users to right-click messages
+  shortcuts:
+    - name: Log as Decision
+      type: message
+      callback_id: log_message_as_decision
+      description: Save this message as a decision record in Imputable
+    - name: Summarize & Log Decision
+      type: message
+      callback_id: ai_summarize_decision
+      description: AI analyzes the thread and drafts a complete decision record
   slash_commands:
-    - command: /decision
-      url: https://YOUR_DOMAIN/api/slack/commands
-      description: Search for decisions in the ledger
-      usage_hint: "[search query] - e.g., /decision database migration"
+    - command: /decisions
+      url: https://YOUR_DOMAIN/api/integrations/slack/command
+      description: Manage decisions - search, create polls, and more
+      usage_hint: "[add|list|search|poll|help] - e.g., /decisions search database"
       should_escape: false
   unfurl_domains:
-    - ledger.app
+    - imputable.io
+    - app.imputable.io
     - YOUR_DOMAIN
 
 oauth_config:
   scopes:
     bot:
       # Core messaging
-      - chat:write           # Send messages
-      - chat:write.public    # Send to public channels without joining
+      - chat:write # Send messages
+      - chat:write.public # Send to public channels without joining
 
       # Commands
-      - commands             # Handle slash commands
+      - commands # Handle slash commands
 
       # Link unfurling
-      - links:read           # Detect links in messages
-      - links:write          # Unfurl links with rich previews
+      - links:read # Detect links in messages
+      - links:write # Unfurl links with rich previews
 
       # User lookup (for notifications)
-      - users:read           # Read user info
-      - users:read.email     # Read user emails (for matching)
+      - users:read # Read user info
+      - users:read.email # Read user emails (for matching)
 
       # Direct messages
-      - im:write             # Send DMs to users
+      - im:write # Send DMs to users
 
       # App Home
-      - app_mentions:read    # Respond to @mentions
+      - app_mentions:read # Respond to @mentions
+
+      # Message history (for "Log as Decision" shortcut)
+      - channels:history # Read messages from public channels
+      - groups:history # Read messages from private channels
+      - im:history # Read messages from DMs
+      - mpim:history # Read messages from group DMs
 
 settings:
   event_subscriptions:
-    request_url: https://YOUR_DOMAIN/api/slack/events
+    request_url: https://YOUR_DOMAIN/api/integrations/slack/events
     bot_events:
-      - app_home_opened      # User opens App Home
-      - app_mention          # Bot is @mentioned
-      - link_shared          # Link is shared (for unfurling)
+      - app_home_opened # User opens App Home
+      - app_mention # Bot is @mentioned
+      - link_shared # Link is shared (for unfurling)
   interactivity:
     is_enabled: true
-    request_url: https://YOUR_DOMAIN/api/slack/interactions
+    request_url: https://YOUR_DOMAIN/api/integrations/slack/interactions
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false

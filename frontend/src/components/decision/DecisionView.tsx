@@ -237,6 +237,14 @@ export function DecisionView({
               />
             )}
 
+            {/* Poll Results - Show if there are poll votes */}
+            {decision.poll_votes &&
+              (decision.poll_votes.agree > 0 ||
+                decision.poll_votes.concern > 0 ||
+                decision.poll_votes.block > 0) && (
+                <PollResults votes={decision.poll_votes} />
+              )}
+
             {/* Meta Card */}
             <MetaRail decision={decision} version={decision.version} />
 
@@ -497,12 +505,37 @@ function MetaRail({
           <div className="pt-2 border-t border-gray-100">
             <a
               href={decision.slack_link}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 transition-colors"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
               </svg>
               View in Slack
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        )}
+
+        {/* View in Teams link - only shown for Teams-created decisions */}
+        {decision.teams_link && (
+          <div
+            className={cn(
+              "pt-2",
+              !decision.slack_link && "border-t border-gray-100",
+            )}
+          >
+            <a
+              href={decision.teams_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20.625 8.073h-7.448c-.19 0-.375.077-.51.213a.715.715 0 00-.21.516v7.448c0 .19.077.375.213.51.136.137.32.214.511.214h7.447a.718.718 0 00.723-.724V8.803a.718.718 0 00-.726-.73zm-1.531 6.677h-4.39v-1.35h4.39v1.35zm0-2.396h-4.39v-1.35h4.39v1.35zm-2.569-5.281a2.573 2.573 0 100-5.146 2.573 2.573 0 000 5.146zm-6.49 1.854a3.073 3.073 0 100-6.146 3.073 3.073 0 000 6.146zm4.182 8.854H2.594a.72.72 0 01-.719-.72v-5.813a.72.72 0 01.72-.719h2.697V8.802a.72.72 0 01.719-.719h5.49a4.37 4.37 0 00-.563 2.156v.292H5.729v5.823h8.854V13.26c.26.03.524.046.79.046h.844v4.756a.72.72 0 01-.72.72z" />
+              </svg>
+              View in Teams
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
@@ -798,6 +831,95 @@ function ReviewersSection({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// POLL RESULTS
+// =============================================================================
+
+function PollResults({
+  votes,
+}: {
+  votes: { agree: number; concern: number; block: number };
+}) {
+  const total = votes.agree + votes.concern + votes.block;
+
+  if (total === 0) return null;
+
+  const agreePercent = Math.round((votes.agree / total) * 100);
+  const concernPercent = Math.round((votes.concern / total) * 100);
+  const blockPercent = Math.round((votes.block / total) * 100);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+      <h3 className="text-sm font-semibold text-gray-900 mb-4">
+        Consensus Poll
+      </h3>
+
+      <div className="space-y-3">
+        {/* Agree */}
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5 text-green-700">
+              <ThumbsUp className="w-3 h-3" />
+              Agree
+            </span>
+            <span className="text-gray-500">
+              {votes.agree} ({agreePercent}%)
+            </span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 rounded-full transition-all"
+              style={{ width: `${agreePercent}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Concern */}
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5 text-amber-700">
+              <AlertTriangle className="w-3 h-3" />
+              Concern
+            </span>
+            <span className="text-gray-500">
+              {votes.concern} ({concernPercent}%)
+            </span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-500 rounded-full transition-all"
+              style={{ width: `${concernPercent}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Block */}
+        <div>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="flex items-center gap-1.5 text-red-700">
+              <XCircle className="w-3 h-3" />
+              Block
+            </span>
+            <span className="text-gray-500">
+              {votes.block} ({blockPercent}%)
+            </span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-red-500 rounded-full transition-all"
+              style={{ width: `${blockPercent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-400 mt-3 text-center">
+        {total} vote{total !== 1 ? "s" : ""} from Slack/Teams
+      </p>
     </div>
   );
 }

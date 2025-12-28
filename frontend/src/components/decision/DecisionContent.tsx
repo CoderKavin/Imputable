@@ -8,6 +8,7 @@
  * - Context, Choice, Rationale sections
  * - Alternatives considered
  * - Tags and impact level
+ * - AI confidence score and verification badge (for AI-generated decisions)
  */
 
 import React from "react";
@@ -31,6 +32,8 @@ import {
   User,
   Clock,
   History,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 
 interface DecisionContentProps {
@@ -40,6 +43,53 @@ interface DecisionContentProps {
   className?: string;
 }
 
+// AI Confidence Badge Component
+function AIConfidenceBadge({
+  confidence,
+  verified,
+}: {
+  confidence: number;
+  verified: boolean;
+}) {
+  const confidencePct = Math.round(confidence * 100);
+
+  let confidenceColor: string;
+  let confidenceText: string;
+
+  if (confidencePct >= 80) {
+    confidenceColor = "bg-green-100 text-green-800 border-green-200";
+    confidenceText = "High confidence";
+  } else if (confidencePct >= 50) {
+    confidenceColor = "bg-yellow-100 text-yellow-800 border-yellow-200";
+    confidenceText = "Medium confidence";
+  } else {
+    confidenceColor = "bg-orange-100 text-orange-800 border-orange-200";
+    confidenceText = "Low confidence";
+  }
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <Badge
+        variant="outline"
+        className={cn("flex items-center gap-1.5", confidenceColor)}
+      >
+        <Sparkles className="h-3 w-3" />
+        AI Generated ({confidencePct}%)
+      </Badge>
+      {verified && (
+        <Badge
+          variant="outline"
+          className="flex items-center gap-1.5 bg-blue-100 text-blue-800 border-blue-200"
+        >
+          <ShieldCheck className="h-3 w-3" />
+          Verified by User
+        </Badge>
+      )}
+      <span className="text-xs text-muted-foreground">{confidenceText}</span>
+    </div>
+  );
+}
+
 export function DecisionContent({
   decision,
   version,
@@ -47,11 +97,37 @@ export function DecisionContent({
   className,
 }: DecisionContentProps) {
   const content = version.content;
+  const aiMetadata = version.ai_metadata;
 
   return (
     <div className={cn("space-y-6", className)}>
       {/* Header with Status Banners */}
       <div className="space-y-4">
+        {/* AI-Generated Banner */}
+        {aiMetadata?.ai_generated && (
+          <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 flex items-start gap-3">
+            <Sparkles className="h-5 w-5 text-indigo-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-medium text-indigo-800">
+                  AI-Analyzed Decision
+                </p>
+                <AIConfidenceBadge
+                  confidence={aiMetadata.ai_confidence_score}
+                  verified={aiMetadata.verified_by_user}
+                />
+              </div>
+              <p className="text-sm text-indigo-700 mt-1">
+                This decision was automatically extracted from a conversation
+                thread using AI.
+                {aiMetadata.verified_by_user
+                  ? " A team member has reviewed and verified the content."
+                  : " Please review for accuracy."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Historical Version Warning */}
         {isViewingHistory && (
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
@@ -141,47 +217,53 @@ export function DecisionContent({
       {/* Content Sections */}
       <div className="space-y-6">
         {/* Context */}
-        <ContentSection
-          icon={FileText}
-          title="Context"
-          description="The background and problem being addressed"
-        >
-          <div className="prose prose-sm max-w-none text-foreground">
-            {content.context.split("\n").map((paragraph, i) => (
-              <p key={i}>{paragraph}</p>
-            ))}
-          </div>
-        </ContentSection>
+        {content?.context && (
+          <ContentSection
+            icon={FileText}
+            title="Context"
+            description="The background and problem being addressed"
+          >
+            <div className="prose prose-sm max-w-none text-foreground">
+              {(content.context || "").split("\n").map((paragraph, i) => (
+                <p key={`context-${i}`}>{paragraph}</p>
+              ))}
+            </div>
+          </ContentSection>
+        )}
 
         {/* Decision */}
-        <ContentSection
-          icon={CheckCircle2}
-          title="Decision"
-          description="What we decided"
-          highlight
-        >
-          <div className="prose prose-sm max-w-none text-foreground">
-            {content.choice.split("\n").map((paragraph, i) => (
-              <p key={i}>{paragraph}</p>
-            ))}
-          </div>
-        </ContentSection>
+        {content?.choice && (
+          <ContentSection
+            icon={CheckCircle2}
+            title="Decision"
+            description="What we decided"
+            highlight
+          >
+            <div className="prose prose-sm max-w-none text-foreground">
+              {(content.choice || "").split("\n").map((paragraph, i) => (
+                <p key={`choice-${i}`}>{paragraph}</p>
+              ))}
+            </div>
+          </ContentSection>
+        )}
 
         {/* Rationale */}
-        <ContentSection
-          icon={Brain}
-          title="Rationale"
-          description="Why we made this choice"
-        >
-          <div className="prose prose-sm max-w-none text-foreground">
-            {content.rationale.split("\n").map((paragraph, i) => (
-              <p key={i}>{paragraph}</p>
-            ))}
-          </div>
-        </ContentSection>
+        {content?.rationale && (
+          <ContentSection
+            icon={Brain}
+            title="Rationale"
+            description="Why we made this choice"
+          >
+            <div className="prose prose-sm max-w-none text-foreground">
+              {(content.rationale || "").split("\n").map((paragraph, i) => (
+                <p key={`rationale-${i}`}>{paragraph}</p>
+              ))}
+            </div>
+          </ContentSection>
+        )}
 
         {/* Alternatives Considered */}
-        {content.alternatives.length > 0 && (
+        {content?.alternatives && content.alternatives.length > 0 && (
           <ContentSection
             icon={XCircle}
             title="Alternatives Considered"
@@ -190,7 +272,7 @@ export function DecisionContent({
             <div className="space-y-3">
               {content.alternatives.map((alt, index) => (
                 <div
-                  key={index}
+                  key={alt.name || `alt-${index}`}
                   className="p-3 rounded-xl bg-muted/50 border border-border"
                 >
                   <p className="font-medium text-foreground">{alt.name}</p>
@@ -205,15 +287,15 @@ export function DecisionContent({
         )}
 
         {/* Consequences */}
-        {content.consequences && (
+        {content?.consequences && (
           <ContentSection
             icon={AlertTriangle}
             title="Consequences"
             description="Expected outcomes and implications"
           >
             <div className="prose prose-sm max-w-none text-foreground">
-              {content.consequences.split("\n").map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
+              {(content.consequences || "").split("\n").map((paragraph, i) => (
+                <p key={`consequence-${i}`}>{paragraph}</p>
               ))}
             </div>
           </ContentSection>

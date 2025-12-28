@@ -1,3 +1,4 @@
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 firebase-admin==6.2.0
+resend==2.0.0

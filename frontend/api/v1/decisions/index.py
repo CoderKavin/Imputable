@@ -9,6 +9,139 @@ from uuid import uuid4
 from datetime import datetime
 import urllib.request
 
+# Email sending via Resend
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Imputable <notifications@imputable.io>")
+
+
+def send_email_notification(
+    to_email: str,
+    to_name: str,
+    subject: str,
+    html_content: str,
+):
+    """Send an email notification via Resend API."""
+    if not RESEND_API_KEY:
+        print("RESEND_API_KEY not configured, skipping email")
+        return False
+
+    try:
+        payload = json.dumps({
+            "from": EMAIL_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+        }).encode()
+
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            }
+        )
+        response = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(response.read().decode())
+        print(f"Email sent to {to_email}: {result.get('id', 'unknown')}")
+        return True
+    except Exception as e:
+        print(f"Failed to send email to {to_email}: {e}")
+        return False
+
+
+def send_decision_created_emails(conn, org_id: str, decision_id: str, decision_number: int,
+                                  title: str, impact_level: str, creator_name: str,
+                                  creator_id: str, org_name: str, tags: list):
+    """Send email notifications to org members who have email_new_decision enabled."""
+    from sqlalchemy import text
+
+    if not RESEND_API_KEY:
+        return
+
+    try:
+        # Get all org members except the creator, with their notification settings
+        result = conn.execute(text("""
+            SELECT u.id, u.email, u.name, u.settings
+            FROM organization_members om
+            JOIN users u ON om.user_id = u.id
+            WHERE om.organization_id = :org_id
+              AND u.id != :creator_id
+              AND u.deleted_at IS NULL
+        """), {"org_id": org_id, "creator_id": creator_id})
+
+        decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+        for row in result.fetchall():
+            user_id, email, name, settings = row[0], row[1], row[2], row[3]
+
+            # Check notification preferences
+            if settings:
+                user_settings = settings if isinstance(settings, dict) else json.loads(settings) if settings else {}
+                notifications = user_settings.get("notifications", {})
+                if not notifications.get("email_new_decision", True):
+                    continue
+
+            # Send the email
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">New Decision Created</h1>
+                </div>
+                <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                    <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
+                    <p style="margin: 0 0 20px;">A new decision has been created in <strong>{org_name}</strong>:</p>
+
+                    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">
+                            DEC-{decision_number}: {title}
+                        </h2>
+                        <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">
+                            Created by {creator_name}
+                        </p>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <span style="background: {'#fef3c7' if impact_level == 'high' else '#dbeafe' if impact_level == 'medium' else '#d1fae5'};
+                                         color: {'#92400e' if impact_level == 'high' else '#1e40af' if impact_level == 'medium' else '#065f46'};
+                                         padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;">
+                                {impact_level.capitalize()} Impact
+                            </span>
+                            <span style="background: #f3f4f6; color: #374151; padding: 4px 12px; border-radius: 20px; font-size: 12px;">
+                                Draft
+                            </span>
+                        </div>
+                        {f'<p style="margin: 15px 0 0; color: #6b7280; font-size: 13px;">Tags: {", ".join(tags)}</p>' if tags else ''}
+                    </div>
+
+                    <a href="{decision_url}"
+                       style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px;
+                              border-radius: 8px; text-decoration: none; font-weight: 500; margin-top: 10px;">
+                        View Decision
+                    </a>
+
+                    <p style="margin: 30px 0 0; color: #9ca3af; font-size: 12px;">
+                        You're receiving this because you have email notifications enabled for {org_name}.<br>
+                        <a href="https://app.imputable.io/settings?tab=notifications" style="color: #6366f1;">Manage notification preferences</a>
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+
+            send_email_notification(
+                to_email=email,
+                to_name=name or email.split("@")[0],
+                subject=f"[{org_name}] New Decision: DEC-{decision_number} - {title}",
+                html_content=html_content
+            )
+    except Exception as e:
+        print(f"Error sending decision created emails: {e}")
+
 
 def send_slack_decision_created(
     slack_token: str,
@@ -204,10 +337,13 @@ class handler(BaseHTTPRequestHandler):
 
                 decoded = fb_auth.verify_id_token(token)
                 firebase_uid = decoded.get("uid") or decoded.get("user_id")
+                if not firebase_uid:
+                    self._send(401, {"error": "Invalid token: missing user ID"})
+                    return
                 firebase_email = decoded.get("email")
                 firebase_name = decoded.get("name")
             except Exception as e:
-                self._send(401, {"error": f"Invalid token: {str(e)}"})
+                self._send(401, {"error": "Invalid token"})
                 return
 
             db_url = os.environ.get("DATABASE_URL", "")
@@ -256,10 +392,15 @@ class handler(BaseHTTPRequestHandler):
                     # Parse query params
                     parsed = urlparse(self.path)
                     params = parse_qs(parsed.query)
-                    page = int(params.get("page", ["1"])[0])
-                    page_size = int(params.get("page_size", ["20"])[0])
+                    page = max(1, int(params.get("page", ["1"])[0]))
+                    page_size = min(100, max(1, int(params.get("page_size", ["20"])[0])))  # Limit to 100 max
                     status_filter = params.get("status", [None])[0]
                     search = params.get("search", [None])[0]
+
+                    # Validate status filter
+                    valid_statuses = ['draft', 'pending_review', 'approved', 'deprecated', 'superseded', 'at_risk']
+                    if status_filter and status_filter not in valid_statuses:
+                        status_filter = None
 
                     # Build query
                     where_clauses = ["d.organization_id = :org_id", "d.deleted_at IS NULL"]
@@ -378,44 +519,90 @@ class handler(BaseHTTPRequestHandler):
 
                 elif method == "POST":
                     content_len = int(self.headers.get("Content-Length", 0))
+                    # Limit request body size to 1MB
+                    if content_len > 1024 * 1024:
+                        self._send(413, {"error": "Request body too large"})
+                        return
                     body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
 
-                    title = body.get("title", "").strip()
+                    title = body.get("title", "").strip()[:500]  # Limit title length
                     content = body.get("content", {})
                     impact_level = body.get("impact_level", "medium")
-                    tags = body.get("tags", [])
-                    reviewer_ids = body.get("reviewer_ids", [])
+                    tags = body.get("tags", [])[:20]  # Limit number of tags
+                    reviewer_ids = body.get("reviewer_ids", [])[:50]  # Limit reviewers
+
+                    # Validate impact level
+                    if impact_level not in ["low", "medium", "high", "critical"]:
+                        impact_level = "medium"
 
                     if not title:
                         self._send(400, {"error": "Title is required"})
                         return
 
-                    # Get organization details for notifications
+                    # Get organization details including subscription tier
                     org_result = conn.execute(text("""
-                        SELECT name, slack_access_token, slack_channel_id, teams_webhook_url
+                        SELECT name, slack_access_token, slack_channel_id, teams_webhook_url,
+                               COALESCE(subscription_tier, 'free') as subscription_tier
                         FROM organizations WHERE id = :org_id
                     """), {"org_id": org_id})
                     org_row = org_result.fetchone()
-                    org_name = org_row[0] if org_row else "Unknown"
-                    slack_token = org_row[1] if org_row else None
-                    slack_channel_id = org_row[2] if org_row else None
-                    teams_webhook_url = org_row[3] if org_row else None
+                    if not org_row:
+                        self._send(404, {"error": "Organization not found"})
+                        return
 
-                    # Get next decision number
-                    result = conn.execute(text("""
-                        SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions
-                        WHERE organization_id = :org_id
-                    """), {"org_id": org_id})
-                    decision_number = result.fetchone()[0]
+                    org_name = org_row[0]
+                    slack_token = org_row[1]
+                    slack_channel_id = org_row[2]
+                    teams_webhook_url = org_row[3]
+                    subscription_tier = org_row[4]
 
+                    # Enforce plan limits for free tier
+                    if subscription_tier == "free":
+                        # Check decision count limit (50 for free plan)
+                        count_result = conn.execute(text("""
+                            SELECT COUNT(*) FROM decisions
+                            WHERE organization_id = :org_id AND deleted_at IS NULL
+                        """), {"org_id": org_id})
+                        decision_count = count_result.fetchone()[0]
+
+                        if decision_count >= 50:
+                            self._send(403, {
+                                "error": "Decision limit reached",
+                                "message": "Free plan is limited to 50 decisions. Upgrade to Pro for unlimited decisions.",
+                                "limit": 50,
+                                "current": decision_count
+                            })
+                            return
+
+                    # Get next decision number with retry for race conditions
                     decision_id = str(uuid4())
                     version_id = str(uuid4())
+                    decision_number = None
 
-                    # Create decision
-                    conn.execute(text("""
-                        INSERT INTO decisions (id, organization_id, decision_number, status, created_by, created_at, is_temporary)
-                        VALUES (:id, :org_id, :num, 'draft', :user_id, NOW(), false)
-                    """), {"id": decision_id, "org_id": org_id, "num": decision_number, "user_id": user_id})
+                    for attempt in range(3):  # Retry up to 3 times
+                        try:
+                            result = conn.execute(text("""
+                                SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions
+                                WHERE organization_id = :org_id
+                            """), {"org_id": org_id})
+                            decision_number = result.fetchone()[0]
+
+                            # Create decision
+                            conn.execute(text("""
+                                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, created_at, is_temporary)
+                                VALUES (:id, :org_id, :num, 'draft', :user_id, NOW(), false)
+                            """), {"id": decision_id, "org_id": org_id, "num": decision_number, "user_id": user_id})
+                            break  # Success, exit retry loop
+                        except Exception as insert_error:
+                            if "duplicate" in str(insert_error).lower() or "unique" in str(insert_error).lower():
+                                if attempt < 2:
+                                    decision_id = str(uuid4())  # Generate new ID for retry
+                                    continue
+                            raise
+
+                    if decision_number is None:
+                        self._send(500, {"error": "Failed to create decision"})
+                        return
 
                     # Create version
                     content_hash = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
@@ -472,6 +659,23 @@ class handler(BaseHTTPRequestHandler):
                                 org_name=org_name,
                                 tags=tags,
                             )
+                    except Exception:
+                        pass
+
+                    # Send email notifications to org members (non-blocking)
+                    try:
+                        send_decision_created_emails(
+                            conn=conn,
+                            org_id=org_id,
+                            decision_id=decision_id,
+                            decision_number=decision_number,
+                            title=title,
+                            impact_level=impact_level,
+                            creator_name=user_name,
+                            creator_id=str(user_id),
+                            org_name=org_name,
+                            tags=tags,
+                        )
                     except Exception:
                         pass
 

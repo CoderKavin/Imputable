@@ -84,6 +84,18 @@ export interface DecisionContent {
 }
 
 // =============================================================================
+// AI ANALYSIS METADATA
+// =============================================================================
+
+export interface AIMetadata {
+  ai_generated: boolean;
+  ai_confidence_score: number; // 0.0 to 1.0
+  verified_by_user: boolean;
+  verified_by_slack_user_id?: string;
+  verified_by_teams_user_id?: string;
+}
+
+// =============================================================================
 // DECISION VERSION
 // =============================================================================
 
@@ -99,6 +111,8 @@ export interface DecisionVersion {
   created_at: string;
   change_summary?: string;
   is_current: boolean;
+  // AI-generated metadata (stored in custom_fields)
+  ai_metadata?: AIMetadata;
 }
 
 export interface VersionHistoryItem {
@@ -116,6 +130,12 @@ export interface VersionHistoryItem {
 // DECISION
 // =============================================================================
 
+export interface PollVotes {
+  agree: number;
+  concern: number;
+  block: number;
+}
+
 export interface Decision {
   id: string;
   organization_id: string;
@@ -132,8 +152,11 @@ export interface Decision {
   current_user_approval?: ApprovalStatus;
   approval_progress?: ApprovalProgress;
   // Source tracking
-  source?: "web" | "slack";
+  source?: "web" | "slack" | "teams";
   slack_link?: string;
+  teams_link?: string;
+  // Consensus poll votes from Slack/Teams
+  poll_votes?: PollVotes;
 }
 
 export interface DecisionSummary {

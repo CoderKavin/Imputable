@@ -173,6 +173,23 @@ class Organization(Base, UUIDMixin, SoftDeleteMixin):
         comment="When Teams integration was configured"
     )
 
+    # Microsoft Teams Bot Framework Integration
+    teams_tenant_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Azure AD tenant ID for Teams Bot authentication"
+    )
+    teams_bot_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Teams Bot registration ID from Azure Bot Service"
+    )
+    teams_service_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Teams Bot Framework service URL for sending proactive messages"
+    )
+
     # Relationships
     members: Mapped[list["OrganizationMember"]] = relationship(
         back_populates="organization"
@@ -370,6 +387,18 @@ class Decision(Base, UUIDMixin, SoftDeleteMixin):
         String(50),
         nullable=True,
         comment="Slack thread timestamp if created in a thread"
+    )
+
+    # Teams source tracking (for Teams integration)
+    teams_message_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Teams message ID for deep linking to source conversation"
+    )
+    teams_conversation_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Teams conversation/channel ID for deep linking"
     )
 
     # Relationships
@@ -774,4 +803,131 @@ class UpdateRequest(Base, UUIDMixin):
     __table_args__ = (
         Index("idx_update_requests_decision", "decision_id"),
         Index("idx_update_requests_pending", "decision_id", postgresql_where="resolved_at IS NULL"),
+    )
+
+
+# =============================================================================
+# CONSENSUS POLLING MODELS
+# =============================================================================
+
+
+class PollVoteType(str, PyEnum):
+    """Types of consensus poll votes."""
+    AGREE = "agree"
+    CONCERN = "concern"
+    BLOCK = "block"
+
+
+class PollVote(Base, UUIDMixin):
+    """Consensus poll vote from Slack/Teams.
+
+    Supports both internal Imputable users and external Slack/Teams users.
+    Each user (internal or external) can have one vote per decision.
+    """
+
+    __tablename__ = "poll_votes"
+
+    decision_id: Mapped[UUID] = mapped_column(
+        ForeignKey("decisions.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Voter identification (one of user_id or external_user_id must be set)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True,
+        comment="Internal Imputable user ID"
+    )
+    external_user_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True,
+        comment="External Slack user ID or Teams user ID"
+    )
+    external_user_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+        comment="Display name for external users"
+    )
+
+    # Vote details
+    vote_type: Mapped[PollVoteType] = mapped_column(
+        Enum(PollVoteType, name="poll_vote_type", values_callable=lambda x: [e.value for e in x]),
+        nullable=False
+    )
+    comment: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="Optional comment with vote"
+    )
+
+    # Source tracking
+    source: Mapped[str] = mapped_column(
+        String(20), default="slack",
+        comment="Source platform: slack or teams"
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Relationships
+    decision: Mapped["Decision"] = relationship()
+    user: Mapped["User | None"] = relationship()
+
+    __table_args__ = (
+        # One vote per internal user per decision
+        UniqueConstraint("decision_id", "user_id", name="uq_poll_votes_internal_user"),
+        # One vote per external user per decision per source
+        UniqueConstraint("decision_id", "external_user_id", "source", name="uq_poll_votes_external_user"),
+        # Ensure at least one identifier is provided
+        CheckConstraint(
+            "user_id IS NOT NULL OR external_user_id IS NOT NULL",
+            name="chk_poll_votes_user_identifier"
+        ),
+        Index("idx_poll_votes_decision", "decision_id"),
+        Index("idx_poll_votes_user", "user_id", postgresql_where="user_id IS NOT NULL"),
+        Index("idx_poll_votes_external", "external_user_id", "source", postgresql_where="external_user_id IS NOT NULL"),
+    )
+
+
+class LoggedMessage(Base, UUIDMixin):
+    """Track Slack/Teams messages that have been logged as decisions.
+
+    Used for duplicate detection to prevent the same message from being
+    logged multiple times.
+    """
+
+    __tablename__ = "logged_messages"
+
+    # Source message identifiers
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        comment="Source platform: slack or teams"
+    )
+    message_id: Mapped[str] = mapped_column(
+        String(255), nullable=False,
+        comment="Slack message_ts or Teams message ID"
+    )
+    channel_id: Mapped[str] = mapped_column(
+        String(255), nullable=False,
+        comment="Channel or conversation ID"
+    )
+
+    # Link to created decision
+    decision_id: Mapped[UUID] = mapped_column(
+        ForeignKey("decisions.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    decision: Mapped["Decision"] = relationship()
+
+    __table_args__ = (
+        # Prevent duplicate logging of same message
+        UniqueConstraint("source", "message_id", "channel_id", name="uq_logged_messages_source_message"),
+        Index("idx_logged_messages_lookup", "source", "message_id", "channel_id"),
+        Index("idx_logged_messages_decision", "decision_id"),
     )
