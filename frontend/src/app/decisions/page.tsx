@@ -8,7 +8,7 @@
  * Protected route - requires authentication
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
@@ -21,6 +21,25 @@ import type { DecisionSummary } from "@/types/decision";
 type StatusFilter = "all" | "approved" | "pending_review" | "draft" | "at_risk";
 
 export default function DecisionsPage() {
+  return (
+    <Suspense fallback={<DecisionsPageSkeleton />}>
+      <DecisionsPageContent />
+    </Suspense>
+  );
+}
+
+function DecisionsPageSkeleton() {
+  return (
+    <AppLayout
+      title="Decisions"
+      subtitle="Engineering and product decision records"
+    >
+      <DecisionListSkeleton count={6} />
+    </AppLayout>
+  );
+}
+
+function DecisionsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [page, setPage] = useState(1);
