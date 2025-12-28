@@ -1061,6 +1061,126 @@ class handler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len)
 
+            # For Slack interactions, handle message shortcuts BEFORE database connection
+            # because trigger_id expires in 3 seconds and DB connection can be slow
+            if platform == "slack" and req_type == "interactions":
+                # Verify signature first
+                sig = self.headers.get("X-Slack-Signature", "")
+                ts = self.headers.get("X-Slack-Request-Timestamp", "")
+
+                if os.environ.get("SLACK_SIGNING_SECRET") and not verify_slack_signature(body, ts, sig):
+                    self._send(401, {"error": "Invalid signature"})
+                    return
+
+                # Parse payload
+                form_str = body.decode()
+                payload_str = ""
+                for pair in form_str.split("&"):
+                    if pair.startswith("payload="):
+                        payload_str = unquote(pair[8:].replace("+", " "))
+                        break
+
+                payload = json.loads(payload_str) if payload_str else {}
+                interaction_type = payload.get("type")
+                callback_id = payload.get("callback_id", "")
+                trigger_id = payload.get("trigger_id", "")
+                team_id = payload.get("team", {}).get("id", "")
+
+                print(f"[SLACK FAST PATH] type={interaction_type}, callback_id={callback_id}")
+
+                # FAST PATH: For message shortcuts, open modal immediately before DB connection
+                if interaction_type == "message_action" and callback_id in ("log_message_as_decision", "ai_summarize_decision"):
+                    # Get token from env first (faster than DB)
+                    # We'll get from DB later, but first try to open modal ASAP
+                    message = payload.get("message", {})
+                    channel = payload.get("channel", {})
+                    message_text = message.get("text", "")
+                    message_ts = message.get("ts", "")
+                    thread_ts = message.get("thread_ts") or message_ts
+                    channel_id = channel.get("id", "")
+
+                    # Get org token from database (need this for API calls)
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            from sqlalchemy import text
+                            result = conn.execute(text("SELECT slack_access_token FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
+                            org = result.fetchone()
+                            token = decrypt_token(org[0]) if org and org[0] else None
+
+                            if token and trigger_id:
+                                if callback_id == "log_message_as_decision":
+                                    # Simple modal
+                                    prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
+                                    modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
+                                else:
+                                    # AI loading modal
+                                    modal = {
+                                        "type": "modal",
+                                        "callback_id": "ai_loading_modal",
+                                        "title": {"type": "plain_text", "text": "Analyzing..."},
+                                        "close": {"type": "plain_text", "text": "Cancel"},
+                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the conversation...*\n\nThis may take a few seconds."}}]
+                                    }
+
+                                # Open modal IMMEDIATELY
+                                payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
+                                req = urllib.request.Request(
+                                    "https://slack.com/api/views.open",
+                                    data=payload_data,
+                                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                )
+                                try:
+                                    resp = urllib.request.urlopen(req, timeout=5)
+                                    resp_data = json.loads(resp.read().decode())
+                                    print(f"[SLACK FAST PATH] views.open: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
+                                    view_id = resp_data.get("view", {}).get("id") if resp_data.get("ok") else None
+
+                                    # For AI shortcut, do analysis and update modal
+                                    if callback_id == "ai_summarize_decision" and view_id:
+                                        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+                                        if gemini_key:
+                                            try:
+                                                channel_name = channel.get("name", "")
+                                                if thread_ts and thread_ts != message_ts:
+                                                    messages = fetch_slack_thread(token, channel_id, thread_ts)
+                                                else:
+                                                    messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
+                                                messages = resolve_slack_user_names(token, messages)
+                                                analysis = analyze_with_gemini(messages, channel_name)
+                                                if analysis:
+                                                    modal = SlackModals.ai_prefilled_modal(analysis, channel_id, message_ts, thread_ts)
+                                                else:
+                                                    prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
+                                                    modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
+                                            except Exception as e:
+                                                print(f"[SLACK FAST PATH] AI error: {e}")
+                                                prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
+                                                modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
+                                        else:
+                                            prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
+                                            modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
+
+                                        # Update modal with results
+                                        update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
+                                        req = urllib.request.Request(
+                                            "https://slack.com/api/views.update",
+                                            data=update_data,
+                                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                        )
+                                        try:
+                                            resp = urllib.request.urlopen(req, timeout=30)
+                                            resp_data = json.loads(resp.read().decode())
+                                            print(f"[SLACK FAST PATH] views.update: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
+                                        except Exception as e:
+                                            print(f"[SLACK FAST PATH] views.update failed: {e}")
+
+                                except Exception as e:
+                                    print(f"[SLACK FAST PATH] views.open failed: {e}")
+
+                    self._send(200, {})
+                    return
+
             engine = get_db_connection()
             if not engine:
                 self._send(500, {"error": "Database not configured"})
@@ -1113,7 +1233,8 @@ class handler(BaseHTTPRequestHandler):
                             break
 
                     payload = json.loads(payload_str) if payload_str else {}
-                    print(f"[SLACK INTERACTIONS] Payload type: {payload.get('type')}, callback_id: {payload.get('callback_id', payload.get('view', {}).get('callback_id', 'N/A'))}")
+                    callback_id = payload.get('callback_id', payload.get('view', {}).get('callback_id', 'N/A'))
+                    print(f"[SLACK INTERACTIONS] Payload type: {payload.get('type')}, callback_id: {callback_id}")
 
                     try:
                         result = handle_slack_interactions(payload, conn)
