@@ -1125,8 +1125,17 @@ class handler(BaseHTTPRequestHandler):
                             break
 
                     payload = json.loads(payload_str) if payload_str else {}
-                    result = handle_slack_interactions(payload, conn)
-                    self._send(200, result)
+                    print(f"[SLACK INTERACTIONS] Payload type: {payload.get('type')}, callback_id: {payload.get('callback_id', payload.get('view', {}).get('callback_id', 'N/A'))}")
+
+                    try:
+                        result = handle_slack_interactions(payload, conn)
+                        print(f"[SLACK INTERACTIONS] Handler returned: {result}")
+                        self._send(200, result)
+                    except Exception as e:
+                        import traceback
+                        print(f"[SLACK INTERACTIONS] ERROR: {e}")
+                        traceback.print_exc()
+                        self._send(200, {})  # Return 200 to Slack to avoid retry
 
                 # Teams
                 elif platform == "teams":
