@@ -1101,13 +1101,20 @@ class handler(BaseHTTPRequestHandler):
 
                 # Slack interactions
                 elif platform == "slack" and req_type == "interactions":
+                    print(f"[SLACK INTERACTIONS] Received request, body length: {len(body)}")
+
                     # Verify signature
                     sig = self.headers.get("X-Slack-Signature", "")
                     ts = self.headers.get("X-Slack-Request-Timestamp", "")
 
+                    print(f"[SLACK INTERACTIONS] Signature: {sig[:20]}... Timestamp: {ts}")
+
                     if os.environ.get("SLACK_SIGNING_SECRET") and not verify_slack_signature(body, ts, sig):
+                        print(f"[SLACK INTERACTIONS] Signature verification FAILED")
                         self._send(401, {"error": "Invalid signature"})
                         return
+
+                    print(f"[SLACK INTERACTIONS] Signature OK, processing...")
 
                     # Parse payload
                     form_str = body.decode()
