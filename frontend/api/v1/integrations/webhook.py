@@ -778,7 +778,7 @@ class SlackBlocks:
         return blocks
 
     @staticmethod
-    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "proposed"):
+    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "pending_review"):
         agree = votes.get("agree", [])
         concern = votes.get("concern", [])
         block = votes.get("block", [])
@@ -1049,7 +1049,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
         # Check if referencing existing decision (DECISION-123)
         dec_match = re.match(r"^DECISION-(\d+)\s*(.*)$", question, re.IGNORECASE)
-        decision_status = "proposed"  # Default for new decisions
+        decision_status = "pending_review"  # Default for new decisions
 
         if dec_match:
             decision_number = int(dec_match.group(1))
@@ -1087,7 +1087,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
             conn.execute(text("""
                 INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, is_temporary, created_at, updated_at)
-                VALUES (:id, :org_id, :num, 'proposed', :user_id, 'slack', :channel_id, false, NOW(), NOW())
+                VALUES (:id, :org_id, :num, 'pending_review', :user_id, 'slack', :channel_id, false, NOW(), NOW())
             """), {"id": decision_id, "org_id": org_id, "num": next_num, "user_id": db_user_id, "channel_id": channel_id})
 
             content = json.dumps({"context": f"Poll created from Slack by {user_name}", "choice": question, "rationale": "", "alternatives": []})
