@@ -1203,15 +1203,77 @@ class handler(BaseHTTPRequestHandler):
                     self._send(200, {})
                     return
 
-                # FAST PATH: For view submissions - save to DB, send message, close modal
+                # FAST PATH: For view submissions - respond immediately, fire async save
                 view_callback_id = payload.get("view", {}).get("callback_id", "")
                 print(f"[SLACK FAST PATH] view_callback_id={view_callback_id}")
                 if interaction_type == "view_submission" and view_callback_id == "log_message_modal":
-                    decision_id = None
-                    next_num = None
-                    title = None
-
+                    # Extract minimal data for immediate Slack message
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+                    values = payload.get("view", {}).get("state", {}).get("values", {})
+                    metadata = {}
                     try:
+                        metadata = json.loads(payload.get("view", {}).get("private_metadata", "{}"))
+                    except:
+                        pass
+
+                    title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
+                    channel_id = metadata.get("channel_id")
+
+                    # Send immediate confirmation to Slack channel
+                    if token and channel_id and title:
+                        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
+                        msg_payload = json.dumps({
+                            "channel": channel_id,
+                            "text": f"Decision saved: {title}",
+                            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision saved*\n*{title}*\n\n_Saving to <{frontend_url}/decisions|Imputable>..._"}}]
+                        }).encode()
+                        req = urllib.request.Request(
+                            "https://slack.com/api/chat.postMessage",
+                            data=msg_payload,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                        )
+                        try:
+                            urllib.request.urlopen(req, timeout=2)
+                        except:
+                            pass
+
+                    # Fire async request to save (non-blocking)
+                    save_payload = json.dumps({
+                        "action": "save_decision",
+                        "team_id": team_id,
+                        "payload": payload
+                    }).encode()
+
+                    # Get the webhook URL for async save
+                    webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                    save_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_save"
+
+                    req = urllib.request.Request(
+                        save_url,
+                        data=save_payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    try:
+                        # Fire and forget - 0.1s timeout just to send, don't wait for response
+                        urllib.request.urlopen(req, timeout=0.1)
+                    except:
+                        pass  # Expected to timeout, that's fine
+
+                    # Return 200 immediately to close modal
+                    self._send(200, {})
+                    return
+
+                # Handle async save request
+                if platform == "slack" and req_type == "async_save":
+                    try:
+                        data = json.loads(body.decode()) if body else {}
+                        if data.get("action") != "save_decision":
+                            self._send(200, {})
+                            return
+
+                        team_id = data.get("team_id")
+                        payload = data.get("payload", {})
+
                         token = os.environ.get("SLACK_BOT_TOKEN", "")
                         values = payload.get("view", {}).get("state", {}).get("values", {})
                         metadata = {}
@@ -1362,12 +1424,12 @@ class handler(BaseHTTPRequestHandler):
                                 pass
 
                     except Exception as e:
-                        print(f"[SLACK FAST PATH] view_submission error: {e}")
+                        print(f"[SLACK ASYNC SAVE] error: {e}")
                         import traceback
                         traceback.print_exc()
 
-                    # Return 200 to close modal
-                    self._send(200, {})
+                    # Return 200 for async save
+                    self._send(200, {"ok": True})
                     return
 
             engine = get_db_connection()
