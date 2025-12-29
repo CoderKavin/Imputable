@@ -2379,6 +2379,7 @@ class handler(BaseHTTPRequestHandler):
 
             # ASYNC POLL VOTE handler
             if platform == "slack" and req_type == "async_poll_vote":
+                from sqlalchemy import text
                 print(f"[SLACK ASYNC VOTE] Received async vote request")
                 try:
                     data = json.loads(body.decode())
@@ -2456,6 +2457,7 @@ class handler(BaseHTTPRequestHandler):
 
             # ASYNC POLL APPROVE handler
             if platform == "slack" and req_type == "async_poll_approve":
+                from sqlalchemy import text
                 print(f"[SLACK ASYNC APPROVE] Received async approve request")
                 try:
                     data = json.loads(body.decode())
