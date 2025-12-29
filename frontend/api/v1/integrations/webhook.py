@@ -1189,11 +1189,43 @@ class handler(BaseHTTPRequestHandler):
                 view_callback_id = payload.get("view", {}).get("callback_id", "")
                 print(f"[SLACK FAST PATH] view_callback_id={view_callback_id}")
                 if interaction_type == "view_submission" and view_callback_id == "log_message_modal":
+                    # Get token and metadata for immediate message
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+                    metadata = {}
+                    try:
+                        metadata = json.loads(payload.get("view", {}).get("private_metadata", "{}"))
+                    except:
+                        pass
+
+                    # Get title from form
+                    values = payload.get("view", {}).get("state", {}).get("values", {})
+                    title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
+
+                    # Send immediate "saving" message to channel BEFORE closing modal
+                    channel_id = metadata.get("channel_id")
+                    if token and channel_id and title:
+                        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
+                        msg_payload = json.dumps({
+                            "channel": channel_id,
+                            "text": f"Decision saved: {title}",
+                            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision saved*\n{title}\n\n_View in <{frontend_url}/decisions|Imputable>_"}}]
+                        }).encode()
+                        req = urllib.request.Request(
+                            "https://slack.com/api/chat.postMessage",
+                            data=msg_payload,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                        )
+                        try:
+                            urllib.request.urlopen(req, timeout=5)
+                            print(f"[SLACK FAST PATH] Sent confirmation message for: {title}")
+                        except Exception as e:
+                            print(f"[SLACK FAST PATH] Failed to send confirmation: {e}")
+
                     # Capture data needed for background save
                     save_data = {
                         "team_id": team_id,
                         "payload": payload,
-                        "token": os.environ.get("SLACK_BOT_TOKEN", "")
+                        "token": token
                     }
 
                     # Define background save function
@@ -1319,29 +1351,7 @@ class handler(BaseHTTPRequestHandler):
                                         """), {"id": str(uuid4()), "msg_id": check_ts, "channel_id": metadata.get("channel_id"), "did": decision_id})
 
                                     conn.commit()
-
-                                    # Post confirmation message
-                                    print(f"[SLACK FAST PATH] Posting confirmation: token={bool(token)}, channel={metadata.get('channel_id')}")
-                                    if token and metadata.get("channel_id"):
-                                        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
-                                        msg_payload = json.dumps({
-                                            "channel": metadata.get("channel_id"),
-                                            "text": f"Decision logged: DECISION-{next_num}",
-                                            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DECISION-{next_num}>*: {title}"}}]
-                                        }).encode()
-                                        req = urllib.request.Request(
-                                            "https://slack.com/api/chat.postMessage",
-                                            data=msg_payload,
-                                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                                        )
-                                        try:
-                                            resp = urllib.request.urlopen(req, timeout=10)
-                                            resp_data = json.loads(resp.read().decode())
-                                            print(f"[SLACK FAST PATH] chat.postMessage: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
-                                        except Exception as e:
-                                            print(f"[SLACK FAST PATH] chat.postMessage failed: {e}")
-
-                                    print(f"[SLACK FAST PATH] Decision saved: DECISION-{next_num}")
+                                    print(f"[SLACK FAST PATH] Decision saved to DB: DECISION-{next_num}")
                         except Exception as e:
                             print(f"[SLACK FAST PATH] view_submission error: {e}")
                             import traceback
