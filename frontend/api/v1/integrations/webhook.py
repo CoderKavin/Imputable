@@ -1216,8 +1216,9 @@ class handler(BaseHTTPRequestHandler):
                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                         )
                         try:
-                            urllib.request.urlopen(req, timeout=5)
-                            print(f"[SLACK FAST PATH] Sent confirmation message for: {title}")
+                            resp = urllib.request.urlopen(req, timeout=5)
+                            resp_data = json.loads(resp.read().decode())
+                            print(f"[SLACK FAST PATH] chat.postMessage response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, channel={resp_data.get('channel')}")
                         except Exception as e:
                             print(f"[SLACK FAST PATH] Failed to send confirmation: {e}")
 
