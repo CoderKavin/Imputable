@@ -875,6 +875,7 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                 conn.execute(text("""
                     INSERT INTO logged_messages (id, source, message_id, channel_id, decision_id, created_at)
                     VALUES (:id, 'slack', :msg_id, :channel_id, :did, NOW())
+                    ON CONFLICT (source, message_id, channel_id) DO NOTHING
                 """), {"id": str(uuid4()), "msg_id": check_ts, "channel_id": metadata.get("channel_id"), "did": decision_id})
 
             conn.commit()
