@@ -814,12 +814,15 @@ class SlackBlocks:
         blocks = [
             {"type": "header", "text": {"type": "plain_text", "text": f"{title[:75]}", "emoji": True}},
             {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
-            {"type": "actions", "block_id": f"poll_{decision_id}", "elements": [
+        ]
+
+        # Only show voting buttons if not approved
+        if decision_status != "approved":
+            blocks.append({"type": "actions", "block_id": f"poll_{decision_id}", "elements": [
                 {"type": "button", "text": {"type": "plain_text", "text": f"Agree ({len(agree)})", "emoji": True}, "style": "primary", "action_id": "poll_vote_agree", "value": decision_id},
                 {"type": "button", "text": {"type": "plain_text", "text": f"Concern ({len(concern)})", "emoji": True}, "action_id": "poll_vote_concern", "value": decision_id},
                 {"type": "button", "text": {"type": "plain_text", "text": f"Block ({len(block)})", "emoji": True}, "style": "danger", "action_id": "poll_vote_block", "value": decision_id}
-            ]}
-        ]
+            ]})
 
         # Show who voted
         vote_texts = []
