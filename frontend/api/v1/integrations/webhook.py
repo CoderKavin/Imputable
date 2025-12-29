@@ -1321,6 +1321,7 @@ class handler(BaseHTTPRequestHandler):
                                     conn.commit()
 
                                     # Post confirmation message
+                                    print(f"[SLACK FAST PATH] Posting confirmation: token={bool(token)}, channel={metadata.get('channel_id')}")
                                     if token and metadata.get("channel_id"):
                                         frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
                                         msg_payload = json.dumps({
@@ -1334,9 +1335,11 @@ class handler(BaseHTTPRequestHandler):
                                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                                         )
                                         try:
-                                            urllib.request.urlopen(req, timeout=10)
-                                        except Exception:
-                                            pass
+                                            resp = urllib.request.urlopen(req, timeout=10)
+                                            resp_data = json.loads(resp.read().decode())
+                                            print(f"[SLACK FAST PATH] chat.postMessage: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
+                                        except Exception as e:
+                                            print(f"[SLACK FAST PATH] chat.postMessage failed: {e}")
 
                                     print(f"[SLACK FAST PATH] Decision saved: DECISION-{next_num}")
                         except Exception as e:
