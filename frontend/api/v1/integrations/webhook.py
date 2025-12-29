@@ -472,7 +472,7 @@ def send_approval_dm(token: str, approver_slack_id: str, decision_id: str, decis
 
     Returns dict with {success: bool, channel_id: str, message_ts: str} or {success: False} on error.
     """
-    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+    decision_url = f"https://imputable.vercel.app/decisions/{decision_id}"
 
     blocks = [
         {
@@ -586,7 +586,7 @@ def update_approval_dm(token: str, channel_id: str, message_ts: str, decision_id
 
     Returns True if updated successfully.
     """
-    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+    decision_url = f"https://imputable.vercel.app/decisions/{decision_id}"
 
     if status == "approved":
         emoji = "✅"
@@ -749,7 +749,7 @@ class SlackBlocks:
     def help_message():
         return [
             {"type": "header", "text": {"type": "plain_text", "text": "Imputable Commands", "emoji": True}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "*Available Commands:*\n\n`/decisions` - Show main menu\n`/decisions add <title>` - Create a new decision\n`/decisions list` - View recent decisions\n`/decisions search <query>` - Search decisions\n`/decisions poll <question>` - Start consensus poll\n`/decisions help` - Show this help"}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": "*Available Commands:*\n\n`/decision` - Show main menu\n`/decision add <title>` - Create a new decision\n`/decision list` - View recent decisions\n`/decision search <query>` - Search decisions\n`/decision poll <question>` - Start consensus poll\n`/decision log` - AI-analyze recent conversation and log as decision\n`/decision log <topic>` - Same, but focused on a specific topic\n`/decision help` - Show this help"}},
             {"type": "divider"},
             {"type": "context", "elements": [{"type": "mrkdwn", "text": "You can also right-click any message and select *Log as Decision* to capture it."}]}
         ]
@@ -768,7 +768,7 @@ class SlackBlocks:
         for d in decisions[:5]:
             dec_id, dec_num, title, status = d
             emoji = status_emoji.get(status, ":white_circle:")
-            frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
+            frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
             blocks.append({
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"{emoji} *<{frontend_url}/decisions/{dec_id}|DECISION-{dec_num}>*\n{title}"},
@@ -784,7 +784,7 @@ class SlackBlocks:
         block = votes.get("block", [])
         total = len(agree) + len(concern) + len(block)
 
-        frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
+        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
 
         blocks = [
             {"type": "header", "text": {"type": "plain_text", "text": f"DECISION-{decision_number}: {title[:50]}", "emoji": True}},
@@ -814,14 +814,14 @@ class SlackBlocks:
 
     @staticmethod
     def decision_created(decision_id: str, decision_number: int, title: str):
-        frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
+        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
         return [
             {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DECISION-{decision_number}>*: {title}"}}
         ]
 
     @staticmethod
     def duplicate_warning(decision_id: str, decision_number: int, title: str):
-        frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
+        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
         return [
             {"type": "section", "text": {"type": "mrkdwn", "text": f":warning: This message was already logged as *<{frontend_url}/decisions/{decision_id}|DECISION-{decision_number}>*: {title}"}}
         ]
@@ -1782,7 +1782,7 @@ def handle_approval_action(conn, decision_id: str, slack_user_id: str, user_name
             print(f"[SLACK] Error sending channel notification: {e}")
 
     # Build response message
-    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+    decision_url = f"https://imputable.vercel.app/decisions/{decision_id}"
 
     if status == "approved":
         if decision_became_approved:
@@ -1818,7 +1818,7 @@ def send_approval_channel_notification(token: str, channel_id: str, decision_id:
                                         status: str, comment: str, approved_count: int,
                                         required_count: int, decision_became_approved: bool) -> bool:
     """Send approval notification to the Slack channel where decision was created."""
-    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+    decision_url = f"https://imputable.vercel.app/decisions/{decision_id}"
 
     if status == "approved":
         emoji = "✅"
@@ -1894,7 +1894,7 @@ def handle_teams_activity(activity: dict, conn) -> dict:
         return {"type": "message", "text": "This Teams workspace is not connected to Imputable."}
 
     org_id, org_name = str(org[0]), org[1]
-    frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
+    frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
 
     if activity_type == "message":
         text_content = activity.get("text", "").strip()
