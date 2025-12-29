@@ -2377,6 +2377,146 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
                 return
 
+            # ASYNC POLL VOTE handler
+            if platform == "slack" and req_type == "async_poll_vote":
+                print(f"[SLACK ASYNC VOTE] Received async vote request")
+                try:
+                    data = json.loads(body.decode())
+                    team_id = data.get("team_id", "")
+                    decision_id = data.get("decision_id", "")
+                    vote_type = data.get("vote_type", "")
+                    user_id = data.get("user_id", "")
+                    user_name = data.get("user_name", "")
+                    response_url = data.get("response_url", "")
+
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            # Upsert vote
+                            result = conn.execute(text("""
+                                SELECT id FROM poll_votes
+                                WHERE decision_id = :did AND external_user_id = :uid AND source = 'slack'
+                            """), {"did": decision_id, "uid": user_id})
+                            existing = result.fetchone()
+
+                            if existing:
+                                conn.execute(text("""
+                                    UPDATE poll_votes SET vote_type = :vote, external_user_name = :name, updated_at = NOW()
+                                    WHERE id = :id
+                                """), {"vote": vote_type, "name": user_name, "id": existing[0]})
+                            else:
+                                conn.execute(text("""
+                                    INSERT INTO poll_votes (id, decision_id, external_user_id, external_user_name, vote_type, source, created_at, updated_at)
+                                    VALUES (:id, :did, :uid, :name, :vote, 'slack', NOW(), NOW())
+                                """), {"id": str(uuid4()), "did": decision_id, "uid": user_id, "name": user_name, "vote": vote_type})
+
+                            conn.commit()
+
+                            # Get updated votes and decision info
+                            result = conn.execute(text("""
+                                SELECT d.decision_number, dv.title, d.status
+                                FROM decisions d
+                                JOIN decision_versions dv ON d.current_version_id = dv.id
+                                WHERE d.id = :did
+                            """), {"did": decision_id})
+                            dec = result.fetchone()
+
+                            if dec and response_url:
+                                result = conn.execute(text("SELECT vote_type, external_user_name FROM poll_votes WHERE decision_id = :did"), {"did": decision_id})
+                                votes = {"agree": [], "concern": [], "block": []}
+                                for row in result.fetchall():
+                                    vt, name = row[0], row[1] or "Someone"
+                                    if vt in votes:
+                                        votes[vt].append(name)
+
+                                blocks = SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                                update_payload = json.dumps({
+                                    "replace_original": True,
+                                    "blocks": blocks
+                                }).encode()
+
+                                req = urllib.request.Request(
+                                    response_url,
+                                    data=update_payload,
+                                    headers={"Content-Type": "application/json"}
+                                )
+                                try:
+                                    urllib.request.urlopen(req, timeout=5)
+                                    print(f"[SLACK ASYNC VOTE] Updated poll via response_url")
+                                except Exception as e:
+                                    print(f"[SLACK ASYNC VOTE] Failed to update: {e}")
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC VOTE] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                self._send(200, {"ok": True})
+                return
+
+            # ASYNC POLL APPROVE handler
+            if platform == "slack" and req_type == "async_poll_approve":
+                print(f"[SLACK ASYNC APPROVE] Received async approve request")
+                try:
+                    data = json.loads(body.decode())
+                    team_id = data.get("team_id", "")
+                    decision_id = data.get("decision_id", "")
+                    user_id = data.get("user_id", "")
+                    user_name = data.get("user_name", "")
+                    response_url = data.get("response_url", "")
+
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            # Update decision status to approved
+                            conn.execute(text("""
+                                UPDATE decisions SET status = 'approved', updated_at = NOW()
+                                WHERE id = :did AND status != 'approved'
+                            """), {"did": decision_id})
+                            conn.commit()
+
+                            # Get updated decision info
+                            result = conn.execute(text("""
+                                SELECT d.decision_number, dv.title, d.status
+                                FROM decisions d
+                                JOIN decision_versions dv ON d.current_version_id = dv.id
+                                WHERE d.id = :did
+                            """), {"did": decision_id})
+                            dec = result.fetchone()
+
+                            if dec and response_url:
+                                result = conn.execute(text("SELECT vote_type, external_user_name FROM poll_votes WHERE decision_id = :did"), {"did": decision_id})
+                                votes = {"agree": [], "concern": [], "block": []}
+                                for row in result.fetchall():
+                                    vt, name = row[0], row[1] or "Someone"
+                                    if vt in votes:
+                                        votes[vt].append(name)
+
+                                blocks = SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                                update_payload = json.dumps({
+                                    "replace_original": True,
+                                    "blocks": blocks
+                                }).encode()
+
+                                req = urllib.request.Request(
+                                    response_url,
+                                    data=update_payload,
+                                    headers={"Content-Type": "application/json"}
+                                )
+                                try:
+                                    urllib.request.urlopen(req, timeout=5)
+                                    print(f"[SLACK ASYNC APPROVE] Updated poll via response_url")
+                                except Exception as e:
+                                    print(f"[SLACK ASYNC APPROVE] Failed to update: {e}")
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC APPROVE] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                self._send(200, {"ok": True})
+                return
+
             # FAST PATH for slash commands - respond immediately, process async
             if platform == "slack" and req_type == "command":
                 # Verify signature first
@@ -2458,6 +2598,81 @@ class handler(BaseHTTPRequestHandler):
                 team_id = payload.get("team", {}).get("id", "")
 
                 print(f"[SLACK FAST PATH] type={interaction_type}, callback_id={callback_id}")
+
+                # FAST PATH: For poll votes, respond immediately and process async
+                if interaction_type == "block_actions":
+                    actions = payload.get("actions", [])
+                    if actions and actions[0].get("action_id", "").startswith("poll_vote_"):
+                        action = actions[0]
+                        action_id = action.get("action_id", "")
+                        decision_id = action.get("value", "")
+                        vote_type = action_id.replace("poll_vote_", "")
+                        user_info = payload.get("user", {})
+                        user_id = user_info.get("id", "")
+                        user_name = user_info.get("username", "") or user_info.get("name", "")
+                        response_url = payload.get("response_url", "")
+
+                        if decision_id and vote_type in ("agree", "concern", "block"):
+                            # Fire async request to process vote
+                            webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                            vote_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_poll_vote"
+
+                            vote_payload = json.dumps({
+                                "team_id": team_id,
+                                "decision_id": decision_id,
+                                "vote_type": vote_type,
+                                "user_id": user_id,
+                                "user_name": user_name,
+                                "response_url": response_url
+                            }).encode()
+
+                            req = urllib.request.Request(
+                                vote_url,
+                                data=vote_payload,
+                                headers={"Content-Type": "application/json"}
+                            )
+                            try:
+                                urllib.request.urlopen(req, timeout=0.1)
+                            except:
+                                pass  # Expected to timeout
+
+                            # Respond immediately with empty 200
+                            self._send(200, {})
+                            return
+
+                    # Also handle poll_approve_decision async
+                    if actions and actions[0].get("action_id") == "poll_approve_decision":
+                        action = actions[0]
+                        decision_id = action.get("value", "")
+                        user_info = payload.get("user", {})
+                        user_id = user_info.get("id", "")
+                        user_name = user_info.get("username", "") or user_info.get("name", "")
+                        response_url = payload.get("response_url", "")
+
+                        if decision_id:
+                            webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                            approve_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_poll_approve"
+
+                            approve_payload = json.dumps({
+                                "team_id": team_id,
+                                "decision_id": decision_id,
+                                "user_id": user_id,
+                                "user_name": user_name,
+                                "response_url": response_url
+                            }).encode()
+
+                            req = urllib.request.Request(
+                                approve_url,
+                                data=approve_payload,
+                                headers={"Content-Type": "application/json"}
+                            )
+                            try:
+                                urllib.request.urlopen(req, timeout=0.1)
+                            except:
+                                pass
+
+                            self._send(200, {})
+                            return
 
                 # FAST PATH: For message shortcuts, open modal immediately before DB connection
                 if interaction_type == "message_action" and callback_id == "log_message_as_decision":
