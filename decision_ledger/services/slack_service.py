@@ -760,6 +760,7 @@ class SlackModals:
         Build modal pre-filled with AI-analyzed decision content.
 
         Shows AI confidence score and allows user to verify/edit.
+        Includes warnings for conflicts, missing info, and required approvers.
         """
         from .ai_analyzer import AIAnalysisResult
 
@@ -806,122 +807,181 @@ class SlackModals:
             "ai_generated": True,
             "confidence_score": analysis.confidence_score,
             "suggested_status": analysis.suggested_status,
+            "required_approver": analysis.required_approver,
+            "has_conflict": analysis.has_conflict,
         })
 
-        blocks = [
-            # AI confidence banner
-            {
+        blocks = []
+
+        # Add conflict warning banner if detected
+        if analysis.has_conflict:
+            blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{confidence_emoji} *AI Analysis Complete* ({confidence_pct}% confidence)\n_{confidence_text}_"
+                    "text": ":no_entry: *Conflict Detected*\nThere appears to be unresolved disagreement in this thread. Consensus is unclear - you may need to facilitate further discussion."
                 }
+            })
+
+        # Add missing info warning if detected
+        if analysis.missing_info_warning:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f":mag: *Incomplete Information*\n_{analysis.missing_info_warning}_"
+                }
+            })
+
+        # Add required approver notice if detected
+        if analysis.required_approver:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f":bust_in_silhouette: *Approval Required*\n{analysis.required_approver} needs to sign off on this decision before it can proceed."
+                }
+            })
+
+        # Add divider if we had any warnings
+        if analysis.has_conflict or analysis.missing_info_warning or analysis.required_approver:
+            blocks.append({"type": "divider"})
+
+        # AI confidence banner
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"{confidence_emoji} *AI Analysis Complete* ({confidence_pct}% confidence)\n_{confidence_text}_"
+            }
+        })
+        blocks.append({"type": "divider"})
+
+        # Title
+        blocks.append({
+            "type": "input",
+            "block_id": "title_block",
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "title_input",
+                "initial_value": analysis.title[:150],
+                "placeholder": {"type": "plain_text", "text": "Decision title"}
             },
-            {"type": "divider"},
-            # Title
-            {
-                "type": "input",
-                "block_id": "title_block",
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "title_input",
-                    "initial_value": analysis.title[:150],
-                    "placeholder": {"type": "plain_text", "text": "Decision title"}
+            "label": {"type": "plain_text", "text": "Decision Title", "emoji": True}
+        })
+
+        # Context
+        blocks.append({
+            "type": "input",
+            "block_id": "context_block",
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "context_input",
+                "multiline": True,
+                "initial_value": analysis.context[:3000],
+                "placeholder": {"type": "plain_text", "text": "Background and problem statement"}
+            },
+            "label": {"type": "plain_text", "text": "Context (Problem)", "emoji": True}
+        })
+
+        # Choice/Decision
+        blocks.append({
+            "type": "input",
+            "block_id": "choice_block",
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "choice_input",
+                "multiline": True,
+                "initial_value": analysis.choice[:3000],
+                "placeholder": {"type": "plain_text", "text": "What was decided"}
+            },
+            "label": {"type": "plain_text", "text": "Decision (What)", "emoji": True}
+        })
+
+        # Rationale
+        blocks.append({
+            "type": "input",
+            "block_id": "rationale_block",
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "rationale_input",
+                "multiline": True,
+                "initial_value": analysis.rationale[:3000],
+                "placeholder": {"type": "plain_text", "text": "Why this choice was made"}
+            },
+            "label": {"type": "plain_text", "text": "Rationale (Why)", "emoji": True}
+        })
+
+        # Alternatives
+        blocks.append({
+            "type": "input",
+            "block_id": "alternatives_block",
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "alternatives_input",
+                "multiline": True,
+                "initial_value": alternatives_text[:3000],
+                "placeholder": {"type": "plain_text", "text": "- Option: Reason rejected"}
+            },
+            "label": {"type": "plain_text", "text": "Alternatives Considered", "emoji": True},
+            "hint": {"type": "plain_text", "text": "Format: - Option: Reason rejected"}
+        })
+
+        # Required Approver input (pre-filled if detected)
+        blocks.append({
+            "type": "input",
+            "block_id": "approver_block",
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "approver_input",
+                "initial_value": analysis.required_approver or "",
+                "placeholder": {"type": "plain_text", "text": "@username or leave blank"}
+            },
+            "label": {"type": "plain_text", "text": "Required Approver", "emoji": True},
+            "hint": {"type": "plain_text", "text": "Person who must approve before proceeding (if any)"}
+        })
+
+        # Impact level
+        blocks.append({
+            "type": "input",
+            "block_id": "impact_block",
+            "element": {
+                "type": "static_select",
+                "action_id": "impact_select",
+                "initial_option": {
+                    "text": {"type": "plain_text", "text": impact_option["text"]},
+                    "value": impact_option["value"]
                 },
-                "label": {"type": "plain_text", "text": "Decision Title", "emoji": True}
-            },
-            # Context
-            {
-                "type": "input",
-                "block_id": "context_block",
-                "optional": True,
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "context_input",
-                    "multiline": True,
-                    "initial_value": analysis.context[:3000],
-                    "placeholder": {"type": "plain_text", "text": "Background and problem statement"}
-                },
-                "label": {"type": "plain_text", "text": "Context (Problem)", "emoji": True}
-            },
-            # Choice/Decision
-            {
-                "type": "input",
-                "block_id": "choice_block",
-                "optional": True,
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "choice_input",
-                    "multiline": True,
-                    "initial_value": analysis.choice[:3000],
-                    "placeholder": {"type": "plain_text", "text": "What was decided"}
-                },
-                "label": {"type": "plain_text", "text": "Decision (What)", "emoji": True}
-            },
-            # Rationale
-            {
-                "type": "input",
-                "block_id": "rationale_block",
-                "optional": True,
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "rationale_input",
-                    "multiline": True,
-                    "initial_value": analysis.rationale[:3000],
-                    "placeholder": {"type": "plain_text", "text": "Why this choice was made"}
-                },
-                "label": {"type": "plain_text", "text": "Rationale (Why)", "emoji": True}
-            },
-            # Alternatives
-            {
-                "type": "input",
-                "block_id": "alternatives_block",
-                "optional": True,
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "alternatives_input",
-                    "multiline": True,
-                    "initial_value": alternatives_text[:3000],
-                    "placeholder": {"type": "plain_text", "text": "- Option: Reason rejected"}
-                },
-                "label": {"type": "plain_text", "text": "Alternatives Considered", "emoji": True},
-                "hint": {"type": "plain_text", "text": "Format: - Option: Reason rejected"}
-            },
-            # Impact level
-            {
-                "type": "input",
-                "block_id": "impact_block",
-                "element": {
-                    "type": "static_select",
-                    "action_id": "impact_select",
-                    "initial_option": {
-                        "text": {"type": "plain_text", "text": impact_option["text"]},
-                        "value": impact_option["value"]
-                    },
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "Low"}, "value": "low"},
-                        {"text": {"type": "plain_text", "text": "Medium"}, "value": "medium"},
-                        {"text": {"type": "plain_text", "text": "High"}, "value": "high"},
-                        {"text": {"type": "plain_text", "text": "Critical"}, "value": "critical"},
-                    ]
-                },
-                "label": {"type": "plain_text", "text": "Impact Level", "emoji": True}
-            },
-            {"type": "divider"},
-            # Discussion metadata (read-only context)
-            {
-                "type": "context",
-                "elements": [
-                    {"type": "mrkdwn", "text": f":busts_in_silhouette: *Key Dissenters:* {dissenters_text}"},
+                "options": [
+                    {"text": {"type": "plain_text", "text": "Low"}, "value": "low"},
+                    {"text": {"type": "plain_text", "text": "Medium"}, "value": "medium"},
+                    {"text": {"type": "plain_text", "text": "High"}, "value": "high"},
+                    {"text": {"type": "plain_text", "text": "Critical"}, "value": "critical"},
                 ]
             },
-            {
-                "type": "context",
-                "elements": [
-                    {"type": "mrkdwn", "text": f":calendar: *Deadlines Mentioned:* {deadlines_text}"},
-                ]
-            },
-        ]
+            "label": {"type": "plain_text", "text": "Impact Level", "emoji": True}
+        })
+
+        blocks.append({"type": "divider"})
+
+        # Discussion metadata (read-only context)
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f":busts_in_silhouette: *Key Dissenters:* {dissenters_text}"},
+            ]
+        })
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f":calendar: *Deadlines Mentioned:* {deadlines_text}"},
+            ]
+        })
 
         # Add suggested status context
         status_emoji = {
@@ -929,10 +989,16 @@ class SlackModals:
             "pending_review": ":hourglass:",
             "draft": ":pencil2:",
         }
+        status_text = analysis.suggested_status.replace('_', ' ').title()
+        if analysis.has_conflict:
+            status_text = "Draft (Conflict Detected)"
+        elif analysis.required_approver:
+            status_text = f"Pending Review (Awaiting {analysis.required_approver})"
+
         blocks.append({
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": f"{status_emoji.get(analysis.suggested_status, ':pencil2:')} *Suggested Status:* {analysis.suggested_status.replace('_', ' ').title()}"},
+                {"type": "mrkdwn", "text": f"{status_emoji.get(analysis.suggested_status, ':pencil2:')} *Suggested Status:* {status_text}"},
             ]
         })
 
@@ -1740,6 +1806,7 @@ class SlackInteractionHandler:
         ai_generated = metadata.get("ai_generated", False)
         confidence_score = metadata.get("confidence_score", 0.0)
         suggested_status = metadata.get("suggested_status", "draft")
+        has_conflict = metadata.get("has_conflict", False)
 
         # Extract form values
         title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
@@ -1747,6 +1814,7 @@ class SlackInteractionHandler:
         choice = values.get("choice_block", {}).get("choice_input", {}).get("value", "") or ""
         rationale = values.get("rationale_block", {}).get("rationale_input", {}).get("value", "") or ""
         alternatives_text = values.get("alternatives_block", {}).get("alternatives_input", {}).get("value", "") or ""
+        required_approver = values.get("approver_block", {}).get("approver_input", {}).get("value", "").strip() or None
         impact = values.get("impact_block", {}).get("impact_select", {}).get("selected_option", {}).get("value", "medium")
 
         # Validation
@@ -1842,8 +1910,15 @@ class SlackInteractionHandler:
             "pending_review": DecisionStatus.PENDING_REVIEW,
             "approved": DecisionStatus.APPROVED,
         }
-        # Default to DRAFT for safety, but use AI suggestion if high confidence
-        if confidence_score >= 0.8 and suggested_status in status_map:
+        # Determine status based on context:
+        # - If conflict detected, force DRAFT
+        # - If required approver specified, use PENDING_REVIEW
+        # - Otherwise, use AI suggestion if high confidence
+        if has_conflict:
+            decision_status = DecisionStatus.DRAFT
+        elif required_approver:
+            decision_status = DecisionStatus.PENDING_REVIEW
+        elif confidence_score >= 0.8 and suggested_status in status_map:
             decision_status = status_map[suggested_status]
         else:
             decision_status = DecisionStatus.DRAFT
@@ -1887,6 +1962,8 @@ class SlackInteractionHandler:
             custom_fields={
                 "ai_generated": ai_generated,
                 "ai_confidence_score": confidence_score,
+                "has_conflict": has_conflict,
+                "required_approver": required_approver,
                 "verified_by_user": True,
                 "verified_by_slack_user_id": user_id,
             },

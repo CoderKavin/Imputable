@@ -36,11 +36,16 @@ class AIAnalysisResult:
     # Discussion metadata
     key_dissenters: list[str]  # Names/IDs of people who disagreed
     deadlines: list[str]  # Any mentioned deadlines
+    required_approver: str | None  # Person who must approve before proceeding (e.g., "@Sarah")
 
     # AI assessment
     suggested_status: str  # "draft", "pending_review", or "approved"
     suggested_impact: str  # "low", "medium", "high", "critical"
     confidence_score: float  # 0.0 to 1.0
+
+    # Warnings for user
+    has_conflict: bool  # True if there's unresolved disagreement
+    missing_info_warning: str | None  # Warning if context/alternatives are unclear
 
     # Raw analysis for debugging
     raw_analysis: dict[str, Any] | None = None
@@ -67,28 +72,63 @@ IMPORTANT GUIDELINES:
 4. Identify who disagreed and why (key dissenters)
 5. Note any deadlines or timelines mentioned
 6. Assess whether there was clear consensus
+7. DETECT GATEKEEPERS: If someone mentions that a specific person needs to approve/sign off before proceeding, capture that person as "required_approver" and set status to "pending_review"
+8. DETECT CONFLICTS: If there's active disagreement with no resolution (e.g., "I disagree", "I'm against this", "strictly against"), set "has_conflict" to true and status to "draft"
+9. DETECT MISSING INFO: If the conversation lacks context, alternatives, or clear decision details, set "missing_info_warning" with a helpful message
 
 OUTPUT FORMAT (JSON):
 {
     "title": "Short descriptive title for the decision (max 100 chars)",
-    "context": "Summary of the problem being solved and why a decision was needed",
-    "choice": "What was actually decided - the chosen approach",
+    "context": "Summary of the problem being solved and why a decision was needed. If unclear, use empty string.",
+    "choice": "What was actually decided - the chosen approach. If no clear decision, use empty string.",
     "rationale": "Why this choice was made - the reasoning",
     "alternatives": [
         {"name": "Alternative option name", "rejected_reason": "Why it wasn't chosen"}
     ],
     "key_dissenters": ["Names of people who disagreed or raised concerns"],
     "deadlines": ["Any deadlines or timelines mentioned"],
+    "required_approver": "@PersonName or null - person explicitly mentioned as needing to approve/sign off",
     "suggested_status": "approved|pending_review|draft",
     "suggested_impact": "low|medium|high|critical",
     "confidence_score": 0.0-1.0,
+    "has_conflict": false,
+    "missing_info_warning": "Warning message if information is insufficient, or null if adequate",
     "analysis_notes": "Brief notes on analysis certainty"
 }
 
 STATUS GUIDELINES:
-- "approved": Clear consensus, everyone agreed, decision is final
-- "pending_review": Decision made but needs formal approval or has concerns
-- "draft": Ambiguous, still being discussed, or no clear resolution
+- "approved": Clear consensus, everyone agreed, decision is final, NO ONE mentioned needing additional approval
+- "pending_review": Decision made but:
+  * Someone specific was mentioned as needing to approve (gatekeeper pattern), OR
+  * There are unresolved concerns that need addressing
+- "draft": Use when:
+  * The discussion is still ongoing with no resolution
+  * There's active conflict/disagreement without consensus
+  * The conversation is too vague to determine a decision
+  * Very little information is available
+
+GATEKEEPER DETECTION (CRITICAL):
+Look for patterns like:
+- "@PersonName needs to approve this"
+- "but [Name] needs to sign off"
+- "waiting for [Name]'s approval"
+- "[Name] has final say on this"
+- "check with [Name] before we proceed"
+If detected, set required_approver to that person's name (include @ if mentioned) and status to "pending_review"
+
+CONFLICT DETECTION (CRITICAL):
+Look for unresolved disagreements:
+- "I disagree" / "I'm against this" / "strictly against"
+- Back-and-forth debate with no final agreement
+- Someone says "no" or blocks without resolution
+If detected, set has_conflict to true, status to "draft"
+
+MISSING INFO DETECTION (CRITICAL):
+Set missing_info_warning if:
+- No clear problem/context is stated → "Context not specified in thread"
+- No alternatives were discussed → "No alternatives mentioned"
+- The entire message is just "Let's go with X" with no explanation → "Minimal context provided - please fill in details manually"
+- Very short conversation with little substance → "Limited discussion found - please verify details"
 
 IMPACT GUIDELINES:
 - "low": Minor change, easily reversible, limited scope
@@ -101,7 +141,7 @@ CONFIDENCE GUIDELINES:
 - 0.7-0.9: Clear decision but some interpretation needed
 - 0.5-0.7: Decision exists but context is incomplete
 - 0.3-0.5: Possible decision, significant uncertainty
-- 0.0-0.3: Very unclear, may not be a decision at all"""
+- 0.0-0.3: Very unclear, may not be a decision at all (has_conflict or missing_info likely true)"""
 
     def __init__(self):
         settings = get_settings()
@@ -148,9 +188,12 @@ CONFIDENCE GUIDELINES:
                 alternatives=[],
                 key_dissenters=[],
                 deadlines=[],
+                required_approver=None,
                 suggested_status="draft",
                 suggested_impact="medium",
                 confidence_score=0.0,
+                has_conflict=False,
+                missing_info_warning="AI analysis failed - please fill in all details manually",
                 raw_analysis={"error": str(e)},
             )
 
@@ -262,9 +305,12 @@ CONFIDENCE GUIDELINES:
                 ],
                 key_dissenters=data.get("key_dissenters", []),
                 deadlines=data.get("deadlines", []),
+                required_approver=data.get("required_approver"),
                 suggested_status=self._validate_status(data.get("suggested_status", "draft")),
                 suggested_impact=self._validate_impact(data.get("suggested_impact", "medium")),
                 confidence_score=min(1.0, max(0.0, float(data.get("confidence_score", 0.5)))),
+                has_conflict=bool(data.get("has_conflict", False)),
+                missing_info_warning=data.get("missing_info_warning"),
                 raw_analysis=data,
             )
 
@@ -280,9 +326,12 @@ CONFIDENCE GUIDELINES:
                 alternatives=[],
                 key_dissenters=[],
                 deadlines=[],
+                required_approver=None,
                 suggested_status="draft",
                 suggested_impact="medium",
                 confidence_score=0.3,
+                has_conflict=False,
+                missing_info_warning="AI parsing failed - please fill in details manually",
                 raw_analysis={"parse_error": str(e), "raw": response},
             )
 

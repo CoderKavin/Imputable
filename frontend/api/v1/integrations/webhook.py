@@ -36,39 +36,80 @@ IMPORTANT GUIDELINES:
 4. Identify who disagreed and why (key dissenters)
 5. Note any deadlines or timelines mentioned
 6. Assess whether there was clear consensus
+7. DETECT GATEKEEPERS: If someone mentions that a specific person needs to approve/sign off before proceeding, capture that person as "required_approver" and set status to "pending_review"
+8. DETECT CONFLICTS: If there's active disagreement with no resolution (e.g., "I disagree", "I'm against this", "strictly against"), set "has_conflict" to true and status to "draft"
+9. DETECT MISSING INFO: If the conversation lacks context, alternatives, or clear decision details, set "missing_info_warning" with a helpful message
 
 OUTPUT FORMAT (JSON):
 {
     "title": "Short descriptive title for the decision (max 100 chars)",
-    "context": "Summary of the problem being solved and why a decision was needed",
-    "choice": "What was actually decided - the chosen approach",
+    "context": "Summary of the problem being solved and why a decision was needed. If unclear, use empty string.",
+    "choice": "What was actually decided - the chosen approach. If no clear decision, use empty string.",
     "rationale": "Why this choice was made - the reasoning",
     "alternatives": [
         {"name": "Alternative option name", "rejected_reason": "Why it wasn't chosen"}
     ],
     "key_dissenters": ["Names of people who disagreed or raised concerns"],
     "deadlines": ["Any deadlines or timelines mentioned"],
+    "required_approver": "@PersonName or null - person explicitly mentioned as needing to approve/sign off",
     "suggested_status": "approved|pending_review|draft",
     "suggested_impact": "low|medium|high|critical",
     "confidence_score": 0.0-1.0,
+    "has_conflict": false,
+    "missing_info_warning": "Warning message if information is insufficient, or null if adequate",
     "analysis_notes": "Brief notes on analysis certainty"
 }
 
 STATUS GUIDELINES:
-- "approved": Clear consensus, everyone agreed, decision is final
-- "pending_review": Decision made but needs formal approval or has concerns
-- "draft": Ambiguous, still being discussed, or no clear resolution
+- "approved": Clear consensus, everyone agreed, decision is final, NO ONE mentioned needing additional approval
+- "pending_review": Decision made but:
+  * Someone specific was mentioned as needing to approve (gatekeeper pattern), OR
+  * There are unresolved concerns that need addressing
+- "draft": Use when:
+  * The discussion is still ongoing with no resolution
+  * There's active conflict/disagreement without consensus
+  * The conversation is too vague to determine a decision
+  * Very little information is available
+
+GATEKEEPER DETECTION (CRITICAL):
+Look for patterns like:
+- "@PersonName needs to approve this"
+- "but [Name] needs to sign off"
+- "waiting for [Name]'s approval"
+- "[Name] has final say on this"
+- "check with [Name] before we proceed"
+If detected, set required_approver to that person's name (include @ if mentioned) and status to "pending_review"
+
+CONFLICT DETECTION (CRITICAL):
+Look for unresolved disagreements:
+- "I disagree" / "I'm against this" / "strictly against"
+- Back-and-forth debate with no final agreement
+- Someone says "no" or blocks without resolution
+If detected, set has_conflict to true, status to "draft"
+
+MISSING INFO DETECTION (CRITICAL):
+Set missing_info_warning if:
+- No clear problem/context is stated → "Context not specified in thread"
+- No alternatives were discussed → "No alternatives mentioned"
+- The entire message is just "Let's go with X" with no explanation → "Minimal context provided - please fill in details manually"
+- Very short conversation with little substance → "Limited discussion found - please verify details"
 
 CONFIDENCE GUIDELINES:
 - 0.9-1.0: Very clear decision with explicit consensus
 - 0.7-0.9: Clear decision but some interpretation needed
 - 0.5-0.7: Decision exists but context is incomplete
 - 0.3-0.5: Possible decision, significant uncertainty
-- 0.0-0.3: Very unclear, may not be a decision at all"""
+- 0.0-0.3: Very unclear, may not be a decision at all (has_conflict or missing_info likely true)"""
 
 
-def analyze_with_gemini(messages: list, channel_name: str = None) -> dict:
-    """Analyze messages with Google Gemini API."""
+def analyze_with_gemini(messages: list, channel_name: str = None, hint: str = None) -> dict:
+    """Analyze messages with Google Gemini API.
+
+    Args:
+        messages: List of message dicts with author, text, timestamp
+        channel_name: Optional channel name for context
+        hint: Optional hint from user about what decision to focus on
+    """
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     if not gemini_key:
         return None
@@ -77,6 +118,8 @@ def analyze_with_gemini(messages: list, channel_name: str = None) -> dict:
     lines = []
     if channel_name:
         lines.append(f"Channel: #{channel_name}\n")
+    if hint:
+        lines.append(f"User hint: Focus on the discussion about '{hint}'\n")
     lines.append("=== CONVERSATION TRANSCRIPT ===\n")
     for msg in messages:
         author = msg.get("author", "Unknown")
@@ -85,13 +128,19 @@ def analyze_with_gemini(messages: list, channel_name: str = None) -> dict:
     lines.append("=== END TRANSCRIPT ===")
     transcript = "\n".join(lines)
 
+    # Build the analysis prompt
+    analysis_prompt = "\n\nAnalyze this conversation and extract the decision"
+    if hint:
+        analysis_prompt += f" (focusing on: {hint})"
+    analysis_prompt += f":\n\n{transcript}"
+
     # Call Gemini
     url = f"{GEMINI_API_URL}?key={gemini_key}"
     payload = json.dumps({
         "contents": [{
             "parts": [
                 {"text": AI_SYSTEM_PROMPT},
-                {"text": f"\n\nAnalyze this conversation and extract the decision:\n\n{transcript}"}
+                {"text": analysis_prompt}
             ]
         }],
         "generationConfig": {
@@ -157,6 +206,108 @@ def fetch_slack_thread(token: str, channel_id: str, thread_ts: str) -> list:
     return messages
 
 
+def fetch_channel_context(token: str, channel_id: str, target_ts: str, count: int = 25) -> list:
+    """Fetch messages around a target message in a channel for context.
+
+    Gets messages before and after the target message to provide context
+    for AI analysis when the message isn't part of a thread.
+    """
+    messages = []
+
+    # Fetch messages before and including the target (oldest first)
+    # Using latest=target_ts to get messages up to and including target
+    url_before = f"https://slack.com/api/conversations.history?channel={channel_id}&latest={target_ts}&limit={count}&inclusive=true"
+    req = urllib.request.Request(url_before, headers={"Authorization": f"Bearer {token}"})
+
+    try:
+        response = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(response.read().decode())
+
+        if data.get("ok"):
+            for msg in data.get("messages", []):
+                if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
+                    continue
+                # Skip thread replies (they have thread_ts different from ts)
+                if msg.get("thread_ts") and msg.get("thread_ts") != msg.get("ts"):
+                    continue
+                messages.append({
+                    "author": msg.get("user", "Unknown"),
+                    "text": msg.get("text", ""),
+                    "timestamp": msg.get("ts", ""),
+                    "is_target": msg.get("ts") == target_ts
+                })
+    except Exception as e:
+        print(f"Slack API error fetching messages before: {e}")
+
+    # Fetch messages after the target
+    url_after = f"https://slack.com/api/conversations.history?channel={channel_id}&oldest={target_ts}&limit={count}&inclusive=false"
+    req = urllib.request.Request(url_after, headers={"Authorization": f"Bearer {token}"})
+
+    try:
+        response = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(response.read().decode())
+
+        if data.get("ok"):
+            for msg in data.get("messages", []):
+                if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave"):
+                    continue
+                # Skip thread replies
+                if msg.get("thread_ts") and msg.get("thread_ts") != msg.get("ts"):
+                    continue
+                # Skip the target message (already included)
+                if msg.get("ts") == target_ts:
+                    continue
+                messages.append({
+                    "author": msg.get("user", "Unknown"),
+                    "text": msg.get("text", ""),
+                    "timestamp": msg.get("ts", ""),
+                    "is_target": False
+                })
+    except Exception as e:
+        print(f"Slack API error fetching messages after: {e}")
+
+    # Sort by timestamp (oldest first)
+    messages.sort(key=lambda m: float(m["timestamp"]))
+
+    return messages
+
+
+def fetch_recent_channel_messages(token: str, channel_id: str, limit: int = 50) -> list:
+    """Fetch the most recent messages from a channel for AI analysis.
+
+    Used by the /log slash command to analyze recent conversation.
+    """
+    messages = []
+
+    url = f"https://slack.com/api/conversations.history?channel={channel_id}&limit={limit}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+
+    try:
+        response = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(response.read().decode())
+
+        if data.get("ok"):
+            for msg in data.get("messages", []):
+                # Skip bot messages and system messages
+                if msg.get("subtype") in ("bot_message", "channel_join", "channel_leave", "channel_topic", "channel_purpose"):
+                    continue
+                # Skip thread replies (they have thread_ts different from ts)
+                if msg.get("thread_ts") and msg.get("thread_ts") != msg.get("ts"):
+                    continue
+                messages.append({
+                    "author": msg.get("user", "Unknown"),
+                    "text": msg.get("text", ""),
+                    "timestamp": msg.get("ts", "")
+                })
+
+            # Reverse to get chronological order (oldest first)
+            messages.reverse()
+    except Exception as e:
+        print(f"Slack API error fetching recent messages: {e}")
+
+    return messages
+
+
 def resolve_slack_user_names(token: str, messages: list) -> list:
     """Resolve Slack user IDs to display names."""
     user_ids = set()
@@ -189,6 +340,326 @@ def resolve_slack_user_names(token: str, messages: list) -> list:
 # =============================================================================
 # HELPERS
 # =============================================================================
+
+def get_slack_user_info(token: str, user_id: str) -> dict:
+    """Get Slack user info including email.
+
+    Returns dict with keys: id, email, name, real_name
+    Returns None if user not found or API error.
+    """
+    url = f"https://slack.com/api/users.info?user={user_id}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        response = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(response.read().decode())
+        if data.get("ok"):
+            user = data.get("user", {})
+            return {
+                "id": user.get("id"),
+                "email": user.get("profile", {}).get("email"),
+                "name": user.get("name"),
+                "real_name": user.get("real_name") or user.get("profile", {}).get("real_name"),
+            }
+    except Exception as e:
+        print(f"[SLACK] Error getting user info for {user_id}: {e}")
+    return None
+
+
+def lookup_slack_user_by_name(token: str, name: str) -> dict:
+    """Look up a Slack user by @mention name or display name.
+
+    Args:
+        token: Slack bot token
+        name: User name like "@sarah", "sarah", or "Sarah (CFO)"
+
+    Returns dict with keys: id, email, name, real_name or None if not found.
+    """
+    # Clean the name - remove @ prefix and parenthetical notes
+    clean_name = name.strip()
+    if clean_name.startswith("@"):
+        clean_name = clean_name[1:]
+    # Remove parenthetical like "(CFO)"
+    if "(" in clean_name:
+        clean_name = clean_name.split("(")[0].strip()
+
+    # Use users.list to find the user (for small workspaces)
+    # For larger workspaces, you'd want users.lookupByEmail if you have email
+    url = "https://slack.com/api/users.list?limit=500"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        response = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(response.read().decode())
+        if data.get("ok"):
+            clean_lower = clean_name.lower()
+            for user in data.get("members", []):
+                if user.get("deleted") or user.get("is_bot"):
+                    continue
+                # Match by username, display name, or real name
+                if (user.get("name", "").lower() == clean_lower or
+                    user.get("real_name", "").lower() == clean_lower or
+                    user.get("profile", {}).get("display_name", "").lower() == clean_lower or
+                    user.get("profile", {}).get("real_name", "").lower() == clean_lower):
+                    return {
+                        "id": user.get("id"),
+                        "email": user.get("profile", {}).get("email"),
+                        "name": user.get("name"),
+                        "real_name": user.get("real_name") or user.get("profile", {}).get("real_name"),
+                    }
+    except Exception as e:
+        print(f"[SLACK] Error looking up user by name '{name}': {e}")
+    return None
+
+
+def resolve_or_create_user_from_slack(conn, org_id: str, slack_user_info: dict, added_by_user_id: str) -> str:
+    """Find or create an Imputable user from Slack user info.
+
+    First tries to match by email, then by slack_user_id.
+    Creates a new user if no match found.
+
+    Returns the user_id (UUID string).
+    """
+    from sqlalchemy import text
+
+    slack_id = slack_user_info.get("id")
+    email = slack_user_info.get("email")
+    real_name = slack_user_info.get("real_name") or slack_user_info.get("name") or "Slack User"
+
+    # Try to find by email first (most reliable for matching existing users)
+    if email:
+        result = conn.execute(text("""
+            SELECT id FROM users WHERE email = :email AND deleted_at IS NULL
+        """), {"email": email})
+        row = result.fetchone()
+        if row:
+            user_id = str(row[0])
+            # Update their slack_user_id if not set
+            conn.execute(text("""
+                UPDATE users SET slack_user_id = :slack_id, updated_at = NOW()
+                WHERE id = :user_id AND (slack_user_id IS NULL OR slack_user_id = '')
+            """), {"slack_id": slack_id, "user_id": user_id})
+            return user_id
+
+    # Try to find by slack_user_id
+    if slack_id:
+        result = conn.execute(text("""
+            SELECT id FROM users WHERE slack_user_id = :slack_id AND deleted_at IS NULL
+        """), {"slack_id": slack_id})
+        row = result.fetchone()
+        if row:
+            return str(row[0])
+
+    # Create new user
+    user_id = str(uuid4())
+    user_email = email or f"{slack_id}@slack.local"
+    conn.execute(text("""
+        INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
+        VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
+    """), {"id": user_id, "email": user_email, "name": real_name, "slack_id": slack_id})
+
+    # Add them to the organization
+    conn.execute(text("""
+        INSERT INTO organization_members (id, organization_id, user_id, role, created_at)
+        VALUES (:id, :org_id, :user_id, 'member', NOW())
+        ON CONFLICT (organization_id, user_id) DO NOTHING
+    """), {"id": str(uuid4()), "org_id": org_id, "user_id": user_id})
+
+    return user_id
+
+
+def send_approval_dm(token: str, approver_slack_id: str, decision_id: str, decision_number: int,
+                     title: str, requester_name: str, context: str = None) -> dict:
+    """Send a DM to the approver with approve/reject buttons.
+
+    Returns dict with {success: bool, channel_id: str, message_ts: str} or {success: False} on error.
+    """
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "🔔 Approval Requested", "emoji": True}
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{requester_name}* has requested your approval on this decision."
+            }
+        },
+    ]
+
+    if context:
+        # Truncate context for display
+        display_context = context[:300] + "..." if len(context) > 300 else context
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"_{display_context}_"}
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "actions",
+        "block_id": f"approval_{decision_id}",
+        "elements": [
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "✅ Approve", "emoji": True},
+                "style": "primary",
+                "action_id": "approve_decision",
+                "value": decision_id,
+            },
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "❌ Reject", "emoji": True},
+                "style": "danger",
+                "action_id": "reject_decision",
+                "value": decision_id,
+            },
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Details", "emoji": True},
+                "url": decision_url,
+                "action_id": "view_decision",
+            },
+        ]
+    })
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": "You were identified as a required approver for this decision."}]
+    })
+
+    # Open a DM channel with the user
+    dm_url = "https://slack.com/api/conversations.open"
+    dm_payload = json.dumps({"users": approver_slack_id}).encode()
+    dm_req = urllib.request.Request(dm_url, data=dm_payload, headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    })
+
+    try:
+        dm_response = urllib.request.urlopen(dm_req, timeout=5)
+        dm_data = json.loads(dm_response.read().decode())
+        if not dm_data.get("ok"):
+            print(f"[SLACK] Error opening DM with {approver_slack_id}: {dm_data.get('error')}")
+            return {"success": False}
+
+        channel_id = dm_data.get("channel", {}).get("id")
+
+        # Send the message
+        msg_url = "https://slack.com/api/chat.postMessage"
+        msg_payload = json.dumps({
+            "channel": channel_id,
+            "text": f"Approval requested for DECISION-{decision_number}: {title}",
+            "blocks": blocks
+        }).encode()
+        msg_req = urllib.request.Request(msg_url, data=msg_payload, headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        })
+
+        msg_response = urllib.request.urlopen(msg_req, timeout=5)
+        msg_data = json.loads(msg_response.read().decode())
+        if not msg_data.get("ok"):
+            print(f"[SLACK] Error sending approval DM: {msg_data.get('error')}")
+            return {"success": False}
+
+        message_ts = msg_data.get("ts")
+        print(f"[SLACK] Sent approval DM to {approver_slack_id} for DECISION-{decision_number} (ts={message_ts})")
+        return {"success": True, "channel_id": channel_id, "message_ts": message_ts}
+
+    except Exception as e:
+        print(f"[SLACK] Error sending approval DM: {e}")
+        return {"success": False}
+
+
+def update_approval_dm(token: str, channel_id: str, message_ts: str, decision_id: str,
+                       decision_number: int, title: str, status: str, approver_name: str,
+                       comment: str = None) -> bool:
+    """Update an approval DM to show the decision was already acted upon.
+
+    Returns True if updated successfully.
+    """
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    if status == "approved":
+        emoji = "✅"
+        status_text = "Approved"
+    else:
+        emoji = "❌"
+        status_text = "Rejected"
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{emoji} {status_text}", "emoji": True}
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{approver_name}* {status} this decision."
+            }
+        },
+    ]
+
+    if comment:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"_Reason: {comment}_"}
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Decision", "emoji": True},
+                "url": decision_url,
+                "action_id": "view_decision",
+            },
+        ]
+    })
+
+    # Update the message
+    update_url = "https://slack.com/api/chat.update"
+    update_payload = json.dumps({
+        "channel": channel_id,
+        "ts": message_ts,
+        "text": f"DECISION-{decision_number} has been {status}",
+        "blocks": blocks
+    }).encode()
+    update_req = urllib.request.Request(update_url, data=update_payload, headers={
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    })
+
+    try:
+        update_response = urllib.request.urlopen(update_req, timeout=5)
+        update_data = json.loads(update_response.read().decode())
+        if not update_data.get("ok"):
+            print(f"[SLACK] Error updating approval DM: {update_data.get('error')}")
+            return False
+        print(f"[SLACK] Updated approval DM for DECISION-{decision_number}")
+        return True
+    except Exception as e:
+        print(f"[SLACK] Error updating approval DM: {e}")
+        return False
+
 
 _db_engine = None
 
@@ -624,6 +1095,137 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
         return {"response_type": "ephemeral", "text": ":pencil: Opening decision form..."}
 
+    # Log - AI-powered logging of recent conversation
+    if cmd_lower == "log" or cmd_lower.startswith("log "):
+        hint = cmd_text[4:].strip() if cmd_lower.startswith("log ") else ""
+
+        if not slack_token or not trigger_id:
+            return {"response_type": "ephemeral", "text": ":warning: Unable to open form. Please try again."}
+
+        token = decrypt_token(slack_token)
+
+        # Open loading modal immediately (trigger_id expires in 3 seconds)
+        loading_modal = {
+            "type": "modal",
+            "callback_id": "ai_loading_modal",
+            "title": {"type": "plain_text", "text": "Analyzing..."},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the recent conversation...*\n\nThis may take a few seconds."}}
+            ]
+        }
+
+        view_id = None
+        payload_data = json.dumps({"trigger_id": trigger_id, "view": loading_modal}).encode()
+        req = urllib.request.Request(
+            "https://slack.com/api/views.open",
+            data=payload_data,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=5)
+            resp_data = json.loads(resp.read().decode())
+            if resp_data.get("ok"):
+                view_id = resp_data.get("view", {}).get("id")
+        except Exception as e:
+            print(f"[SLACK LOG CMD] Failed to open loading modal: {e}")
+            return {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."}
+
+        # Fetch recent channel messages
+        try:
+            messages = fetch_recent_channel_messages(token, channel_id, limit=50)
+            if not messages:
+                # Update modal with error
+                if view_id:
+                    error_modal = {
+                        "type": "modal",
+                        "callback_id": "log_error_modal",
+                        "title": {"type": "plain_text", "text": "No Messages"},
+                        "close": {"type": "plain_text", "text": "Close"},
+                        "blocks": [
+                            {"type": "section", "text": {"type": "mrkdwn", "text": ":warning: No recent messages found in this channel to analyze."}}
+                        ]
+                    }
+                    update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                    req = urllib.request.Request(
+                        "https://slack.com/api/views.update",
+                        data=update_data,
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                    )
+                    try:
+                        urllib.request.urlopen(req, timeout=10)
+                    except Exception:
+                        pass
+                return {"response_type": "ephemeral", "text": ""}
+
+            messages = resolve_slack_user_names(token, messages)
+
+            # Get channel name for context
+            channel_name = ""
+            try:
+                channel_info_url = f"https://slack.com/api/conversations.info?channel={channel_id}"
+                req = urllib.request.Request(channel_info_url, headers={"Authorization": f"Bearer {token}"})
+                resp = urllib.request.urlopen(req, timeout=5)
+                channel_data = json.loads(resp.read().decode())
+                if channel_data.get("ok"):
+                    channel_name = channel_data.get("channel", {}).get("name", "")
+            except Exception:
+                pass
+
+            # Analyze with AI (pass hint if provided)
+            gemini_key = os.environ.get("GEMINI_API_KEY", "")
+            analysis = None
+            if gemini_key:
+                analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
+
+            # Build modal
+            if analysis:
+                # Use the most recent message timestamp for metadata
+                latest_ts = messages[-1].get("timestamp", "") if messages else ""
+                modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
+            else:
+                prefill_title = hint if hint else "Decision from recent conversation"
+                modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
+
+            # Update modal with results
+            if view_id:
+                update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
+                req = urllib.request.Request(
+                    "https://slack.com/api/views.update",
+                    data=update_data,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                )
+                try:
+                    urllib.request.urlopen(req, timeout=10)
+                except Exception as e:
+                    print(f"[SLACK LOG CMD] Failed to update modal: {e}")
+
+        except Exception as e:
+            print(f"[SLACK LOG CMD] Error: {e}")
+            # Update modal with error
+            if view_id:
+                error_modal = {
+                    "type": "modal",
+                    "callback_id": "log_error_modal",
+                    "title": {"type": "plain_text", "text": "Error"},
+                    "close": {"type": "plain_text", "text": "Close"},
+                    "blocks": [
+                        {"type": "section", "text": {"type": "mrkdwn", "text": f":warning: An error occurred while analyzing the conversation. Please try again."}}
+                    ]
+                }
+                update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                req = urllib.request.Request(
+                    "https://slack.com/api/views.update",
+                    data=update_data,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                )
+                try:
+                    urllib.request.urlopen(req, timeout=10)
+                except Exception:
+                    pass
+
+        return {"response_type": "ephemeral", "text": ""}
+
     # Default: show menu
     return {"response_type": "ephemeral", "blocks": SlackBlocks.main_menu(org_name)}
 
@@ -649,43 +1251,11 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
     org_id, slack_token = str(org[0]), org[1]
     token = decrypt_token(slack_token) if slack_token else None
 
-    # Message shortcut (Log as Decision)
+    # Message shortcut (Log as Decision) - AI-powered
     if interaction_type == "message_action":
         callback_id = payload.get("callback_id")
 
         if callback_id == "log_message_as_decision":
-            message = payload.get("message", {})
-            channel = payload.get("channel", {})
-
-            message_text = message.get("text", "")
-            message_ts = message.get("ts", "")
-            thread_ts = message.get("thread_ts")
-            channel_id = channel.get("id", "")
-
-            # Open modal FIRST (trigger_id expires in 3 seconds!)
-            if token and trigger_id:
-                prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
-                modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
-
-                payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
-                req = urllib.request.Request(
-                    "https://slack.com/api/views.open",
-                    data=payload_data,
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                )
-                try:
-                    resp = urllib.request.urlopen(req, timeout=10)
-                    resp_data = json.loads(resp.read().decode())
-                    print(f"[SLACK] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
-                except Exception as e:
-                    print(f"[SLACK] views.open failed: {e}")
-            else:
-                print(f"[SLACK] Cannot open modal: token={bool(token)}, trigger_id={bool(trigger_id)}")
-
-            return {}
-
-        # AI Summarize Decision shortcut
-        elif callback_id == "ai_summarize_decision":
             message = payload.get("message", {})
             channel = payload.get("channel", {})
 
@@ -732,11 +1302,16 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                 gemini_key = os.environ.get("GEMINI_API_KEY", "")
 
                 if gemini_key:
-                    # Fetch the thread
+                    # Fetch messages for context
                     if thread_ts and thread_ts != message_ts:
+                        # Message is in a thread - fetch the whole thread
                         messages = fetch_slack_thread(token, channel_id, thread_ts)
                     else:
-                        messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
+                        # Not in a thread - fetch surrounding channel messages for context
+                        messages = fetch_channel_context(token, channel_id, message_ts, count=25)
+                        if not messages:
+                            # Fallback to just the single message
+                            messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
 
                     messages = resolve_slack_user_names(token, messages)
                     analysis = analyze_with_gemini(messages, channel_name)
@@ -917,6 +1492,31 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
 
             return {}
 
+        # Handle reject decision modal submission
+        if callback_id == "reject_decision_modal":
+            reason = values.get("reason_block", {}).get("reason_input", {}).get("value", "").strip()
+
+            # Get decision_id from metadata
+            try:
+                metadata = json.loads(payload.get("view", {}).get("private_metadata", "{}"))
+            except:
+                metadata = {}
+
+            decision_id = metadata.get("decision_id", "")
+
+            if not decision_id:
+                return {"response_action": "errors", "errors": {"reason_block": "Decision not found"}}
+
+            if not reason:
+                return {"response_action": "errors", "errors": {"reason_block": "Please provide a reason for rejection"}}
+
+            # Process the rejection
+            result = handle_approval_action(conn, decision_id, user_id, user_name, "rejected", reason, payload)
+
+            # For modal submissions, we return empty to close the modal
+            # The handle_approval_action already updated the original DM message
+            return {}
+
     # Block actions (button clicks)
     if interaction_type == "block_actions":
         actions = payload.get("actions", [])
@@ -979,7 +1579,299 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
             if action_id == "show_help":
                 return {"response_type": "ephemeral", "blocks": SlackBlocks.help_message()}
 
+            # Approve decision button (from DM)
+            if action_id == "approve_decision":
+                decision_id = action.get("value", "")
+                if decision_id:
+                    return handle_approval_action(conn, decision_id, user_id, user_name, "approved", None, payload)
+
+            # Reject decision button (from DM) - opens modal for reason
+            if action_id == "reject_decision":
+                decision_id = action.get("value", "")
+                trigger_id = payload.get("trigger_id", "")
+                if decision_id and trigger_id and token:
+                    # Open a modal to get rejection reason
+                    modal = {
+                        "type": "modal",
+                        "callback_id": "reject_decision_modal",
+                        "private_metadata": json.dumps({"decision_id": decision_id}),
+                        "title": {"type": "plain_text", "text": "Reject Decision"},
+                        "submit": {"type": "plain_text", "text": "Reject"},
+                        "close": {"type": "plain_text", "text": "Cancel"},
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": "Please provide a reason for rejecting this decision."}
+                            },
+                            {
+                                "type": "input",
+                                "block_id": "reason_block",
+                                "element": {
+                                    "type": "plain_text_input",
+                                    "action_id": "reason_input",
+                                    "multiline": True,
+                                    "placeholder": {"type": "plain_text", "text": "Why are you rejecting this decision?"}
+                                },
+                                "label": {"type": "plain_text", "text": "Reason"}
+                            }
+                        ]
+                    }
+                    # Open the modal
+                    modal_url = "https://slack.com/api/views.open"
+                    modal_payload = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
+                    modal_req = urllib.request.Request(modal_url, data=modal_payload, headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json"
+                    })
+                    try:
+                        urllib.request.urlopen(modal_req, timeout=5)
+                    except Exception as e:
+                        print(f"[SLACK] Error opening reject modal: {e}")
+                    return {}
+
     return {}
+
+
+def handle_approval_action(conn, decision_id: str, slack_user_id: str, user_name: str,
+                           status: str, comment: str, payload: dict) -> dict:
+    """Handle approval/rejection of a decision from Slack.
+
+    This mirrors the logic in /api/v1/decisions/[id].py POST handler.
+    """
+    from sqlalchemy import text
+
+    # Get the user's database ID
+    result = conn.execute(text("""
+        SELECT id FROM users WHERE slack_user_id = :slack_id AND deleted_at IS NULL
+    """), {"slack_id": slack_user_id})
+    user_row = result.fetchone()
+
+    if not user_row:
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": "❌ You need to be registered in Imputable to approve decisions. Please contact your admin."
+        }
+
+    db_user_id = str(user_row[0])
+
+    # Get decision info including Slack channel for notifications
+    result = conn.execute(text("""
+        SELECT d.id, d.status, d.current_version_id, d.decision_number, dv.title, d.organization_id,
+               d.slack_channel_id, o.slack_access_token
+        FROM decisions d
+        JOIN decision_versions dv ON d.current_version_id = dv.id
+        JOIN organizations o ON d.organization_id = o.id
+        WHERE d.id = :did AND d.deleted_at IS NULL
+    """), {"did": decision_id})
+    dec_row = result.fetchone()
+
+    if not dec_row:
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": "❌ Decision not found."
+        }
+
+    decision_status = dec_row[1]
+    current_version_id = str(dec_row[2])
+    decision_number = dec_row[3]
+    decision_title = dec_row[4]
+    org_id = str(dec_row[5])
+    slack_channel_id = dec_row[6]
+    encrypted_token = dec_row[7]
+
+    # Validate decision status - only pending_review decisions can be approved
+    if decision_status == "approved":
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": "❌ This decision has already been approved and cannot be modified."
+        }
+    if decision_status == "draft":
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": "❌ This decision is still in draft status. It must be set to 'Pending Review' before it can be approved."
+        }
+    if decision_status in ("deprecated", "superseded"):
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": f"❌ This decision has been {decision_status} and cannot be approved."
+        }
+
+    # Check if user is a required reviewer
+    result = conn.execute(text("""
+        SELECT id, required_role FROM required_reviewers
+        WHERE decision_version_id = :version_id AND user_id = :user_id
+    """), {"version_id": current_version_id, "user_id": db_user_id})
+    reviewer_row = result.fetchone()
+
+    if not reviewer_row:
+        return {
+            "response_type": "ephemeral",
+            "replace_original": False,
+            "text": "❌ You are not a required reviewer for this decision."
+        }
+
+    # Parse DM info from required_role field (we store it there)
+    dm_info = None
+    if reviewer_row[1]:
+        try:
+            dm_info = json.loads(reviewer_row[1])
+        except:
+            pass
+
+    # Check for existing approval and upsert
+    result = conn.execute(text("""
+        SELECT id FROM approvals
+        WHERE decision_version_id = :version_id AND user_id = :user_id
+    """), {"version_id": current_version_id, "user_id": db_user_id})
+    existing = result.fetchone()
+
+    if existing:
+        conn.execute(text("""
+            UPDATE approvals SET status = :status, comment = :comment, created_at = NOW()
+            WHERE id = :id
+        """), {"status": status, "comment": comment or "", "id": existing[0]})
+    else:
+        conn.execute(text("""
+            INSERT INTO approvals (id, decision_version_id, user_id, status, comment, created_at)
+            VALUES (:id, :version_id, :user_id, :status, :comment, NOW())
+        """), {"id": str(uuid4()), "version_id": current_version_id, "user_id": db_user_id,
+               "status": status, "comment": comment or ""})
+
+    # Get counts
+    result = conn.execute(text("""
+        SELECT
+            (SELECT COUNT(*) FROM required_reviewers WHERE decision_version_id = :version_id) as required_count,
+            (SELECT COUNT(*) FROM approvals WHERE decision_version_id = :version_id AND status = 'approved') as approved_count
+    """), {"version_id": current_version_id})
+    counts = result.fetchone()
+    required_count = counts[0]
+    approved_count = counts[1]
+
+    # Auto-approve decision if all reviewers approved
+    decision_became_approved = False
+    if required_count > 0 and approved_count >= required_count:
+        conn.execute(text("UPDATE decisions SET status = 'approved' WHERE id = :did"), {"did": decision_id})
+        decision_became_approved = True
+
+    conn.commit()
+
+    # Send channel notification if we have a channel
+    if slack_channel_id and encrypted_token:
+        try:
+            token = decrypt_token(encrypted_token)
+            if token:
+                send_approval_channel_notification(
+                    token=token,
+                    channel_id=slack_channel_id,
+                    decision_id=decision_id,
+                    decision_number=decision_number,
+                    title=decision_title,
+                    approver_name=user_name,
+                    status=status,
+                    comment=comment,
+                    approved_count=approved_count,
+                    required_count=required_count,
+                    decision_became_approved=decision_became_approved
+                )
+        except Exception as e:
+            print(f"[SLACK] Error sending channel notification: {e}")
+
+    # Build response message
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    if status == "approved":
+        if decision_became_approved:
+            emoji = "🎉"
+            status_text = "Decision Approved!"
+            message = f"You approved *DECISION-{decision_number}: {decision_title}*\n\nAll required approvals received - the decision is now officially approved!"
+        else:
+            emoji = "✅"
+            status_text = "Vote Recorded"
+            message = f"You approved *DECISION-{decision_number}: {decision_title}*\n\nProgress: {approved_count}/{required_count} approved"
+    else:
+        emoji = "❌"
+        status_text = "Vote Recorded"
+        reason_text = f"\n\n_Reason: {comment}_" if comment else ""
+        message = f"You rejected *DECISION-{decision_number}: {decision_title}*{reason_text}\n\nProgress: {approved_count}/{required_count} approved"
+
+    # Update the original message to show the action was taken
+    return {
+        "response_type": "in_channel",
+        "replace_original": True,
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {status_text}", "emoji": True}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": message}},
+            {"type": "actions", "elements": [
+                {"type": "button", "text": {"type": "plain_text", "text": "View Decision"}, "url": decision_url, "action_id": "view_decision"}
+            ]}
+        ]
+    }
+
+
+def send_approval_channel_notification(token: str, channel_id: str, decision_id: str,
+                                        decision_number: int, title: str, approver_name: str,
+                                        status: str, comment: str, approved_count: int,
+                                        required_count: int, decision_became_approved: bool) -> bool:
+    """Send approval notification to the Slack channel where decision was created."""
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    if status == "approved":
+        emoji = "✅"
+        action_text = "approved"
+        color = "10b981"
+    else:
+        emoji = "❌"
+        action_text = "rejected"
+        color = "ef4444"
+
+    if decision_became_approved:
+        header_text = "🎉 Decision Approved"
+        progress_text = f"All {required_count} required reviewers have approved!"
+    else:
+        header_text = f"{emoji} Vote Submitted"
+        progress_text = f"Progress: {approved_count}/{required_count} approved"
+
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": header_text, "emoji": True}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*{approver_name}* {action_text} this decision."}},
+    ]
+    if comment:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"_\"{comment}\"_"}})
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": progress_text}]})
+    blocks.append({"type": "actions", "elements": [
+        {"type": "button", "text": {"type": "plain_text", "text": "View Decision", "emoji": True},
+         "url": decision_url, "style": "primary", "action_id": "view_decision"}
+    ]})
+
+    payload = json.dumps({
+        "channel": channel_id,
+        "text": f"{approver_name} {action_text} DECISION-{decision_number}",
+        "attachments": [{"color": color, "blocks": blocks}]
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    )
+
+    try:
+        response = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(response.read().decode())
+        if not data.get("ok"):
+            print(f"[SLACK] Error sending channel notification: {data.get('error')}")
+            return False
+        print(f"[SLACK] Sent channel notification for DECISION-{decision_number}")
+        return True
+    except Exception as e:
+        print(f"[SLACK] Error sending channel notification: {e}")
+        return False
 
 
 # =============================================================================
@@ -1118,6 +2010,7 @@ class handler(BaseHTTPRequestHandler):
                     choice = values.get("choice_block", {}).get("choice_input", {}).get("value", "") or context or title
                     rationale = values.get("rationale_block", {}).get("rationale_input", {}).get("value", "") or ""
                     alternatives_text = values.get("alternatives_block", {}).get("alternatives_input", {}).get("value", "") or ""
+                    required_approver = values.get("approver_block", {}).get("approver_input", {}).get("value", "").strip() or None
 
                     # Parse alternatives
                     alternatives = []
@@ -1135,6 +2028,7 @@ class handler(BaseHTTPRequestHandler):
                     ai_generated = metadata.get("ai_generated", False)
                     confidence_score = metadata.get("confidence_score", 0.0)
                     suggested_status = metadata.get("suggested_status", "draft")
+                    has_conflict = metadata.get("has_conflict", False)
 
                     # Save to database
                     engine = get_db_connection()
@@ -1176,8 +2070,16 @@ class handler(BaseHTTPRequestHandler):
                             decision_id = str(uuid4())
                             version_id = str(uuid4())
 
+                            # Determine status based on context:
+                            # - If conflict detected, force DRAFT
+                            # - If required approver specified, use PENDING_REVIEW
+                            # - Otherwise, use AI suggestion if high confidence
                             decision_status = "draft"
-                            if ai_generated and confidence_score >= 0.8 and suggested_status in ("draft", "pending_review", "approved"):
+                            if has_conflict:
+                                decision_status = "draft"
+                            elif required_approver:
+                                decision_status = "pending_review"
+                            elif ai_generated and confidence_score >= 0.8 and suggested_status in ("draft", "pending_review", "approved"):
                                 decision_status = suggested_status
 
                             content = json.dumps({"context": context, "choice": choice, "rationale": rationale, "alternatives": alternatives})
@@ -1185,14 +2087,14 @@ class handler(BaseHTTPRequestHandler):
                             if ai_generated:
                                 tags.append("ai-generated")
 
-                            custom_fields = {}
-                            if ai_generated:
-                                custom_fields = {
-                                    "ai_generated": True,
-                                    "ai_confidence_score": confidence_score,
-                                    "verified_by_user": True,
-                                    "verified_by_slack_user_id": user_id
-                                }
+                            custom_fields = {
+                                "ai_generated": ai_generated,
+                                "ai_confidence_score": confidence_score,
+                                "has_conflict": has_conflict,
+                                "required_approver": required_approver,
+                                "verified_by_user": True,
+                                "verified_by_slack_user_id": user_id
+                            }
 
                             check_ts = metadata.get("thread_ts") or metadata.get("message_ts")
 
@@ -1223,8 +2125,74 @@ class handler(BaseHTTPRequestHandler):
                                     ON CONFLICT (source, message_id, channel_id) DO NOTHING
                                 """), {"id": str(uuid4()), "msg_id": check_ts, "channel_id": metadata.get("channel_id"), "did": decision_id})
 
+                            # Handle required approver - create RequiredReviewer and send DM
+                            approver_slack_id = None
+                            approver_db_user_id = None
+                            if required_approver and token:
+                                print(f"[SLACK ASYNC SAVE] Looking up required approver: {required_approver}")
+                                # Look up the approver in Slack
+                                approver_info = lookup_slack_user_by_name(token, required_approver)
+                                if approver_info and approver_info.get("id"):
+                                    approver_slack_id = approver_info["id"]
+                                    print(f"[SLACK ASYNC SAVE] Found approver Slack ID: {approver_slack_id}")
+
+                                    # Resolve or create the user in our database
+                                    approver_db_user_id = resolve_or_create_user_from_slack(
+                                        conn, org_id, approver_info, db_user_id
+                                    )
+                                    print(f"[SLACK ASYNC SAVE] Approver DB user ID: {approver_db_user_id}")
+
+                                    # Create RequiredReviewer entry
+                                    conn.execute(text("""
+                                        INSERT INTO required_reviewers (id, decision_version_id, user_id, added_by, added_at)
+                                        VALUES (:id, :version_id, :user_id, :added_by, NOW())
+                                        ON CONFLICT (decision_version_id, user_id) DO NOTHING
+                                    """), {
+                                        "id": str(uuid4()),
+                                        "version_id": version_id,
+                                        "user_id": approver_db_user_id,
+                                        "added_by": db_user_id
+                                    })
+                                    print(f"[SLACK ASYNC SAVE] Created RequiredReviewer for {required_approver}")
+                                else:
+                                    print(f"[SLACK ASYNC SAVE] Could not find Slack user for: {required_approver}")
+
                             conn.commit()
                             print(f"[SLACK ASYNC SAVE] Decision saved to DB: DECISION-{next_num}")
+
+                            # Send DM to approver AFTER commit (so decision exists)
+                            if approver_slack_id and token:
+                                try:
+                                    requester_display = user_name or f"<@{user_id}>"
+                                    dm_result = send_approval_dm(
+                                        token=token,
+                                        approver_slack_id=approver_slack_id,
+                                        decision_id=decision_id,
+                                        decision_number=next_num,
+                                        title=title,
+                                        requester_name=requester_display,
+                                        context=context[:500] if context else None
+                                    )
+
+                                    # Store DM info in required_reviewers for later updates
+                                    if dm_result.get("success"):
+                                        conn.execute(text("""
+                                            UPDATE required_reviewers
+                                            SET required_role = :dm_info
+                                            WHERE decision_version_id = :version_id AND user_id = :user_id
+                                        """), {
+                                            "dm_info": json.dumps({
+                                                "dm_channel_id": dm_result.get("channel_id"),
+                                                "dm_message_ts": dm_result.get("message_ts"),
+                                                "approver_slack_id": approver_slack_id
+                                            }),
+                                            "version_id": version_id,
+                                            "user_id": approver_db_user_id
+                                        })
+                                        conn.commit()
+                                        print(f"[SLACK ASYNC SAVE] Stored DM info for approver")
+                                except Exception as dm_err:
+                                    print(f"[SLACK ASYNC SAVE] Error sending approval DM: {dm_err}")
 
                 except Exception as e:
                     print(f"[SLACK ASYNC SAVE] Error: {e}")
@@ -1262,7 +2230,7 @@ class handler(BaseHTTPRequestHandler):
                 print(f"[SLACK FAST PATH] type={interaction_type}, callback_id={callback_id}")
 
                 # FAST PATH: For message shortcuts, open modal immediately before DB connection
-                if interaction_type == "message_action" and callback_id in ("log_message_as_decision", "ai_summarize_decision"):
+                if interaction_type == "message_action" and callback_id == "log_message_as_decision":
                     message = payload.get("message", {})
                     channel = payload.get("channel", {})
                     message_text = message.get("text", "")
@@ -1284,19 +2252,14 @@ class handler(BaseHTTPRequestHandler):
                                 token = decrypt_token(org[0]) if org and org[0] else None
 
                     if token and trigger_id:
-                        if callback_id == "log_message_as_decision":
-                            # Simple modal
-                            prefill_title = message_text.split("\n")[0][:100] if message_text else "Decision from Slack"
-                            modal = SlackModals.log_message(prefill_title, message_text, channel_id, message_ts, thread_ts)
-                        else:
-                            # AI loading modal
-                            modal = {
-                                "type": "modal",
-                                "callback_id": "ai_loading_modal",
-                                "title": {"type": "plain_text", "text": "Analyzing..."},
-                                "close": {"type": "plain_text", "text": "Cancel"},
-                                "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the conversation...*\n\nThis may take a few seconds."}}]
-                            }
+                        # AI loading modal
+                        modal = {
+                            "type": "modal",
+                            "callback_id": "ai_loading_modal",
+                            "title": {"type": "plain_text", "text": "Analyzing..."},
+                            "close": {"type": "plain_text", "text": "Cancel"},
+                            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the conversation...*\n\nThis may take a few seconds."}}]
+                        }
 
                         # Open modal IMMEDIATELY
                         payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
@@ -1311,16 +2274,22 @@ class handler(BaseHTTPRequestHandler):
                             print(f"[SLACK FAST PATH] views.open: ok={resp_data.get('ok')}, error={resp_data.get('error')}")
                             view_id = resp_data.get("view", {}).get("id") if resp_data.get("ok") else None
 
-                            # For AI shortcut, do analysis and update modal
-                            if callback_id == "ai_summarize_decision" and view_id:
+                            # Do AI analysis and update modal
+                            if view_id:
                                 gemini_key = os.environ.get("GEMINI_API_KEY", "")
                                 if gemini_key:
                                     try:
                                         channel_name = channel.get("name", "")
+                                        # Fetch messages for context
                                         if thread_ts and thread_ts != message_ts:
+                                            # Message is in a thread - fetch the whole thread
                                             messages = fetch_slack_thread(token, channel_id, thread_ts)
                                         else:
-                                            messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
+                                            # Not in a thread - fetch surrounding channel messages for context
+                                            messages = fetch_channel_context(token, channel_id, message_ts, count=25)
+                                            if not messages:
+                                                # Fallback to just the single message
+                                                messages = [{"author": message.get("user", "Unknown"), "text": message_text, "timestamp": message_ts}]
                                         messages = resolve_slack_user_names(token, messages)
                                         analysis = analyze_with_gemini(messages, channel_name)
                                         if analysis:

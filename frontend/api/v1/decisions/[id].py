@@ -275,6 +275,79 @@ def send_slack_approval_notification(
         pass
 
 
+def update_slack_approval_dm(
+    slack_token: str,
+    dm_channel_id: str,
+    dm_message_ts: str,
+    decision_number: int,
+    decision_id: str,
+    title: str,
+    approver_name: str,
+    approval_status: str,
+    comment: str = None,
+):
+    """Update the approval DM to show it's already been acted upon (from website)."""
+    try:
+        from cryptography.fernet import Fernet
+        encryption_key = os.environ.get("ENCRYPTION_KEY", "")
+        if encryption_key:
+            f = Fernet(encryption_key.encode())
+            token = f.decrypt(slack_token.encode()).decode()
+        else:
+            token = slack_token
+    except Exception:
+        token = slack_token
+
+    if not token or not dm_channel_id or not dm_message_ts:
+        return False
+
+    decision_url = f"https://app.imputable.io/decisions/{decision_id}"
+
+    if approval_status == "approved":
+        emoji = "✅"
+        status_text = "Approved"
+    elif approval_status == "rejected":
+        emoji = "❌"
+        status_text = "Rejected"
+    else:
+        emoji = "⏭️"
+        status_text = "Abstained"
+
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {status_text}", "emoji": True}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*{approver_name}* {approval_status} this decision via the web."}},
+    ]
+    if comment:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"_Reason: {comment}_"}})
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "actions",
+        "elements": [
+            {"type": "button", "text": {"type": "plain_text", "text": "View Decision", "emoji": True}, "url": decision_url, "style": "primary"}
+        ]
+    })
+
+    payload = json.dumps({
+        "channel": dm_channel_id,
+        "ts": dm_message_ts,
+        "text": f"DECISION-{decision_number} has been {approval_status}",
+        "blocks": blocks
+    }).encode()
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.update",
+        data=payload,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(resp.read().decode())
+        return result.get("ok", False)
+    except Exception as e:
+        print(f"Failed to update approval DM: {e}")
+        return False
+
+
 def send_teams_approval_notification(
     webhook_url: str,
     decision_number: int,
@@ -834,12 +907,24 @@ class handler(BaseHTTPRequestHandler):
                         self._send(404, {"error": "Decision not found"})
                         return
 
+                    decision_status = dec_row[1]
                     current_version_id = dec_row[2]
                     decision_number = dec_row[3]
                     decision_title = dec_row[4]
                     slack_token = dec_row[5]
                     slack_channel_id = dec_row[6]
                     teams_webhook_url = dec_row[7]
+
+                    # Validate decision status - only pending_review decisions can be approved
+                    if decision_status == "approved":
+                        self._send(400, {"error": "This decision has already been approved and cannot be modified"})
+                        return
+                    if decision_status == "draft":
+                        self._send(400, {"error": "This decision is still in draft status. It must be set to 'Pending Review' before it can be approved"})
+                        return
+                    if decision_status in ("deprecated", "superseded"):
+                        self._send(400, {"error": f"This decision has been {decision_status} and cannot be approved"})
+                        return
 
                     # Check if user is a required reviewer
                     result = conn.execute(text("""
@@ -924,6 +1009,37 @@ class handler(BaseHTTPRequestHandler):
                             org_name=org_name, decision_became_approved=decision_became_approved,
                             creator_id=creator_id
                         )
+                    except Exception:
+                        pass
+
+                    # Update approval DM if this user was sent one via Slack
+                    try:
+                        if slack_token:
+                            # Query the DM info stored in required_role field
+                            dm_info_result = conn.execute(text("""
+                                SELECT required_role FROM required_reviewers
+                                WHERE decision_version_id = :version_id AND user_id = :user_id
+                            """), {"version_id": current_version_id, "user_id": user_id})
+                            dm_info_row = dm_info_result.fetchone()
+                            if dm_info_row and dm_info_row[0]:
+                                try:
+                                    dm_info = json.loads(dm_info_row[0]) if isinstance(dm_info_row[0], str) else dm_info_row[0]
+                                    dm_channel_id = dm_info.get("dm_channel_id")
+                                    dm_message_ts = dm_info.get("dm_message_ts")
+                                    if dm_channel_id and dm_message_ts:
+                                        update_slack_approval_dm(
+                                            slack_token=slack_token,
+                                            dm_channel_id=dm_channel_id,
+                                            dm_message_ts=dm_message_ts,
+                                            decision_number=decision_number,
+                                            decision_id=decision_id,
+                                            title=decision_title,
+                                            approver_name=user_name,
+                                            approval_status=approval_status,
+                                            comment=comment
+                                        )
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
                     except Exception:
                         pass
 
