@@ -1186,6 +1186,7 @@ class handler(BaseHTTPRequestHandler):
 
                 # FAST PATH: For view submissions, respond immediately then save
                 view_callback_id = payload.get("view", {}).get("callback_id", "")
+                print(f"[SLACK FAST PATH] view_callback_id={view_callback_id}")
                 if interaction_type == "view_submission" and view_callback_id == "log_message_modal":
                     # Send response FIRST to avoid "trouble connecting" warning
                     self._send(200, {})
