@@ -812,7 +812,7 @@ class SlackBlocks:
             status_emoji = ":white_circle:"
 
         blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": f"DECISION-{decision_number}: {title[:50]}", "emoji": True}},
+            {"type": "header", "text": {"type": "plain_text", "text": f"{title[:75]}", "emoji": True}},
             {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
             {"type": "actions", "block_id": f"poll_{decision_id}", "elements": [
                 {"type": "button", "text": {"type": "plain_text", "text": f"Agree ({len(agree)})", "emoji": True}, "style": "primary", "action_id": "poll_vote_agree", "value": decision_id},
