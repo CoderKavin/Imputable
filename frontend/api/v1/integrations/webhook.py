@@ -556,8 +556,8 @@ def handle_slack_command(form_data: dict, conn) -> dict:
                 """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
             conn.execute(text("""
-                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, created_at, updated_at)
-                VALUES (:id, :org_id, :num, 'proposed', :user_id, 'slack', :channel_id, NOW(), NOW())
+                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, is_temporary, created_at, updated_at)
+                VALUES (:id, :org_id, :num, 'proposed', :user_id, 'slack', :channel_id, false, NOW(), NOW())
             """), {"id": decision_id, "org_id": org_id, "num": next_num, "user_id": db_user_id, "channel_id": channel_id})
 
             content = json.dumps({"context": f"Poll created from Slack by {user_name}", "choice": question, "rationale": "", "alternatives": []})
@@ -834,8 +834,8 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
 
             # Create decision
             conn.execute(text("""
-                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, created_at, updated_at)
-                VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, NOW(), NOW())
+                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, is_temporary, created_at, updated_at)
+                VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, false, NOW(), NOW())
             """), {
                 "id": decision_id, "org_id": org_id, "num": next_num, "status": decision_status, "user_id": db_user_id,
                 "channel_id": metadata.get("channel_id"), "msg_ts": metadata.get("message_ts"), "thread_ts": metadata.get("thread_ts")
