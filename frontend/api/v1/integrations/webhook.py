@@ -1092,8 +1092,8 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
             content = json.dumps({"context": f"Poll created from Slack by {user_name}", "choice": question, "rationale": "", "alternatives": []})
             conn.execute(text("""
-                INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at)
-                VALUES (:id, :did, 1, :title, 'medium', :content, '{}', :user_id, NOW())
+                INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
+                VALUES (:id, :did, 1, :title, 'medium', :content, '{}', :user_id, NOW(), '{}')
             """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "user_id": db_user_id})
 
             conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
