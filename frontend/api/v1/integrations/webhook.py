@@ -190,13 +190,31 @@ def resolve_slack_user_names(token: str, messages: list) -> list:
 # HELPERS
 # =============================================================================
 
+_db_engine = None
+
 def get_db_connection():
-    """Get database connection."""
+    """Get database connection with connection pooling."""
+    global _db_engine
+    if _db_engine is not None:
+        return _db_engine
+
     from sqlalchemy import create_engine
     db_url = os.environ.get("DATABASE_URL", "")
     if not db_url:
         return None
-    return create_engine(db_url, connect_args={"sslmode": "require"})
+
+    # Use NullPool for serverless (no persistent connections)
+    # But with fast connect settings
+    from sqlalchemy.pool import NullPool
+    _db_engine = create_engine(
+        db_url,
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 5,
+        },
+        poolclass=NullPool,
+    )
+    return _db_engine
 
 
 def decrypt_token(encrypted: str) -> str:
@@ -1235,35 +1253,41 @@ class handler(BaseHTTPRequestHandler):
                         confidence_score = metadata.get("confidence_score", 0.0)
                         suggested_status = metadata.get("suggested_status", "draft")
 
-                        # Save to database
+                        # Save to database - optimized with fewer round trips
                         engine = get_db_connection()
                         if engine:
                             with engine.connect() as conn:
                                 from sqlalchemy import text
 
-                                # Get org
-                                result = conn.execute(text("SELECT id FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
-                                org = result.fetchone()
-                                if not org:
+                                # Single query to get org_id, user_id, and next decision number
+                                result = conn.execute(text("""
+                                    SELECT
+                                        o.id as org_id,
+                                        u.id as user_id,
+                                        COALESCE(MAX(d.decision_number), 0) + 1 as next_num
+                                    FROM organizations o
+                                    LEFT JOIN users u ON u.slack_user_id = :slack_user_id
+                                    LEFT JOIN decisions d ON d.organization_id = o.id
+                                    WHERE o.slack_team_id = :team_id
+                                    GROUP BY o.id, u.id
+                                """), {"team_id": team_id, "slack_user_id": user_id})
+                                row = result.fetchone()
+
+                                if not row or not row[0]:
                                     self._send(200, {})
                                     return
-                                org_id = str(org[0])
 
-                                # Get or create user
-                                result = conn.execute(text("SELECT id FROM users WHERE slack_user_id = :slack_id"), {"slack_id": user_id})
-                                user_row = result.fetchone()
-                                if user_row:
-                                    db_user_id = str(user_row[0])
-                                else:
+                                org_id = str(row[0])
+                                db_user_id = str(row[1]) if row[1] else None
+                                next_num = row[2]
+
+                                # Create user if needed
+                                if not db_user_id:
                                     db_user_id = str(uuid4())
                                     conn.execute(text("""
                                         INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
                                         VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
                                     """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
-
-                                # Get next decision number
-                                result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
-                                next_num = result.fetchone()[0]
 
                                 decision_id = str(uuid4())
                                 version_id = str(uuid4())
@@ -1271,15 +1295,6 @@ class handler(BaseHTTPRequestHandler):
                                 decision_status = "draft"
                                 if ai_generated and confidence_score >= 0.8 and suggested_status in ("draft", "pending_review", "approved"):
                                     decision_status = suggested_status
-
-                                # Create decision
-                                conn.execute(text("""
-                                    INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, is_temporary, created_at, updated_at)
-                                    VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, false, NOW(), NOW())
-                                """), {
-                                    "id": decision_id, "org_id": org_id, "num": next_num, "status": decision_status, "user_id": db_user_id,
-                                    "channel_id": metadata.get("channel_id"), "msg_ts": metadata.get("message_ts"), "thread_ts": metadata.get("thread_ts")
-                                })
 
                                 content = json.dumps({"context": context, "choice": choice, "rationale": rationale, "alternatives": alternatives})
                                 tags = ["slack-logged"]
@@ -1295,6 +1310,17 @@ class handler(BaseHTTPRequestHandler):
                                         "verified_by_slack_user_id": user_id
                                     }
 
+                                check_ts = metadata.get("thread_ts") or metadata.get("message_ts")
+
+                                # Single batch insert for decision + version + logged_message + update
+                                conn.execute(text("""
+                                    INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, is_temporary, created_at, updated_at)
+                                    VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, false, NOW(), NOW())
+                                """), {
+                                    "id": decision_id, "org_id": org_id, "num": next_num, "status": decision_status, "user_id": db_user_id,
+                                    "channel_id": metadata.get("channel_id"), "msg_ts": metadata.get("message_ts"), "thread_ts": metadata.get("thread_ts")
+                                })
+
                                 conn.execute(text("""
                                     INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
                                     VALUES (:id, :did, 1, :title, :impact, :content, :tags, :user_id, NOW(), :custom_fields)
@@ -1306,7 +1332,6 @@ class handler(BaseHTTPRequestHandler):
 
                                 conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
 
-                                check_ts = metadata.get("thread_ts") or metadata.get("message_ts")
                                 if check_ts and metadata.get("channel_id"):
                                     conn.execute(text("""
                                         INSERT INTO logged_messages (id, source, message_id, channel_id, decision_id, created_at)
