@@ -778,7 +778,7 @@ class SlackBlocks:
         return blocks
 
     @staticmethod
-    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict):
+    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "proposed"):
         agree = votes.get("agree", [])
         concern = votes.get("concern", [])
         block = votes.get("block", [])
@@ -786,9 +786,34 @@ class SlackBlocks:
 
         frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
 
+        # Smart threshold detection
+        # Consensus reached: 3+ agrees with no blocks, OR 5+ agrees regardless
+        # Blocked: Any blocks present
+        # Concerns: Has concerns but no blocks
+        consensus_reached = (len(agree) >= 3 and len(block) == 0) or len(agree) >= 5
+        is_blocked = len(block) > 0
+        has_concerns = len(concern) > 0 and not is_blocked
+
+        # Determine status text
+        if decision_status == "approved":
+            status_text = ":white_check_mark: *Decision Approved*"
+            status_emoji = ":large_green_circle:"
+        elif is_blocked:
+            status_text = f":no_entry: *Blocked* - {len(block)} team member{'s' if len(block) > 1 else ''} blocked this decision"
+            status_emoji = ":red_circle:"
+        elif consensus_reached:
+            status_text = ":tada: *Consensus Reached!*"
+            status_emoji = ":large_green_circle:"
+        elif has_concerns:
+            status_text = f":warning: *{len(concern)} concern{'s' if len(concern) > 1 else ''}* - Discussion may be needed"
+            status_emoji = ":large_yellow_circle:"
+        else:
+            status_text = f"*Consensus Poll* - {total} vote{'s' if total != 1 else ''}"
+            status_emoji = ":white_circle:"
+
         blocks = [
             {"type": "header", "text": {"type": "plain_text", "text": f"DECISION-{decision_number}: {title[:50]}", "emoji": True}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*Consensus Poll* - {total} vote{'s' if total != 1 else ''}"}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
             {"type": "actions", "block_id": f"poll_{decision_id}", "elements": [
                 {"type": "button", "text": {"type": "plain_text", "text": f"Agree ({len(agree)})", "emoji": True}, "style": "primary", "action_id": "poll_vote_agree", "value": decision_id},
                 {"type": "button", "text": {"type": "plain_text", "text": f"Concern ({len(concern)})", "emoji": True}, "action_id": "poll_vote_concern", "value": decision_id},
@@ -808,7 +833,22 @@ class SlackBlocks:
         if vote_texts:
             blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " | ".join(vote_texts)}]})
 
-        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{frontend_url}/decisions/{decision_id}|View full decision>"}]})
+        # Show consensus reached prompt with action button (only if not already approved)
+        if consensus_reached and not is_blocked and decision_status != "approved":
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": ":rocket: *Ready to make it official?*\nThe team has reached consensus on this decision."},
+                "accessory": {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Approve Decision", "emoji": True},
+                    "style": "primary",
+                    "action_id": "poll_approve_decision",
+                    "value": decision_id
+                }
+            })
+
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"{status_emoji} <{frontend_url}/decisions/{decision_id}|View full decision>"}]})
 
         return blocks
 
@@ -1009,11 +1049,12 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
         # Check if referencing existing decision (DECISION-123)
         dec_match = re.match(r"^DECISION-(\d+)\s*(.*)$", question, re.IGNORECASE)
+        decision_status = "proposed"  # Default for new decisions
 
         if dec_match:
             decision_number = int(dec_match.group(1))
             result = conn.execute(text("""
-                SELECT d.id, d.decision_number, dv.title
+                SELECT d.id, d.decision_number, dv.title, d.status
                 FROM decisions d
                 JOIN decision_versions dv ON d.current_version_id = dv.id
                 WHERE d.organization_id = :org_id AND d.decision_number = :num
@@ -1023,7 +1064,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             if not dec:
                 return {"response_type": "ephemeral", "text": f":warning: Decision DECISION-{decision_number} not found."}
 
-            decision_id, decision_number, title = str(dec[0]), dec[1], dec[2]
+            decision_id, decision_number, title, decision_status = str(dec[0]), dec[1], dec[2], dec[3]
         else:
             # Create new decision from question
             result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
@@ -1072,7 +1113,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             if vote_type in votes:
                 votes[vote_type].append(name)
 
-        return {"response_type": "in_channel", "blocks": SlackBlocks.consensus_poll(decision_id, decision_number, title, votes)}
+        return {"response_type": "in_channel", "blocks": SlackBlocks.consensus_poll(decision_id, decision_number, title, votes, decision_status)}
 
     # Add/create
     if cmd_lower.startswith(("add ", "create ", "new ")):
@@ -1554,7 +1595,7 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
 
                 # Get updated votes and decision info
                 result = conn.execute(text("""
-                    SELECT d.decision_number, dv.title
+                    SELECT d.decision_number, dv.title, d.status
                     FROM decisions d
                     JOIN decision_versions dv ON d.current_version_id = dv.id
                     WHERE d.id = :did
@@ -1572,8 +1613,43 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                     return {
                         "response_type": "in_channel",
                         "replace_original": True,
-                        "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes)
+                        "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
                     }
+
+            # Approve decision from poll (consensus reached)
+            if action_id == "poll_approve_decision":
+                decision_id = action.get("value", "")
+                if decision_id:
+                    # Update decision status to approved
+                    conn.execute(text("""
+                        UPDATE decisions SET status = 'approved', updated_at = NOW()
+                        WHERE id = :did AND status != 'approved'
+                    """), {"did": decision_id})
+                    conn.commit()
+
+                    # Get updated decision info
+                    result = conn.execute(text("""
+                        SELECT d.decision_number, dv.title, d.status
+                        FROM decisions d
+                        JOIN decision_versions dv ON d.current_version_id = dv.id
+                        WHERE d.id = :did
+                    """), {"did": decision_id})
+                    dec = result.fetchone()
+
+                    if dec:
+                        # Get votes
+                        result = conn.execute(text("SELECT vote_type, external_user_name FROM poll_votes WHERE decision_id = :did"), {"did": decision_id})
+                        votes = {"agree": [], "concern": [], "block": []}
+                        for row in result.fetchall():
+                            vt, name = row[0], row[1] or "Someone"
+                            if vt in votes:
+                                votes[vt].append(name)
+
+                        return {
+                            "response_type": "in_channel",
+                            "replace_original": True,
+                            "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                        }
 
             # Help button
             if action_id == "show_help":
