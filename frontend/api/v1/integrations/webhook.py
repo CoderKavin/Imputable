@@ -1081,6 +1081,159 @@ class handler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len)
 
+            # Handle async save request (fired from view_submission, no signature needed)
+            if platform == "slack" and req_type == "async_save":
+                print(f"[SLACK ASYNC SAVE] Received async save request")
+                try:
+                    data = json.loads(body.decode()) if body else {}
+                    if data.get("action") != "save_decision":
+                        print(f"[SLACK ASYNC SAVE] Invalid action: {data.get('action')}")
+                        self._send(200, {})
+                        return
+
+                    team_id = data.get("team_id")
+                    payload = data.get("payload", {})
+
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+                    values = payload.get("view", {}).get("state", {}).get("values", {})
+                    metadata = {}
+                    try:
+                        metadata = json.loads(payload.get("view", {}).get("private_metadata", "{}"))
+                    except:
+                        pass
+
+                    user = payload.get("user", {})
+                    user_id = user.get("id", "")
+                    user_name = user.get("username", "") or user.get("name", "")
+
+                    # Extract form values
+                    title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
+                    if not title:
+                        print(f"[SLACK ASYNC SAVE] No title provided")
+                        self._send(200, {})
+                        return
+
+                    context = values.get("context_block", {}).get("context_input", {}).get("value", "") or ""
+                    impact = values.get("impact_block", {}).get("impact_select", {}).get("selected_option", {}).get("value", "medium")
+                    choice = values.get("choice_block", {}).get("choice_input", {}).get("value", "") or context or title
+                    rationale = values.get("rationale_block", {}).get("rationale_input", {}).get("value", "") or ""
+                    alternatives_text = values.get("alternatives_block", {}).get("alternatives_input", {}).get("value", "") or ""
+
+                    # Parse alternatives
+                    alternatives = []
+                    if alternatives_text:
+                        for line in alternatives_text.strip().split("\n"):
+                            line = line.strip()
+                            if line.startswith("- "):
+                                line = line[2:]
+                            if ": " in line:
+                                name, reason = line.split(": ", 1)
+                                alternatives.append({"name": name.strip(), "rejected_reason": reason.strip()})
+                            elif line:
+                                alternatives.append({"name": line, "rejected_reason": ""})
+
+                    ai_generated = metadata.get("ai_generated", False)
+                    confidence_score = metadata.get("confidence_score", 0.0)
+                    suggested_status = metadata.get("suggested_status", "draft")
+
+                    # Save to database
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            from sqlalchemy import text
+
+                            # Single query to get org_id, user_id, and next decision number
+                            result = conn.execute(text("""
+                                SELECT
+                                    o.id as org_id,
+                                    u.id as user_id,
+                                    COALESCE(MAX(d.decision_number), 0) + 1 as next_num
+                                FROM organizations o
+                                LEFT JOIN users u ON u.slack_user_id = :slack_user_id
+                                LEFT JOIN decisions d ON d.organization_id = o.id
+                                WHERE o.slack_team_id = :team_id
+                                GROUP BY o.id, u.id
+                            """), {"team_id": team_id, "slack_user_id": user_id})
+                            row = result.fetchone()
+
+                            if not row or not row[0]:
+                                print(f"[SLACK ASYNC SAVE] Org not found for team_id: {team_id}")
+                                self._send(200, {})
+                                return
+
+                            org_id = str(row[0])
+                            db_user_id = str(row[1]) if row[1] else None
+                            next_num = row[2]
+
+                            # Create user if needed
+                            if not db_user_id:
+                                db_user_id = str(uuid4())
+                                conn.execute(text("""
+                                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
+                                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
+                                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
+
+                            decision_id = str(uuid4())
+                            version_id = str(uuid4())
+
+                            decision_status = "draft"
+                            if ai_generated and confidence_score >= 0.8 and suggested_status in ("draft", "pending_review", "approved"):
+                                decision_status = suggested_status
+
+                            content = json.dumps({"context": context, "choice": choice, "rationale": rationale, "alternatives": alternatives})
+                            tags = ["slack-logged"]
+                            if ai_generated:
+                                tags.append("ai-generated")
+
+                            custom_fields = {}
+                            if ai_generated:
+                                custom_fields = {
+                                    "ai_generated": True,
+                                    "ai_confidence_score": confidence_score,
+                                    "verified_by_user": True,
+                                    "verified_by_slack_user_id": user_id
+                                }
+
+                            check_ts = metadata.get("thread_ts") or metadata.get("message_ts")
+
+                            # Insert decision
+                            conn.execute(text("""
+                                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, is_temporary, created_at, updated_at)
+                                VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, false, NOW(), NOW())
+                            """), {
+                                "id": decision_id, "org_id": org_id, "num": next_num, "status": decision_status, "user_id": db_user_id,
+                                "channel_id": metadata.get("channel_id"), "msg_ts": metadata.get("message_ts"), "thread_ts": metadata.get("thread_ts")
+                            })
+
+                            conn.execute(text("""
+                                INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
+                                VALUES (:id, :did, 1, :title, :impact, :content, :tags, :user_id, NOW(), :custom_fields)
+                            """), {
+                                "id": version_id, "did": decision_id, "title": title[:255], "impact": impact,
+                                "content": content, "tags": tags, "user_id": db_user_id,
+                                "custom_fields": json.dumps(custom_fields) if custom_fields else None
+                            })
+
+                            conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
+
+                            if check_ts and metadata.get("channel_id"):
+                                conn.execute(text("""
+                                    INSERT INTO logged_messages (id, source, message_id, channel_id, decision_id, created_at)
+                                    VALUES (:id, 'slack', :msg_id, :channel_id, :did, NOW())
+                                    ON CONFLICT (source, message_id, channel_id) DO NOTHING
+                                """), {"id": str(uuid4()), "msg_id": check_ts, "channel_id": metadata.get("channel_id"), "did": decision_id})
+
+                            conn.commit()
+                            print(f"[SLACK ASYNC SAVE] Decision saved to DB: DECISION-{next_num}")
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC SAVE] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                self._send(200, {"ok": True})
+                return
+
             # For Slack interactions, handle message shortcuts BEFORE database connection
             # because trigger_id expires in 3 seconds and DB connection can be slow
             if platform == "slack" and req_type == "interactions":
@@ -1261,175 +1414,6 @@ class handler(BaseHTTPRequestHandler):
 
                     # Return 200 immediately to close modal
                     self._send(200, {})
-                    return
-
-                # Handle async save request
-                if platform == "slack" and req_type == "async_save":
-                    try:
-                        data = json.loads(body.decode()) if body else {}
-                        if data.get("action") != "save_decision":
-                            self._send(200, {})
-                            return
-
-                        team_id = data.get("team_id")
-                        payload = data.get("payload", {})
-
-                        token = os.environ.get("SLACK_BOT_TOKEN", "")
-                        values = payload.get("view", {}).get("state", {}).get("values", {})
-                        metadata = {}
-                        try:
-                            metadata = json.loads(payload.get("view", {}).get("private_metadata", "{}"))
-                        except:
-                            pass
-
-                        user = payload.get("user", {})
-                        user_id = user.get("id", "")
-                        user_name = user.get("username", "") or user.get("name", "")
-
-                        # Extract form values
-                        title = values.get("title_block", {}).get("title_input", {}).get("value", "").strip()
-                        if not title:
-                            self._send(200, {})
-                            return
-
-                        context = values.get("context_block", {}).get("context_input", {}).get("value", "") or ""
-                        impact = values.get("impact_block", {}).get("impact_select", {}).get("selected_option", {}).get("value", "medium")
-                        choice = values.get("choice_block", {}).get("choice_input", {}).get("value", "") or context or title
-                        rationale = values.get("rationale_block", {}).get("rationale_input", {}).get("value", "") or ""
-                        alternatives_text = values.get("alternatives_block", {}).get("alternatives_input", {}).get("value", "") or ""
-
-                        # Parse alternatives
-                        alternatives = []
-                        if alternatives_text:
-                            for line in alternatives_text.strip().split("\n"):
-                                line = line.strip()
-                                if line.startswith("- "):
-                                    line = line[2:]
-                                if ": " in line:
-                                    name, reason = line.split(": ", 1)
-                                    alternatives.append({"name": name.strip(), "rejected_reason": reason.strip()})
-                                elif line:
-                                    alternatives.append({"name": line, "rejected_reason": ""})
-
-                        ai_generated = metadata.get("ai_generated", False)
-                        confidence_score = metadata.get("confidence_score", 0.0)
-                        suggested_status = metadata.get("suggested_status", "draft")
-
-                        # Save to database - optimized with fewer round trips
-                        engine = get_db_connection()
-                        if engine:
-                            with engine.connect() as conn:
-                                from sqlalchemy import text
-
-                                # Single query to get org_id, user_id, and next decision number
-                                result = conn.execute(text("""
-                                    SELECT
-                                        o.id as org_id,
-                                        u.id as user_id,
-                                        COALESCE(MAX(d.decision_number), 0) + 1 as next_num
-                                    FROM organizations o
-                                    LEFT JOIN users u ON u.slack_user_id = :slack_user_id
-                                    LEFT JOIN decisions d ON d.organization_id = o.id
-                                    WHERE o.slack_team_id = :team_id
-                                    GROUP BY o.id, u.id
-                                """), {"team_id": team_id, "slack_user_id": user_id})
-                                row = result.fetchone()
-
-                                if not row or not row[0]:
-                                    self._send(200, {})
-                                    return
-
-                                org_id = str(row[0])
-                                db_user_id = str(row[1]) if row[1] else None
-                                next_num = row[2]
-
-                                # Create user if needed
-                                if not db_user_id:
-                                    db_user_id = str(uuid4())
-                                    conn.execute(text("""
-                                        INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
-                                        VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
-                                    """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
-
-                                decision_id = str(uuid4())
-                                version_id = str(uuid4())
-
-                                decision_status = "draft"
-                                if ai_generated and confidence_score >= 0.8 and suggested_status in ("draft", "pending_review", "approved"):
-                                    decision_status = suggested_status
-
-                                content = json.dumps({"context": context, "choice": choice, "rationale": rationale, "alternatives": alternatives})
-                                tags = ["slack-logged"]
-                                if ai_generated:
-                                    tags.append("ai-generated")
-
-                                custom_fields = {}
-                                if ai_generated:
-                                    custom_fields = {
-                                        "ai_generated": True,
-                                        "ai_confidence_score": confidence_score,
-                                        "verified_by_user": True,
-                                        "verified_by_slack_user_id": user_id
-                                    }
-
-                                check_ts = metadata.get("thread_ts") or metadata.get("message_ts")
-
-                                # Single batch insert for decision + version + logged_message + update
-                                conn.execute(text("""
-                                    INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, slack_message_ts, slack_thread_ts, is_temporary, created_at, updated_at)
-                                    VALUES (:id, :org_id, :num, :status, :user_id, 'slack', :channel_id, :msg_ts, :thread_ts, false, NOW(), NOW())
-                                """), {
-                                    "id": decision_id, "org_id": org_id, "num": next_num, "status": decision_status, "user_id": db_user_id,
-                                    "channel_id": metadata.get("channel_id"), "msg_ts": metadata.get("message_ts"), "thread_ts": metadata.get("thread_ts")
-                                })
-
-                                conn.execute(text("""
-                                    INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
-                                    VALUES (:id, :did, 1, :title, :impact, :content, :tags, :user_id, NOW(), :custom_fields)
-                                """), {
-                                    "id": version_id, "did": decision_id, "title": title[:255], "impact": impact,
-                                    "content": content, "tags": tags, "user_id": db_user_id,
-                                    "custom_fields": json.dumps(custom_fields) if custom_fields else None
-                                })
-
-                                conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
-
-                                if check_ts and metadata.get("channel_id"):
-                                    conn.execute(text("""
-                                        INSERT INTO logged_messages (id, source, message_id, channel_id, decision_id, created_at)
-                                        VALUES (:id, 'slack', :msg_id, :channel_id, :did, NOW())
-                                        ON CONFLICT (source, message_id, channel_id) DO NOTHING
-                                    """), {"id": str(uuid4()), "msg_id": check_ts, "channel_id": metadata.get("channel_id"), "did": decision_id})
-
-                                conn.commit()
-                                print(f"[SLACK FAST PATH] Decision saved to DB: DECISION-{next_num}")
-
-                        # Send confirmation message to channel
-                        channel_id = metadata.get("channel_id")
-                        if token and channel_id and decision_id:
-                            frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
-                            msg_payload = json.dumps({
-                                "channel": channel_id,
-                                "text": f"Decision logged: DECISION-{next_num}",
-                                "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DECISION-{next_num}>*: {title}"}}]
-                            }).encode()
-                            req = urllib.request.Request(
-                                "https://slack.com/api/chat.postMessage",
-                                data=msg_payload,
-                                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                            )
-                            try:
-                                urllib.request.urlopen(req, timeout=3)
-                            except:
-                                pass
-
-                    except Exception as e:
-                        print(f"[SLACK ASYNC SAVE] error: {e}")
-                        import traceback
-                        traceback.print_exc()
-
-                    # Return 200 for async save
-                    self._send(200, {"ok": True})
                     return
 
             engine = get_db_connection()
