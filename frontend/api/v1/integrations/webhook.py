@@ -778,7 +778,7 @@ class SlackBlocks:
         return blocks
 
     @staticmethod
-    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "pending_review"):
+    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "pending_review", channel_member_count: int = 0):
         agree = votes.get("agree", [])
         concern = votes.get("concern", [])
         block = votes.get("block", [])
@@ -786,11 +786,18 @@ class SlackBlocks:
 
         frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
 
+        # Dynamic threshold based on channel size (~60% of members, min 2, max 10)
+        import math
+        if channel_member_count > 0:
+            threshold = max(2, min(10, math.ceil(channel_member_count * 0.6)))
+        else:
+            threshold = 3  # Fallback if channel size unknown
+
         # Smart threshold detection
-        # Consensus reached: 3+ agrees with no blocks, OR 5+ agrees regardless
+        # Consensus reached: threshold agrees with no blocks
         # Blocked: Any blocks present
         # Concerns: Has concerns but no blocks
-        consensus_reached = (len(agree) >= 3 and len(block) == 0) or len(agree) >= 5
+        consensus_reached = len(agree) >= threshold and len(block) == 0
         is_blocked = len(block) > 0
         has_concerns = len(concern) > 0 and not is_blocked
 
@@ -808,7 +815,11 @@ class SlackBlocks:
             status_text = f":warning: *{len(concern)} concern{'s' if len(concern) > 1 else ''}* - Discussion may be needed"
             status_emoji = ":large_yellow_circle:"
         else:
-            status_text = f"*Consensus Poll* - {total} vote{'s' if total != 1 else ''}"
+            remaining = threshold - len(agree)
+            if remaining > 0:
+                status_text = f"*Consensus Poll* - {len(agree)}/{threshold} agrees needed"
+            else:
+                status_text = f"*Consensus Poll* - {total} vote{'s' if total != 1 else ''}"
             status_emoji = ":white_circle:"
 
         blocks = [
@@ -2328,6 +2339,22 @@ class handler(BaseHTTPRequestHandler):
                                     VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
                                 """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
+                            # Get channel member count for dynamic threshold
+                            channel_member_count = 0
+                            if token:
+                                try:
+                                    members_req = urllib.request.Request(
+                                        f"https://slack.com/api/conversations.members?channel={channel_id}&limit=100",
+                                        headers={"Authorization": f"Bearer {token}"}
+                                    )
+                                    members_resp = urllib.request.urlopen(members_req, timeout=5)
+                                    members_data = json.loads(members_resp.read().decode())
+                                    if members_data.get("ok"):
+                                        channel_member_count = len(members_data.get("members", []))
+                                        print(f"[SLACK ASYNC POLL] Channel has {channel_member_count} members")
+                                except Exception as e:
+                                    print(f"[SLACK ASYNC POLL] Failed to get channel members: {e}")
+
                             # Get next decision number
                             result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
                             next_num = result.fetchone()[0]
@@ -2343,17 +2370,18 @@ class handler(BaseHTTPRequestHandler):
 
                             content = json.dumps({"context": "This decision was proposed via Slack poll for team consensus.", "choice": f"Team is voting on: {question}", "rationale": None, "alternatives": []})
                             tags = '{"slack-logged", "poll"}'
+                            custom_fields = json.dumps({"channel_member_count": channel_member_count})
                             conn.execute(text("""
                                 INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
-                                VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), '{}')
-                            """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "tags": tags, "user_id": db_user_id})
+                                VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), :custom_fields)
+                            """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "tags": tags, "user_id": db_user_id, "custom_fields": custom_fields})
 
                             conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
                             conn.commit()
 
                             # Build poll blocks
                             votes = {"agree": [], "concern": [], "block": []}
-                            blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review")
+                            blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review", channel_member_count)
 
                             # Post to channel
                             if token:
@@ -2644,7 +2672,7 @@ class handler(BaseHTTPRequestHandler):
 
                                         # Get updated votes and decision info
                                         result = conn.execute(text("""
-                                            SELECT d.decision_number, dv.title, d.status
+                                            SELECT d.decision_number, dv.title, d.status, dv.custom_fields
                                             FROM decisions d
                                             JOIN decision_versions dv ON d.current_version_id = dv.id
                                             WHERE d.id = :did
@@ -2659,9 +2687,15 @@ class handler(BaseHTTPRequestHandler):
                                                 if vt in votes:
                                                     votes[vt].append(name)
 
+                                            # Get channel_member_count from custom_fields
+                                            channel_member_count = 0
+                                            if dec[3]:
+                                                cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
+                                                channel_member_count = cf.get("channel_member_count", 0)
+
                                             self._send(200, {
                                                 "replace_original": True,
-                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count)
                                             })
                                             return
                             except Exception as e:
@@ -2690,7 +2724,7 @@ class handler(BaseHTTPRequestHandler):
 
                                         # Get updated decision info
                                         result = conn.execute(text("""
-                                            SELECT d.decision_number, dv.title, d.status
+                                            SELECT d.decision_number, dv.title, d.status, dv.custom_fields
                                             FROM decisions d
                                             JOIN decision_versions dv ON d.current_version_id = dv.id
                                             WHERE d.id = :did
@@ -2705,9 +2739,15 @@ class handler(BaseHTTPRequestHandler):
                                                 if vt in votes:
                                                     votes[vt].append(name)
 
+                                            # Get channel_member_count from custom_fields
+                                            channel_member_count = 0
+                                            if dec[3]:
+                                                cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
+                                                channel_member_count = cf.get("channel_member_count", 0)
+
                                             self._send(200, {
                                                 "replace_original": True,
-                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count)
                                             })
                                             return
                             except Exception as e:
