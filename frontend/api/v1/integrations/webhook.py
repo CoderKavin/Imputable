@@ -2278,6 +2278,158 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
                 return
 
+            # Handle async poll creation (fired from command fast path)
+            if platform == "slack" and req_type == "async_poll":
+                print(f"[SLACK ASYNC POLL] Received async poll request")
+                try:
+                    data = json.loads(body.decode()) if body else {}
+                    team_id = data.get("team_id")
+                    channel_id = data.get("channel_id")
+                    user_id = data.get("user_id")
+                    user_name = data.get("user_name")
+                    question = data.get("question", "")
+                    response_url = data.get("response_url")
+
+                    if not question:
+                        self._send(200, {})
+                        return
+
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            from sqlalchemy import text
+
+                            # Get org
+                            result = conn.execute(text("SELECT id, slack_access_token FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
+                            org = result.fetchone()
+                            if not org:
+                                self._send(200, {})
+                                return
+
+                            org_id = str(org[0])
+                            if not token and org[1]:
+                                token = decrypt_token(org[1])
+
+                            # Get or create user
+                            result = conn.execute(text("SELECT id FROM users WHERE slack_user_id = :slack_id"), {"slack_id": user_id})
+                            user_row = result.fetchone()
+                            if user_row:
+                                db_user_id = str(user_row[0])
+                            else:
+                                db_user_id = str(uuid4())
+                                conn.execute(text("""
+                                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
+                                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
+                                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
+
+                            # Get next decision number
+                            result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
+                            next_num = result.fetchone()[0]
+
+                            decision_id = str(uuid4())
+                            version_id = str(uuid4())
+
+                            # Create decision
+                            conn.execute(text("""
+                                INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, is_temporary, created_at, updated_at)
+                                VALUES (:id, :org_id, :num, 'pending_review', :user_id, 'slack', :channel_id, false, NOW(), NOW())
+                            """), {"id": decision_id, "org_id": org_id, "num": next_num, "user_id": db_user_id, "channel_id": channel_id})
+
+                            content = json.dumps({"context": f"Poll created from Slack by {user_name}", "choice": question, "rationale": "", "alternatives": []})
+                            conn.execute(text("""
+                                INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
+                                VALUES (:id, :did, 1, :title, 'medium', :content, '{}', :user_id, NOW(), '{}')
+                            """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "user_id": db_user_id})
+
+                            conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
+                            conn.commit()
+
+                            # Build poll blocks
+                            votes = {"agree": [], "concern": [], "block": []}
+                            blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review")
+
+                            # Post to channel
+                            if token:
+                                msg_payload = json.dumps({
+                                    "channel": channel_id,
+                                    "text": f"Poll: {question[:100]}",
+                                    "blocks": blocks
+                                }).encode()
+                                req = urllib.request.Request(
+                                    "https://slack.com/api/chat.postMessage",
+                                    data=msg_payload,
+                                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                )
+                                try:
+                                    urllib.request.urlopen(req, timeout=10)
+                                except Exception as e:
+                                    print(f"[SLACK ASYNC POLL] Failed to post message: {e}")
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC POLL] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                self._send(200, {"ok": True})
+                return
+
+            # FAST PATH for slash commands - respond immediately, process async
+            if platform == "slack" and req_type == "command":
+                # Verify signature first
+                sig = self.headers.get("X-Slack-Signature", "")
+                ts = self.headers.get("X-Slack-Request-Timestamp", "")
+
+                if os.environ.get("SLACK_SIGNING_SECRET") and not verify_slack_signature(body, ts, sig):
+                    self._send(401, {"error": "Invalid signature"})
+                    return
+
+                # Parse form data
+                form_data = {}
+                for pair in body.decode().split("&"):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        form_data[unquote(k)] = unquote(v.replace("+", " "))
+
+                cmd_text = form_data.get("text", "").strip().lower()
+
+                # Poll command needs async processing
+                if cmd_text.startswith("poll "):
+                    question = form_data.get("text", "")[5:].strip()
+                    team_id = form_data.get("team_id", "")
+                    channel_id = form_data.get("channel_id", "")
+                    user_id = form_data.get("user_id", "")
+                    user_name = form_data.get("user_name", "")
+                    response_url = form_data.get("response_url", "")
+
+                    # Fire async request
+                    webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                    poll_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_poll"
+
+                    poll_payload = json.dumps({
+                        "team_id": team_id,
+                        "channel_id": channel_id,
+                        "user_id": user_id,
+                        "user_name": user_name,
+                        "question": question,
+                        "response_url": response_url
+                    }).encode()
+
+                    req = urllib.request.Request(
+                        poll_url,
+                        data=poll_payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    try:
+                        urllib.request.urlopen(req, timeout=0.1)
+                    except:
+                        pass  # Expected to timeout
+
+                    # Respond immediately
+                    self._send(200, {"response_type": "ephemeral", "text": ":hourglass: Creating poll..."})
+                    return
+
             # For Slack interactions, handle message shortcuts BEFORE database connection
             # because trigger_id expires in 3 seconds and DB connection can be slow
             if platform == "slack" and req_type == "interactions":
