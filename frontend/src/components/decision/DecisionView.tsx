@@ -339,7 +339,7 @@ function DocumentContent({
       {/* Content Sections */}
       <div className="space-y-8 pt-4">
         <ContentSection icon={FileText} title="Context">
-          {content.context.split("\n").map((p, i) => (
+          {(content.context || "").split("\n").map((p, i) => (
             <p key={i} className="text-gray-700 leading-relaxed mb-4 last:mb-0">
               {p}
             </p>
@@ -347,20 +347,25 @@ function DocumentContent({
         </ContentSection>
 
         <ContentSection icon={CheckCircle2} title="Decision" highlight>
-          {content.choice.split("\n").map((p, i) => (
+          {(content.choice || "").split("\n").map((p, i) => (
             <p key={i} className="text-gray-700 leading-relaxed mb-4 last:mb-0">
               {p}
             </p>
           ))}
         </ContentSection>
 
-        <ContentSection icon={Brain} title="Rationale">
-          {content.rationale.split("\n").map((p, i) => (
-            <p key={i} className="text-gray-700 leading-relaxed mb-4 last:mb-0">
-              {p}
-            </p>
-          ))}
-        </ContentSection>
+        {content.rationale && (
+          <ContentSection icon={Brain} title="Rationale">
+            {content.rationale.split("\n").map((p, i) => (
+              <p
+                key={i}
+                className="text-gray-700 leading-relaxed mb-4 last:mb-0"
+              >
+                {p}
+              </p>
+            ))}
+          </ContentSection>
+        )}
 
         {content.alternatives.length > 0 && (
           <ContentSection icon={XCircle} title="Alternatives Considered">
