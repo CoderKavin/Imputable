@@ -1091,7 +1091,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             """), {"id": decision_id, "org_id": org_id, "num": next_num, "user_id": db_user_id, "channel_id": channel_id})
 
             content = json.dumps({"context": "This decision was proposed via Slack poll for team consensus.", "choice": f"Team is voting on: {question}", "rationale": None, "alternatives": []})
-            tags = json.dumps(["slack-logged", "poll"])
+            tags = '{"slack-logged", "poll"}'
             conn.execute(text("""
                 INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
                 VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), '{}')
@@ -2339,7 +2339,7 @@ class handler(BaseHTTPRequestHandler):
                             """), {"id": decision_id, "org_id": org_id, "num": next_num, "user_id": db_user_id, "channel_id": channel_id})
 
                             content = json.dumps({"context": "This decision was proposed via Slack poll for team consensus.", "choice": f"Team is voting on: {question}", "rationale": None, "alternatives": []})
-                            tags = json.dumps(["slack-logged", "poll"])
+                            tags = '{"slack-logged", "poll"}'
                             conn.execute(text("""
                                 INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
                                 VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), '{}')
