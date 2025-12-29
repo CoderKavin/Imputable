@@ -551,8 +551,8 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             else:
                 db_user_id = str(uuid4())
                 conn.execute(text("""
-                    INSERT INTO users (id, email, name, slack_user_id, created_at, updated_at)
-                    VALUES (:id, :email, :name, :slack_id, NOW(), NOW())
+                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
+                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
                 """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
             conn.execute(text("""
@@ -816,8 +816,8 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
             else:
                 db_user_id = str(uuid4())
                 conn.execute(text("""
-                    INSERT INTO users (id, email, name, slack_user_id, created_at, updated_at)
-                    VALUES (:id, :email, :name, :slack_id, NOW(), NOW())
+                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
+                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
                 """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
             # Get next decision number
