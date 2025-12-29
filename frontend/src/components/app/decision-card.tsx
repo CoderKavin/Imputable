@@ -67,7 +67,7 @@ export function DecisionCard({ decision, className }: DecisionCardProps) {
           <div className="flex-1 min-w-0">
             {/* Decision Number */}
             <span className="text-xs font-mono text-gray-400 tracking-wide">
-              DEC-{decision.decision_number}
+              DECISION-{decision.decision_number}
             </span>
 
             {/* Title */}

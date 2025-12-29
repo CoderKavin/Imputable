@@ -73,7 +73,7 @@ class TeamsCards:
             "body": [
                 {
                     "type": "TextBlock",
-                    "text": f"DEC-{decision_number}",
+                    "text": f"DECISION-{decision_number}",
                     "weight": "bolder",
                     "color": "accent",
                     "size": "small",
@@ -202,7 +202,7 @@ class TeamsCards:
                                 "items": [
                                     {
                                         "type": "TextBlock",
-                                        "text": f"DEC-{d.decision_number}",
+                                        "text": f"DECISION-{d.decision_number}",
                                         "weight": "bolder",
                                         "color": "accent",
                                         "size": "small",
@@ -379,7 +379,7 @@ class TeamsCards:
                 {
                     "type": "FactSet",
                     "facts": [
-                        {"title": "ID", "value": f"DEC-{decision_number}"},
+                        {"title": "ID", "value": f"DECISION-{decision_number}"},
                         {"title": "Title", "value": title},
                     ],
                 },
@@ -435,7 +435,7 @@ class TeamsCards:
                                     "value": "Start a consensus poll",
                                 },
                                 {
-                                    "title": "poll DEC-123",
+                                    "title": "poll DECISION-123",
                                     "value": "Poll on existing decision",
                                 },
                                 {
@@ -691,7 +691,7 @@ class TeamsCards:
                 {
                     "type": "FactSet",
                     "facts": [
-                        {"title": "ID", "value": f"DEC-{decision_number}"},
+                        {"title": "ID", "value": f"DECISION-{decision_number}"},
                         {"title": "Title", "value": title},
                         {"title": "By", "value": author},
                     ],

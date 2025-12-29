@@ -165,7 +165,7 @@ export function DecisionView({
               </Button>
             )}
             <span className="font-mono text-sm text-gray-500">
-              DEC-{decision.decision_number}
+              DECISION-{decision.decision_number}
             </span>
           </div>
 

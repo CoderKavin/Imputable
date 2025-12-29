@@ -87,7 +87,7 @@ export function NotificationsDropdown() {
           .map((req: any) => ({
             id: req.id,
             type: "review_needed" as const,
-            title: `Review requested for DEC-${req.decision_number || "?"}`,
+            title: `Review requested for DECISION-${req.decision_number || "?"}`,
             message:
               req.message ||
               "A team member has requested you review this decision.",

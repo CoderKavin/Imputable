@@ -330,7 +330,7 @@ Risks:
         )
         session.add(approval_a)
 
-        print(f"   ✓ DEC-1: Migrate Primary Database to PostgreSQL 15 [APPROVED]")
+        print(f"   ✓ DECISION-1: Migrate Primary Database to PostgreSQL 15 [APPROVED]")
 
         # =================================================================
         # DECISION B: EXPIRED Tech Debt (Security Risk)
@@ -409,7 +409,7 @@ Mitigation:
 
         decision_b.current_version_id = version_b.id
 
-        print(f"   ✓ DEC-2: Temporary Admin Credentials [EXPIRED - Shows RED on dashboard]")
+        print(f"   ✓ DECISION-2: Temporary Admin Credentials [EXPIRED - Shows RED on dashboard]")
 
         # =================================================================
         # DECISION C: Multiple Versions (For Diff Testing)
@@ -601,7 +601,7 @@ Considerations:
         )
         session.add(approval_c)
 
-        print(f"   ✓ DEC-3: Frontend Framework [3 VERSIONS - Angular → React → Next.js]")
+        print(f"   ✓ DECISION-3: Frontend Framework [3 VERSIONS - Angular → React → Next.js]")
 
         # =================================================================
         # DECISION D: At-Risk (Expiring Soon)
@@ -671,7 +671,7 @@ Configuration:
 
         decision_d.current_version_id = version_d.id
 
-        print(f"   ✓ DEC-4: Temporary API Rate Limiting [AT RISK - expires in 5 days]")
+        print(f"   ✓ DECISION-4: Temporary API Rate Limiting [AT RISK - expires in 5 days]")
 
         # =================================================================
         # DECISION E: Superseded Decision Chain
@@ -734,7 +734,7 @@ Configuration:
 
         content_e2 = {
             "context": """Our platform has grown to require multiple services and mobile apps.
-Session-based auth (DEC-5) doesn't scale well for this architecture.
+Session-based auth (DECISION-5) doesn't scale well for this architecture.
 
 We need stateless authentication that works across services.""",
             "choice": """Migrate to JWT-based authentication with refresh tokens.
@@ -753,7 +753,7 @@ Implementation:
                 {"name": "Keep sessions with Redis", "rejected_reason": "Added infrastructure complexity, doesn't help with mobile"},
                 {"name": "OAuth2 only", "rejected_reason": "Need internal auth too, not just third-party"},
             ],
-            "consequences": """This supersedes DEC-5 (Session-Based Authentication).
+            "consequences": """This supersedes DECISION-5 (Session-Based Authentication).
 
 Migration plan:
 1. Implement JWT alongside sessions
@@ -791,8 +791,8 @@ Migration plan:
         )
         session.add(relationship)
 
-        print(f"   ✓ DEC-5: Session-Based Auth [SUPERSEDED]")
-        print(f"   ✓ DEC-6: JWT-Based Auth [APPROVED, supersedes DEC-5]")
+        print(f"   ✓ DECISION-5: Session-Based Auth [SUPERSEDED]")
+        print(f"   ✓ DECISION-6: JWT-Based Auth [APPROVED, supersedes DECISION-5]")
 
         # =================================================================
         # CREATE AUDIT LOG ENTRIES
@@ -869,19 +869,19 @@ Migration plan:
    • 3 Users: Alice (CTO), Bob (Lead), Charlie (Dev)
    • 3 Teams: Platform, Frontend, Security
    • 6 Decisions:
-     - DEC-1: PostgreSQL Migration [APPROVED]
-     - DEC-2: Temp Admin Credentials [EXPIRED - RED] 🔴
-     - DEC-3: Frontend Framework [3 versions - for diff testing]
-     - DEC-4: API Rate Limiting [AT RISK - YELLOW] 🟡
-     - DEC-5: Session Auth [SUPERSEDED]
-     - DEC-6: JWT Auth [APPROVED, supersedes DEC-5]
+     - DECISION-1: PostgreSQL Migration [APPROVED]
+     - DECISION-2: Temp Admin Credentials [EXPIRED - RED] 🔴
+     - DECISION-3: Frontend Framework [3 versions - for diff testing]
+     - DECISION-4: API Rate Limiting [AT RISK - YELLOW] 🟡
+     - DECISION-5: Session Auth [SUPERSEDED]
+     - DECISION-6: JWT Auth [APPROVED, supersedes DECISION-5]
 
 🧪 What you can test:
-   1. Risk Dashboard: See DEC-2 (red/expired) and DEC-4 (yellow/at-risk)
-   2. Diff View: Open DEC-3 and compare versions (Angular→React→Next.js)
-   3. Supersession: See DEC-6 supersedes DEC-5 in the lineage
+   1. Risk Dashboard: See DECISION-2 (red/expired) and DECISION-4 (yellow/at-risk)
+   2. Diff View: Open DECISION-3 and compare versions (Angular→React→Next.js)
+   3. Supersession: See DECISION-6 supersedes DECISION-5 in the lineage
    4. Audit Export: Generate a compliance report with all decisions
-   5. Snooze: Try snoozing DEC-2 or DEC-4
+   5. Snooze: Try snoozing DECISION-2 or DECISION-4
 
 🌐 Access the app at: http://localhost:3000
 """)

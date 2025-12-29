@@ -256,7 +256,7 @@ class NotificationService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*<{decision_url}|DEC-{decision.decision_number}: {version.title}>*"
+                    "text": f"*<{decision_url}|DECISION-{decision.decision_number}: {version.title}>*"
                 }
             },
             {
@@ -309,7 +309,7 @@ class NotificationService:
         await self._send_slack_message(
             org,
             blocks,
-            f"New decision created: DEC-{decision.decision_number} - {version.title}",
+            f"New decision created: DECISION-{decision.decision_number} - {version.title}",
             color
         )
 
@@ -338,7 +338,7 @@ class NotificationService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*<{decision_url}|DEC-{decision.decision_number}: {version.title}>*\n_Version {version.version_number}_"
+                    "text": f"*<{decision_url}|DECISION-{decision.decision_number}: {version.title}>*\n_Version {version.version_number}_"
                 }
             },
             {
@@ -377,7 +377,7 @@ class NotificationService:
         await self._send_slack_message(
             org,
             blocks,
-            f"Decision updated: DEC-{decision.decision_number} - {version.title}",
+            f"Decision updated: DECISION-{decision.decision_number} - {version.title}",
             color
         )
 
@@ -410,7 +410,7 @@ class NotificationService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*<{decision_url}|DEC-{decision.decision_number}: {title}>*"
+                    "text": f"*<{decision_url}|DECISION-{decision.decision_number}: {title}>*"
                 }
             },
             {
@@ -449,7 +449,7 @@ class NotificationService:
         await self._send_slack_message(
             org,
             blocks,
-            f"Decision status changed: DEC-{decision.decision_number} is now {STATUS_LABELS.get(new_status)}",
+            f"Decision status changed: DECISION-{decision.decision_number} is now {STATUS_LABELS.get(new_status)}",
             color
         )
 
@@ -479,7 +479,7 @@ class NotificationService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*<{decision_url}|DEC-{decision.decision_number}: {title}>*\n\nThis decision is due for review in *{days_until_review} day{'s' if days_until_review != 1 else ''}*."
+                    "text": f"*<{decision_url}|DECISION-{decision.decision_number}: {title}>*\n\nThis decision is due for review in *{days_until_review} day{'s' if days_until_review != 1 else ''}*."
                 }
             },
             {
@@ -520,7 +520,7 @@ class NotificationService:
         await self._send_slack_message(
             org,
             blocks,
-            f"Review reminder: DEC-{decision.decision_number} needs review in {days_until_review} days",
+            f"Review reminder: DECISION-{decision.decision_number} needs review in {days_until_review} days",
             color
         )
 
@@ -562,11 +562,11 @@ class NotificationService:
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "themeColor": color.lstrip("#"),
-            "summary": f"New Decision: DEC-{decision.decision_number}",
+            "summary": f"New Decision: DECISION-{decision.decision_number}",
             "sections": [
                 {
                     "activityTitle": f"📋 New Decision Created",
-                    "activitySubtitle": f"DEC-{decision.decision_number}: {version.title}",
+                    "activitySubtitle": f"DECISION-{decision.decision_number}: {version.title}",
                     "activityImage": "https://app.imputable.io/icons/decision.png",
                     "facts": [
                         {"name": "Status", "value": STATUS_LABELS.get(decision.status, "Unknown")},
@@ -607,11 +607,11 @@ class NotificationService:
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "themeColor": color.lstrip("#"),
-            "summary": f"Decision Updated: DEC-{decision.decision_number}",
+            "summary": f"Decision Updated: DECISION-{decision.decision_number}",
             "sections": [
                 {
                     "activityTitle": "📝 Decision Updated",
-                    "activitySubtitle": f"DEC-{decision.decision_number}: {version.title}",
+                    "activitySubtitle": f"DECISION-{decision.decision_number}: {version.title}",
                     "activityImage": "https://app.imputable.io/icons/update.png",
                     "facts": [
                         {"name": "Version", "value": str(version.version_number)},
@@ -652,11 +652,11 @@ class NotificationService:
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "themeColor": color.lstrip("#"),
-            "summary": f"Status Changed: DEC-{decision.decision_number}",
+            "summary": f"Status Changed: DECISION-{decision.decision_number}",
             "sections": [
                 {
                     "activityTitle": f"{emoji} Status Changed",
-                    "activitySubtitle": f"DEC-{decision.decision_number}: {title}",
+                    "activitySubtitle": f"DECISION-{decision.decision_number}: {title}",
                     "activityImage": "https://app.imputable.io/icons/status.png",
                     "facts": [
                         {"name": "Previous Status", "value": STATUS_LABELS.get(old_status, "Unknown")},
@@ -696,11 +696,11 @@ class NotificationService:
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
             "themeColor": color.lstrip("#"),
-            "summary": f"Review Reminder: DEC-{decision.decision_number}",
+            "summary": f"Review Reminder: DECISION-{decision.decision_number}",
             "sections": [
                 {
                     "activityTitle": f"📅 Review Reminder ({urgency})",
-                    "activitySubtitle": f"DEC-{decision.decision_number}: {title}",
+                    "activitySubtitle": f"DECISION-{decision.decision_number}: {title}",
                     "activityImage": "https://app.imputable.io/icons/reminder.png",
                     "text": f"This decision is due for review in **{days_until_review} day{'s' if days_until_review != 1 else ''}**.",
                     "facts": [

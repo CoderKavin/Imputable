@@ -371,8 +371,8 @@ class TeamsBotService:
                 "text": "Please provide a question. Example: `poll Should we use Redis for caching?`",
             }
 
-        # Check if referencing existing decision (DEC-123 format)
-        dec_match = re.match(r"^DEC-(\d+)\s*(.*)$", question, re.IGNORECASE)
+        # Check if referencing existing decision (DECISION-123 format)
+        dec_match = re.match(r"^DECISION-(\d+)\s*(.*)$", question, re.IGNORECASE)
 
         if dec_match:
             decision_number = int(dec_match.group(1))
@@ -386,7 +386,7 @@ class TeamsBotService:
             if not decision:
                 return {
                     "type": "message",
-                    "text": f"Decision DEC-{decision_number} not found.",
+                    "text": f"Decision DECISION-{decision_number} not found.",
                 }
         else:
             # Create new decision from question
@@ -720,7 +720,7 @@ class TeamsBotService:
         await self.session.commit()
 
         logger.info(
-            f"{'AI-generated ' if ai_generated else ''}Decision DEC-{decision.decision_number} "
+            f"{'AI-generated ' if ai_generated else ''}Decision DECISION-{decision.decision_number} "
             f"created from Teams for org {org.id}"
         )
 

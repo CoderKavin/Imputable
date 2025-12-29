@@ -170,7 +170,7 @@ export function DecisionContent({
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <span className="text-sm font-mono text-muted-foreground">
-                DEC-{decision.decision_number}
+                DECISION-{decision.decision_number}
               </span>
               <Badge variant={decision.status as DecisionStatus}>
                 {formatStatus(decision.status)}

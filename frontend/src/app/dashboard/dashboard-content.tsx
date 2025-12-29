@@ -217,7 +217,7 @@ export function DashboardContent({ hasOrg }: DashboardContentProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono text-gray-400">
-                      DEC-{decision.decision_number}
+                      DECISION-{decision.decision_number}
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(decision.status)}`}

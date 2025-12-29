@@ -189,7 +189,7 @@ export function ProposeChangeModal({
             Propose Change
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            DEC-{decision.decision_number} · Creating v
+            DECISION-{decision.decision_number} · Creating v
             {decision.version.version_number + 1}
           </p>
         </div>

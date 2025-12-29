@@ -268,7 +268,7 @@ async def get_decision_by_number(
     service: DecisionServiceDep,
     audit: AuditServiceDep,
 ):
-    """Get a decision by its organization-scoped number (e.g., DEC-42)."""
+    """Get a decision by its organization-scoped number (e.g., DECISION-42)."""
     decision = await service.get_decision_by_number(
         organization_id=current_user.organization_id,
         decision_number=decision_number,

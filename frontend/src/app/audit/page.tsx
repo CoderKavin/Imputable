@@ -662,7 +662,7 @@ export default function AuditExportPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-gray-500">
-                          DEC-{decision.decision_number}
+                          DECISION-{decision.decision_number}
                         </span>
                         <span
                           className={cn(

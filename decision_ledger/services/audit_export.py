@@ -574,7 +574,7 @@ class AuditPDFGenerator:
 
             elements.append(
                 Paragraph(
-                    f"2.{i}. DEC-{decision.decision_number}: {truncated_title}",
+                    f"2.{i}. DECISION-{decision.decision_number}: {truncated_title}",
                     self.styles["toc_entry"],
                 )
             )
@@ -672,7 +672,7 @@ class AuditPDFGenerator:
         # Decision header
         elements.append(
             Paragraph(
-                f"2.{index}. DEC-{decision.decision_number}: {current_version.title}",
+                f"2.{index}. DECISION-{decision.decision_number}: {current_version.title}",
                 self.styles["heading1"],
             )
         )

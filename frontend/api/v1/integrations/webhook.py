@@ -282,7 +282,7 @@ class SlackBlocks:
             frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"{emoji} *<{frontend_url}/decisions/{dec_id}|DEC-{dec_num}>*\n{title}"},
+                "text": {"type": "mrkdwn", "text": f"{emoji} *<{frontend_url}/decisions/{dec_id}|DECISION-{dec_num}>*\n{title}"},
                 "accessory": {"type": "button", "text": {"type": "plain_text", "text": "View"}, "url": f"{frontend_url}/decisions/{dec_id}"}
             })
 
@@ -298,7 +298,7 @@ class SlackBlocks:
         frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
 
         blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": f"DEC-{decision_number}: {title[:50]}", "emoji": True}},
+            {"type": "header", "text": {"type": "plain_text", "text": f"DECISION-{decision_number}: {title[:50]}", "emoji": True}},
             {"type": "section", "text": {"type": "mrkdwn", "text": f"*Consensus Poll* - {total} vote{'s' if total != 1 else ''}"}},
             {"type": "actions", "block_id": f"poll_{decision_id}", "elements": [
                 {"type": "button", "text": {"type": "plain_text", "text": f"Agree ({len(agree)})", "emoji": True}, "style": "primary", "action_id": "poll_vote_agree", "value": decision_id},
@@ -327,14 +327,14 @@ class SlackBlocks:
     def decision_created(decision_id: str, decision_number: int, title: str):
         frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
         return [
-            {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DEC-{decision_number}>*: {title}"}}
+            {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DECISION-{decision_number}>*: {title}"}}
         ]
 
     @staticmethod
     def duplicate_warning(decision_id: str, decision_number: int, title: str):
         frontend_url = os.environ.get("FRONTEND_URL", "https://app.imputable.io")
         return [
-            {"type": "section", "text": {"type": "mrkdwn", "text": f":warning: This message was already logged as *<{frontend_url}/decisions/{decision_id}|DEC-{decision_number}>*: {title}"}}
+            {"type": "section", "text": {"type": "mrkdwn", "text": f":warning: This message was already logged as *<{frontend_url}/decisions/{decision_id}|DECISION-{decision_number}>*: {title}"}}
         ]
 
 
@@ -518,8 +518,8 @@ def handle_slack_command(form_data: dict, conn) -> dict:
     if cmd_lower.startswith("poll "):
         question = cmd_text[5:].strip()
 
-        # Check if referencing existing decision (DEC-123)
-        dec_match = re.match(r"^DEC-(\d+)\s*(.*)$", question, re.IGNORECASE)
+        # Check if referencing existing decision (DECISION-123)
+        dec_match = re.match(r"^DECISION-(\d+)\s*(.*)$", question, re.IGNORECASE)
 
         if dec_match:
             decision_number = int(dec_match.group(1))
@@ -532,7 +532,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             dec = result.fetchone()
 
             if not dec:
-                return {"response_type": "ephemeral", "text": f":warning: Decision DEC-{decision_number} not found."}
+                return {"response_type": "ephemeral", "text": f":warning: Decision DECISION-{decision_number} not found."}
 
             decision_id, decision_number, title = str(dec[0]), dec[1], dec[2]
         else:
@@ -884,7 +884,7 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
             if token and metadata.get("channel_id"):
                 msg_payload = json.dumps({
                     "channel": metadata.get("channel_id"),
-                    "text": f"Decision logged: DEC-{next_num}",
+                    "text": f"Decision logged: DECISION-{next_num}",
                     "blocks": SlackBlocks.decision_created(decision_id, next_num, title)
                 }).encode()
                 req = urllib.request.Request(
@@ -1021,7 +1021,7 @@ def handle_teams_activity(activity: dict, conn) -> dict:
 
             lines = [f"**Search results for:** {query}\n"]
             for d in decisions:
-                lines.append(f"- [DEC-{d[1]}: {d[2]}]({frontend_url}/decisions/{d[0]})")
+                lines.append(f"- [DECISION-{d[1]}: {d[2]}]({frontend_url}/decisions/{d[0]})")
 
             return {"type": "message", "text": "\n".join(lines)}
 
@@ -1316,8 +1316,8 @@ class handler(BaseHTTPRequestHandler):
                                     frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
                                     msg_payload = json.dumps({
                                         "channel": metadata.get("channel_id"),
-                                        "text": f"Decision logged: DEC-{next_num}",
-                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DEC-{next_num}>*: {title}"}}]
+                                        "text": f"Decision logged: DECISION-{next_num}",
+                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Decision logged*\n*<{frontend_url}/decisions/{decision_id}|DECISION-{next_num}>*: {title}"}}]
                                     }).encode()
                                     req = urllib.request.Request(
                                         "https://slack.com/api/chat.postMessage",
@@ -1329,7 +1329,7 @@ class handler(BaseHTTPRequestHandler):
                                     except Exception:
                                         pass
 
-                                print(f"[SLACK FAST PATH] Decision saved: DEC-{next_num}")
+                                print(f"[SLACK FAST PATH] Decision saved: DECISION-{next_num}")
                     except Exception as e:
                         print(f"[SLACK FAST PATH] view_submission error: {e}")
                         import traceback

@@ -528,7 +528,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className="font-mono text-xs text-indigo-600 font-medium">
-                                      DEC-{result.decision_number}
+                                      DECISION-{result.decision_number}
                                     </span>
                                     <span
                                       className={cn(
@@ -677,7 +677,7 @@ export function SearchCommand({ className }: SearchCommandProps) {
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono text-xs text-gray-500">
-                                        DEC-{decision.decision_number}
+                                        DECISION-{decision.decision_number}
                                       </span>
                                       <span
                                         className={cn(

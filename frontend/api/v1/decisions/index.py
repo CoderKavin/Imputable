@@ -100,7 +100,7 @@ def send_decision_created_emails(conn, org_id: str, decision_id: str, decision_n
 
                     <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
                         <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">
-                            DEC-{decision_number}: {title}
+                            DECISION-{decision_number}: {title}
                         </h2>
                         <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">
                             Created by {creator_name}
@@ -136,7 +136,7 @@ def send_decision_created_emails(conn, org_id: str, decision_id: str, decision_n
             send_email_notification(
                 to_email=email,
                 to_name=name or email.split("@")[0],
-                subject=f"[{org_name}] New Decision: DEC-{decision_number} - {title}",
+                subject=f"[{org_name}] New Decision: DECISION-{decision_number} - {title}",
                 html_content=html_content
             )
     except Exception as e:
@@ -180,7 +180,7 @@ def send_slack_decision_created(
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*<{decision_url}|DEC-{decision_number}: {title}>*"
+                "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"
             }
         },
         {
@@ -209,7 +209,7 @@ def send_slack_decision_created(
 
     payload = json.dumps({
         "channel": channel_id,
-        "text": f"New decision created: DEC-{decision_number} - {title}",
+        "text": f"New decision created: DECISION-{decision_number} - {title}",
         "attachments": [{"color": "808080", "blocks": blocks}]
     }).encode()
 
@@ -244,10 +244,10 @@ def send_teams_decision_created(
         "@type": "MessageCard",
         "@context": "http://schema.org/extensions",
         "themeColor": "808080",
-        "summary": f"New Decision: DEC-{decision_number}",
+        "summary": f"New Decision: DECISION-{decision_number}",
         "sections": [{
             "activityTitle": "📋 New Decision Created",
-            "activitySubtitle": f"DEC-{decision_number}: {title}",
+            "activitySubtitle": f"DECISION-{decision_number}: {title}",
             "facts": [
                 {"name": "Status", "value": "Draft"},
                 {"name": "Impact", "value": impact_level.capitalize()},

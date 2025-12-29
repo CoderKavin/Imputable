@@ -121,7 +121,7 @@ class SlackBlocks:
                         "`/decisions add <title>` - Create a new decision\n"
                         "`/decisions list` - View recent decisions\n"
                         "`/decisions search <keyword>` - Search for decisions\n"
-                        "`/decisions poll <DEC-123 or question>` - Start a consensus poll\n"
+                        "`/decisions poll <DECISION-123 or question>` - Start a consensus poll\n"
                         "`/decisions help` - Show this help message\n\n"
                         "*Message Actions:*\n"
                         "Right-click any message → *Log as Decision* to capture it"
@@ -133,7 +133,7 @@ class SlackBlocks:
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": "Examples:\n`/decisions add Use PostgreSQL for analytics`\n`/decisions search database`\n`/decisions poll DEC-42`"
+                        "text": "Examples:\n`/decisions add Use PostgreSQL for analytics`\n`/decisions search database`\n`/decisions poll DECISION-42`"
                     }
                 ]
             }
@@ -178,7 +178,7 @@ class SlackBlocks:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"{status_emoji} *DEC-{decision.get('number')}* | {decision.get('title')}"
+                        "text": f"{status_emoji} *DECISION-{decision.get('number')}* | {decision.get('title')}"
                     },
                     "accessory": {
                         "type": "button",
@@ -218,7 +218,7 @@ class SlackBlocks:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":white_check_mark: *Decision Created Successfully*\n\n`DEC-{decision_number}` {title}"
+                    "text": f":white_check_mark: *Decision Created Successfully*\n\n`DECISION-{decision_number}` {title}"
                 }
             },
             {
@@ -291,7 +291,7 @@ class SlackBlocks:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{status_emoji} *<{decision_url}|DEC-{decision.decision_number}: {version.title}>*\n_{status_text}_ | {created_date}"
+                    "text": f"{status_emoji} *<{decision_url}|DECISION-{decision.decision_number}: {version.title}>*\n_{status_text}_ | {created_date}"
                 },
                 "accessory": {
                     "type": "button",
@@ -331,7 +331,7 @@ class SlackBlocks:
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"Consensus Poll: DEC-{decision_number}",
+                    "text": f"Consensus Poll: DECISION-{decision_number}",
                     "emoji": True
                 }
             },
@@ -411,7 +411,7 @@ class SlackBlocks:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":clipboard: *Message Logged as Decision*\n\n`DEC-{decision_number}` {title}"
+                    "text": f":clipboard: *Message Logged as Decision*\n\n`DECISION-{decision_number}` {title}"
                 }
             },
             {
@@ -453,7 +453,7 @@ class SlackBlocks:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":warning: *This message has already been logged*\n\nExisting decision: `DEC-{decision_number}` {title}"
+                    "text": f":warning: *This message has already been logged*\n\nExisting decision: `DECISION-{decision_number}` {title}"
                 }
             },
             {
@@ -973,7 +973,7 @@ class SlackCommandRouter:
     - add/create <title>: Open create decision modal with prefilled title
     - list/show: Show recent decisions
     - search <query>: Search for decisions
-    - poll <DEC-123 or question>: Start a consensus poll
+    - poll <DECISION-123 or question>: Start a consensus poll
     - help: Show help message
     """
 
@@ -1171,7 +1171,7 @@ class SlackCommandRouter:
         user_id: str,
     ) -> dict:
         """
-        Handle /decisions poll <DEC-123> or /decisions poll "Question text"
+        Handle /decisions poll <DECISION-123> or /decisions poll "Question text"
 
         If a decision number is provided, creates poll for that decision.
         If question text, creates a new draft decision and poll.
@@ -1179,11 +1179,11 @@ class SlackCommandRouter:
         if not argument:
             return {
                 "response_type": "ephemeral",
-                "text": ":ballot_box: Please provide a decision number or question.\n\nExamples:\n`/decisions poll DEC-42`\n`/decisions poll Should we use PostgreSQL?`"
+                "text": ":ballot_box: Please provide a decision number or question.\n\nExamples:\n`/decisions poll DECISION-42`\n`/decisions poll Should we use PostgreSQL?`"
             }
 
-        # Check if it's a decision reference (DEC-123 or just 123)
-        match = re.match(r"(?:DEC-)?(\d+)", argument, re.IGNORECASE)
+        # Check if it's a decision reference (DECISION-123 or just 123)
+        match = re.match(r"(?:DECISION-)?(\d+)", argument, re.IGNORECASE)
 
         if match:
             decision_number = int(match.group(1))
@@ -1199,7 +1199,7 @@ class SlackCommandRouter:
             if not decision:
                 return {
                     "response_type": "ephemeral",
-                    "text": f":x: Decision DEC-{decision_number} not found."
+                    "text": f":x: Decision DECISION-{decision_number} not found."
                 }
 
             title = decision.current_version.title if decision.current_version else "Untitled"
@@ -1295,7 +1295,7 @@ class SlackCommandRouter:
         decision.current_version_id = version.id
         await self.session.commit()
 
-        logger.info(f"Decision DEC-{decision.decision_number} created via Slack poll for org {org.id}")
+        logger.info(f"Decision DECISION-{decision.decision_number} created via Slack poll for org {org.id}")
 
         return decision, title
 
@@ -1478,7 +1478,7 @@ class SlackSubmissionHandler:
 
         await self.session.commit()
 
-        logger.info(f"Decision DEC-{decision.decision_number} created via Slack for org {org.id}")
+        logger.info(f"Decision DECISION-{decision.decision_number} created via Slack for org {org.id}")
 
         # =====================================================================
         # SUCCESS: Send DM confirmation
@@ -1623,7 +1623,7 @@ class SlackInteractionHandler:
                     return {
                         "response_action": "errors",
                         "errors": {
-                            "title_block": f"This message was already logged as DEC-{decision.decision_number}"
+                            "title_block": f"This message was already logged as DECISION-{decision.decision_number}"
                         }
                     }
 
@@ -1716,7 +1716,7 @@ class SlackInteractionHandler:
 
         await self.session.commit()
 
-        logger.info(f"Decision DEC-{decision.decision_number} logged from Slack message for org {org.id}")
+        logger.info(f"Decision DECISION-{decision.decision_number} logged from Slack message for org {org.id}")
 
         # Return None to close the modal (success)
         return None
@@ -1800,7 +1800,7 @@ class SlackInteractionHandler:
                     return {
                         "response_action": "errors",
                         "errors": {
-                            "title_block": f"This thread was already logged as DEC-{decision.decision_number}"
+                            "title_block": f"This thread was already logged as DECISION-{decision.decision_number}"
                         }
                     }
 
@@ -1910,7 +1910,7 @@ class SlackInteractionHandler:
         await self.session.commit()
 
         logger.info(
-            f"AI-generated Decision DEC-{decision.decision_number} created from Slack thread "
+            f"AI-generated Decision DECISION-{decision.decision_number} created from Slack thread "
             f"(confidence: {confidence_score:.0%}) for org {org.id}"
         )
 

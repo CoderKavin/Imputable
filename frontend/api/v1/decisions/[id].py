@@ -73,7 +73,7 @@ def send_status_change_emails(conn, org_id: str, decision_id: str, decision_numb
                     <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
                     <p style="margin: 0 0 20px;">A decision status has been updated in <strong>{org_name}</strong>:</p>
                     <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
-                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DEC-{decision_number}: {title}</h2>
+                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DECISION-{decision_number}: {title}</h2>
                         <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">Changed by {changer_name}</p>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <span style="background: {status_colors.get(old_status, '#6b7280')}20; color: {status_colors.get(old_status, '#6b7280')}; padding: 4px 12px; border-radius: 20px; font-size: 12px; text-decoration: line-through;">{old_status.replace('_', ' ').title()}</span>
@@ -89,7 +89,7 @@ def send_status_change_emails(conn, org_id: str, decision_id: str, decision_numb
                 </div>
             </body></html>
             """
-            send_email_notification(email, f"[{org_name}] Decision Status Changed: DEC-{decision_number} is now {new_status.replace('_', ' ').title()}", html_content)
+            send_email_notification(email, f"[{org_name}] Decision Status Changed: DECISION-{decision_number} is now {new_status.replace('_', ' ').title()}", html_content)
     except Exception as e:
         print(f"Error sending status change emails: {e}")
 
@@ -128,7 +128,7 @@ def send_decision_updated_emails(conn, org_id: str, decision_id: str, decision_n
                     <p style="margin: 0 0 20px;">Hi {name or 'there'},</p>
                     <p style="margin: 0 0 20px;">A decision has been amended in <strong>{org_name}</strong>:</p>
                     <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
-                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DEC-{decision_number}: {title}</h2>
+                        <h2 style="margin: 0 0 10px; font-size: 18px; color: #111;">DECISION-{decision_number}: {title}</h2>
                         <p style="margin: 0 0 15px; color: #6b7280; font-size: 14px;">Updated by {updater_name} • Version {version_number}</p>
                         <div style="background: #f3f4f6; border-left: 3px solid #6366f1; padding: 12px 16px; margin: 15px 0;">
                             <p style="margin: 0; font-size: 14px; color: #374151;"><strong>Change Summary:</strong><br>{change_summary}</p>
@@ -142,7 +142,7 @@ def send_decision_updated_emails(conn, org_id: str, decision_id: str, decision_n
                 </div>
             </body></html>
             """
-            send_email_notification(email, f"[{org_name}] Decision Updated: DEC-{decision_number} - {title} (v{version_number})", html_content)
+            send_email_notification(email, f"[{org_name}] Decision Updated: DECISION-{decision_number} - {title} (v{version_number})", html_content)
     except Exception as e:
         print(f"Error sending decision updated emails: {e}")
 
@@ -177,13 +177,13 @@ def send_approval_emails(conn, org_id: str, decision_id: str, decision_number: i
                     continue
 
             if decision_became_approved:
-                subject = f"[{org_name}] 🎉 Decision Approved: DEC-{decision_number} - {title}"
+                subject = f"[{org_name}] 🎉 Decision Approved: DECISION-{decision_number} - {title}"
                 header = "🎉 Decision Fully Approved"
-                message = f"Great news! <strong>DEC-{decision_number}: {title}</strong> has received all required approvals and is now officially approved."
+                message = f"Great news! <strong>DECISION-{decision_number}: {title}</strong> has received all required approvals and is now officially approved."
             else:
-                subject = f"[{org_name}] {status_emoji} Vote on DEC-{decision_number}: {approver_name} {approval_status}"
+                subject = f"[{org_name}] {status_emoji} Vote on DECISION-{decision_number}: {approver_name} {approval_status}"
                 header = f"{status_emoji} Vote Submitted"
-                message = f"<strong>{approver_name}</strong> has {approval_status} <strong>DEC-{decision_number}: {title}</strong>."
+                message = f"<strong>{approver_name}</strong> has {approval_status} <strong>DECISION-{decision_number}: {title}</strong>."
 
             html_content = f"""
             <!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -259,7 +259,7 @@ def send_slack_approval_notification(
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": header_text, "emoji": True}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*<{decision_url}|DEC-{decision_number}: {title}>*"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*<{decision_url}|DECISION-{decision_number}: {title}>*"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*{approver_name}* {action_text} this decision."}},
     ]
     if comment:
@@ -267,7 +267,7 @@ def send_slack_approval_notification(
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": progress_text}]})
     blocks.append({"type": "actions", "elements": [{"type": "button", "text": {"type": "plain_text", "text": "View Decision", "emoji": True}, "url": decision_url, "style": "primary"}]})
 
-    payload = json.dumps({"channel": channel_id, "text": f"{approver_name} {action_text} DEC-{decision_number}", "attachments": [{"color": color, "blocks": blocks}]}).encode()
+    payload = json.dumps({"channel": channel_id, "text": f"{approver_name} {action_text} DECISION-{decision_number}", "attachments": [{"color": color, "blocks": blocks}]}).encode()
     req = urllib.request.Request("https://slack.com/api/chat.postMessage", data=payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
         urllib.request.urlopen(req, timeout=10)
@@ -311,7 +311,7 @@ def send_teams_approval_notification(
     if comment:
         facts.append({"name": "Comment", "value": comment})
 
-    card = {"@type": "MessageCard", "@context": "http://schema.org/extensions", "themeColor": color, "summary": f"{approver_name} {action_text} DEC-{decision_number}", "sections": [{"activityTitle": header, "activitySubtitle": f"DEC-{decision_number}: {title}", "facts": facts, "markdown": True}], "potentialAction": [{"@type": "OpenUri", "name": "View Decision", "targets": [{"os": "default", "uri": decision_url}]}]}
+    card = {"@type": "MessageCard", "@context": "http://schema.org/extensions", "themeColor": color, "summary": f"{approver_name} {action_text} DECISION-{decision_number}", "sections": [{"activityTitle": header, "activitySubtitle": f"DECISION-{decision_number}: {title}", "facts": facts, "markdown": True}], "potentialAction": [{"@type": "OpenUri", "name": "View Decision", "targets": [{"os": "default", "uri": decision_url}]}]}
 
     payload = json.dumps(card).encode()
     req = urllib.request.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
