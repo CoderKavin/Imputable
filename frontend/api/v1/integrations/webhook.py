@@ -778,7 +778,7 @@ class SlackBlocks:
         return blocks
 
     @staticmethod
-    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "pending_review", channel_member_count: int = 0):
+    def consensus_poll(decision_id: str, decision_number: int, title: str, votes: dict, decision_status: str = "pending_review", channel_member_count: int = 0, creator_id: str = "", created_at: str = ""):
         agree = votes.get("agree", [])
         concern = votes.get("concern", [])
         block = votes.get("block", [])
@@ -848,17 +848,18 @@ class SlackBlocks:
             blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " | ".join(vote_texts)}]})
 
         # Show consensus reached prompt with action button (only if not already approved)
+        # Include creator_id in value so we can verify on click
         if consensus_reached and not is_blocked and decision_status != "approved":
             blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": ":rocket: *Ready to make it official?*\nThe team has reached consensus on this decision."},
+                "text": {"type": "mrkdwn", "text": ":rocket: *Ready to make it official?*\nThe team has reached consensus. Only the poll creator can approve."},
                 "accessory": {
                     "type": "button",
                     "text": {"type": "plain_text", "text": "Approve Decision", "emoji": True},
                     "style": "primary",
                     "action_id": "poll_approve_decision",
-                    "value": decision_id
+                    "value": f"{decision_id}|{creator_id}"
                 }
             })
 
@@ -2370,7 +2371,7 @@ class handler(BaseHTTPRequestHandler):
 
                             content = json.dumps({"context": "This decision was proposed via Slack poll for team consensus.", "choice": f"Team is voting on: {question}", "rationale": None, "alternatives": []})
                             tags = '{"slack-logged", "poll"}'
-                            custom_fields = json.dumps({"channel_member_count": channel_member_count})
+                            custom_fields = json.dumps({"channel_member_count": channel_member_count, "poll_creator_slack_id": user_id})
                             conn.execute(text("""
                                 INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
                                 VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), :custom_fields)
@@ -2381,7 +2382,7 @@ class handler(BaseHTTPRequestHandler):
 
                             # Build poll blocks
                             votes = {"agree": [], "concern": [], "block": []}
-                            blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review", channel_member_count)
+                            blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review", channel_member_count, user_id)
 
                             # Post to channel
                             if token:
@@ -2672,7 +2673,7 @@ class handler(BaseHTTPRequestHandler):
 
                                         # Get updated votes and decision info
                                         result = conn.execute(text("""
-                                            SELECT d.decision_number, dv.title, d.status, dv.custom_fields
+                                            SELECT d.decision_number, dv.title, d.status, dv.custom_fields, d.created_at
                                             FROM decisions d
                                             JOIN decision_versions dv ON d.current_version_id = dv.id
                                             WHERE d.id = :did
@@ -2687,15 +2688,52 @@ class handler(BaseHTTPRequestHandler):
                                                 if vt in votes:
                                                     votes[vt].append(name)
 
-                                            # Get channel_member_count from custom_fields
+                                            # Get channel_member_count and creator from custom_fields
                                             channel_member_count = 0
+                                            creator_slack_id = ""
                                             if dec[3]:
                                                 cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
                                                 channel_member_count = cf.get("channel_member_count", 0)
+                                                creator_slack_id = cf.get("poll_creator_slack_id", "")
+
+                                            # Check if consensus just reached on old poll (1+ day old)
+                                            import math
+                                            from datetime import datetime, timezone
+                                            threshold = max(2, min(10, math.ceil(channel_member_count * 0.6))) if channel_member_count > 0 else 3
+                                            consensus_reached = len(votes["agree"]) >= threshold and len(votes["block"]) == 0
+
+                                            if consensus_reached and dec[2] != "approved" and creator_slack_id:
+                                                # Check if poll is 1+ day old
+                                                created_at = dec[4]
+                                                if created_at:
+                                                    now = datetime.now(timezone.utc)
+                                                    if hasattr(created_at, 'tzinfo') and created_at.tzinfo is None:
+                                                        from datetime import timezone as tz
+                                                        created_at = created_at.replace(tzinfo=tz.utc)
+                                                    age_hours = (now - created_at).total_seconds() / 3600
+
+                                                    if age_hours >= 24:
+                                                        # Send DM to creator
+                                                        token = os.environ.get("SLACK_BOT_TOKEN", "")
+                                                        if token:
+                                                            frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
+                                                            dm_blocks = [
+                                                                {"type": "section", "text": {"type": "mrkdwn", "text": f":tada: *Consensus reached on your poll!*\n\n*{dec[1]}*\n\nThe team has reached consensus. You can now approve this decision."}},
+                                                                {"type": "actions", "elements": [
+                                                                    {"type": "button", "text": {"type": "plain_text", "text": "View Decision"}, "url": f"{frontend_url}/decisions/{decision_id}"}
+                                                                ]}
+                                                            ]
+                                                            dm_payload = json.dumps({"channel": creator_slack_id, "text": f"Consensus reached on: {dec[1]}", "blocks": dm_blocks}).encode()
+                                                            dm_req = urllib.request.Request("https://slack.com/api/chat.postMessage", data=dm_payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                                                            try:
+                                                                urllib.request.urlopen(dm_req, timeout=5)
+                                                                print(f"[SLACK POLL VOTE] Sent consensus DM to creator {creator_slack_id}")
+                                                            except Exception as dm_e:
+                                                                print(f"[SLACK POLL VOTE] Failed to send DM: {dm_e}")
 
                                             self._send(200, {
                                                 "replace_original": True,
-                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count)
+                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count, creator_slack_id)
                                             })
                                             return
                             except Exception as e:
@@ -2708,7 +2746,25 @@ class handler(BaseHTTPRequestHandler):
                     if actions and actions[0].get("action_id") == "poll_approve_decision":
                         from sqlalchemy import text
                         action = actions[0]
-                        decision_id = action.get("value", "")
+                        action_value = action.get("value", "")
+                        user_info = payload.get("user", {})
+                        clicker_id = user_info.get("id", "")
+
+                        # Parse decision_id and creator_id from value
+                        if "|" in action_value:
+                            decision_id, creator_id = action_value.split("|", 1)
+                        else:
+                            decision_id = action_value
+                            creator_id = ""
+
+                        # Check if clicker is the creator
+                        if creator_id and clicker_id != creator_id:
+                            self._send(200, {
+                                "response_type": "ephemeral",
+                                "replace_original": False,
+                                "text": ":no_entry: Only the poll creator can approve this decision."
+                            })
+                            return
 
                         if decision_id:
                             try:
@@ -2739,15 +2795,17 @@ class handler(BaseHTTPRequestHandler):
                                                 if vt in votes:
                                                     votes[vt].append(name)
 
-                                            # Get channel_member_count from custom_fields
+                                            # Get channel_member_count and creator from custom_fields
                                             channel_member_count = 0
+                                            creator_slack_id = ""
                                             if dec[3]:
                                                 cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
                                                 channel_member_count = cf.get("channel_member_count", 0)
+                                                creator_slack_id = cf.get("poll_creator_slack_id", "")
 
                                             self._send(200, {
                                                 "replace_original": True,
-                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count)
+                                                "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count, creator_slack_id)
                                             })
                                             return
                             except Exception as e:
