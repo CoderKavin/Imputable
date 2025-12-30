@@ -11,6 +11,7 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type Connection,
   MarkerType,
   Panel,
   ConnectionMode,
@@ -71,6 +72,11 @@ export function MindMapView({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [pendingConnection, setPendingConnection] = useState<{
+    source: string;
+    target: string;
+  } | null>(null);
+  const [isCreatingConnection, setIsCreatingConnection] = useState(false);
 
   // Limit to 8 most recent decisions
   const limitedDecisions = useMemo(() => {
@@ -255,6 +261,43 @@ export function MindMapView({
     setSelectedEdge(null);
   }, []);
 
+  // Handle drag-to-connect
+  const onConnect = useCallback((connection: Connection) => {
+    if (
+      connection.source &&
+      connection.target &&
+      connection.source !== connection.target
+    ) {
+      setPendingConnection({
+        source: connection.source,
+        target: connection.target,
+      });
+    }
+  }, []);
+
+  // Create connection with selected relationship type
+  const handleCreateConnection = async (relationshipType: RelationshipType) => {
+    if (!pendingConnection) return;
+
+    setIsCreatingConnection(true);
+    try {
+      await client.post("/decisions/relationships", {
+        source_decision_id: pendingConnection.source,
+        target_decision_id: pendingConnection.target,
+        relationship_type: relationshipType,
+      });
+      await fetchRelationships();
+      setPendingConnection(null);
+    } catch (error: any) {
+      console.error("Failed to create relationship:", error);
+      if (error.response?.status === 409) {
+        alert("This relationship already exists");
+      }
+    } finally {
+      setIsCreatingConnection(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-[600px] flex items-center justify-center bg-gray-50 rounded-2xl border border-gray-200">
@@ -293,6 +336,7 @@ export function MindMapView({
         onEdgesChange={onEdgesChange}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onConnect={onConnect}
         nodeTypes={nodeTypes}
         connectionMode={ConnectionMode.Loose}
         fitView
@@ -425,6 +469,54 @@ export function MindMapView({
           </div>
         </Panel>
       </ReactFlow>
+
+      {/* Relationship Type Picker Modal */}
+      {pendingConnection && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setPendingConnection(null)}
+          />
+          <div className="relative z-[201] bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-900">
+                Select Relationship Type
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                How are these decisions related?
+              </p>
+            </div>
+            <div className="p-3 space-y-1 max-h-[300px] overflow-y-auto">
+              {(Object.entries(edgeLabels) as [RelationshipType, string][]).map(
+                ([type, label]) => (
+                  <button
+                    key={type}
+                    onClick={() => handleCreateConnection(type)}
+                    disabled={isCreatingConnection}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors text-left disabled:opacity-50"
+                  >
+                    <div
+                      className="w-4 h-1 rounded-full"
+                      style={{ backgroundColor: edgeColors[type] }}
+                    />
+                    <span className="text-sm font-medium text-gray-700 capitalize">
+                      {label}
+                    </span>
+                  </button>
+                ),
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setPendingConnection(null)}
+                className="w-full text-sm text-gray-600 hover:text-gray-800 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
