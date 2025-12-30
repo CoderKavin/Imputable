@@ -2642,6 +2642,122 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
                 return
 
+            # Handle async search (fired from command fast path)
+            if platform == "slack" and req_type == "async_search":
+                print(f"[SLACK ASYNC SEARCH] Received async search request")
+                try:
+                    data = json.loads(body.decode()) if body else {}
+                    team_id = data.get("team_id")
+                    query = data.get("query", "")
+                    response_url = data.get("response_url")
+
+                    if not query or not response_url:
+                        self._send(200, {})
+                        return
+
+                    engine = get_db_connection()
+                    if engine:
+                        with engine.connect() as conn:
+                            from sqlalchemy import text
+
+                            # Get org
+                            result = conn.execute(text("SELECT id FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
+                            org = result.fetchone()
+                            if not org:
+                                # Send error via response_url
+                                error_payload = json.dumps({
+                                    "response_type": "ephemeral",
+                                    "replace_original": True,
+                                    "text": ":warning: Organization not found."
+                                }).encode()
+                                req = urllib.request.Request(response_url, data=error_payload, headers={"Content-Type": "application/json"})
+                                try:
+                                    urllib.request.urlopen(req, timeout=5)
+                                except:
+                                    pass
+                                self._send(200, {})
+                                return
+
+                            org_id = str(org[0])
+
+                            # Fetch decisions for semantic search
+                            result = conn.execute(text("""
+                                SELECT d.id, d.decision_number, dv.title, d.status, dv.content, d.created_at
+                                FROM decisions d
+                                JOIN decision_versions dv ON d.current_version_id = dv.id
+                                WHERE d.organization_id = :org_id AND d.deleted_at IS NULL
+                                ORDER BY d.created_at DESC LIMIT 50
+                            """), {"org_id": org_id})
+                            all_decisions = result.fetchall()
+
+                            if not all_decisions:
+                                no_results_payload = json.dumps({
+                                    "response_type": "ephemeral",
+                                    "replace_original": True,
+                                    "text": ":mag: No decisions found in your organization yet."
+                                }).encode()
+                                req = urllib.request.Request(response_url, data=no_results_payload, headers={"Content-Type": "application/json"})
+                                try:
+                                    urllib.request.urlopen(req, timeout=5)
+                                except:
+                                    pass
+                                self._send(200, {})
+                                return
+
+                            # Convert to list of dicts for semantic search
+                            decisions_for_search = []
+                            decisions_by_id = {}
+                            for row in all_decisions:
+                                d = {
+                                    "id": str(row[0]),
+                                    "decision_number": row[1],
+                                    "title": row[2],
+                                    "status": row[3],
+                                    "content": row[4],
+                                    "created_at": str(row[5]) if row[5] else ""
+                                }
+                                decisions_for_search.append(d)
+                                decisions_by_id[str(row[0])] = d
+
+                            # Use AI to find relevant decisions
+                            search_result = semantic_search_decisions(query, decisions_for_search)
+
+                            matched_ids = search_result.get("matches", [])
+                            explanation = search_result.get("explanation", "")
+                            best_match = search_result.get("best_match_summary", "")
+
+                            if not matched_ids:
+                                blocks = SlackBlocks.semantic_search_results(query, [], explanation)
+                            else:
+                                # Get matched decisions in order
+                                matched_decisions = []
+                                for mid in matched_ids:
+                                    if mid in decisions_by_id:
+                                        d = decisions_by_id[mid]
+                                        matched_decisions.append((d["id"], d["decision_number"], d["title"], d["status"]))
+                                blocks = SlackBlocks.semantic_search_results(query, matched_decisions, explanation, best_match)
+
+                            # Send results via response_url
+                            results_payload = json.dumps({
+                                "response_type": "ephemeral",
+                                "replace_original": True,
+                                "blocks": blocks
+                            }).encode()
+                            req = urllib.request.Request(response_url, data=results_payload, headers={"Content-Type": "application/json"})
+                            try:
+                                urllib.request.urlopen(req, timeout=10)
+                                print(f"[SLACK ASYNC SEARCH] Sent results for query: {query}")
+                            except Exception as e:
+                                print(f"[SLACK ASYNC SEARCH] Failed to send results: {e}")
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC SEARCH] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                self._send(200, {"ok": True})
+                return
+
             # ASYNC POLL VOTE handler
             if platform == "slack" and req_type == "async_poll_vote":
                 from sqlalchemy import text
@@ -2879,6 +2995,36 @@ class handler(BaseHTTPRequestHandler):
 
                     # Respond immediately
                     self._send(200, {"response_type": "ephemeral", "text": ":hourglass: Creating poll..."})
+                    return
+
+                # Search command needs async processing (Gemini API can be slow)
+                if cmd_text.startswith("search "):
+                    query = form_data.get("text", "")[7:].strip()
+                    team_id = form_data.get("team_id", "")
+                    response_url = form_data.get("response_url", "")
+
+                    # Fire async request
+                    webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                    search_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_search"
+
+                    search_payload = json.dumps({
+                        "team_id": team_id,
+                        "query": query,
+                        "response_url": response_url
+                    }).encode()
+
+                    req = urllib.request.Request(
+                        search_url,
+                        data=search_payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    try:
+                        urllib.request.urlopen(req, timeout=0.1)
+                    except:
+                        pass  # Expected to timeout
+
+                    # Respond immediately
+                    self._send(200, {"response_type": "ephemeral", "text": ":mag: Searching..."})
                     return
 
             # For Slack interactions, handle message shortcuts BEFORE database connection
