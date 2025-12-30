@@ -30,7 +30,6 @@ interface TourStep {
   color: string;
   highlightSelector?: string;
   position?: "top" | "bottom" | "left" | "right" | "center";
-  // For multi-phase steps (Mind Map, Slack/Teams)
   requiresNavigation?: boolean;
   navigationPath?: string;
   secondarySelector?: string;
@@ -114,29 +113,23 @@ function AnimatedCursor({
     y: fromRect.top + fromRect.height / 2,
   });
   const [isClicking, setIsClicking] = useState(false);
-  const [phase, setPhase] = useState<"moving" | "clicking" | "done">("moving");
 
   useEffect(() => {
     const targetX = toRect.left + toRect.width / 2;
     const targetY = toRect.top + toRect.height / 2;
 
-    // Start animation after a brief delay
     const moveTimer = setTimeout(() => {
       setPosition({ x: targetX, y: targetY });
-    }, 300);
+    }, 200);
 
-    // Click animation after cursor arrives
     const clickTimer = setTimeout(() => {
-      setPhase("clicking");
       setIsClicking(true);
-    }, 1100);
+    }, 900);
 
-    // Complete after click
     const completeTimer = setTimeout(() => {
       setIsClicking(false);
-      setPhase("done");
       onComplete();
-    }, 1500);
+    }, 1200);
 
     return () => {
       clearTimeout(moveTimer);
@@ -147,24 +140,80 @@ function AnimatedCursor({
 
   return (
     <div
-      className="fixed z-[400] pointer-events-none transition-all duration-700 ease-out"
+      className="fixed z-[400] pointer-events-none"
       style={{
         left: position.x,
         top: position.y,
-        transform: `translate(-50%, -50%) ${isClicking ? "scale(0.8)" : "scale(1)"}`,
+        transform: `translate(-50%, -50%) ${isClicking ? "scale(0.85)" : "scale(1)"}`,
+        transition:
+          "left 0.6s cubic-bezier(0.4, 0, 0.2, 1), top 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s ease-out",
       }}
     >
-      <div className={`relative ${isClicking ? "animate-pulse" : ""}`}>
-        <MousePointer2
-          className="w-8 h-8 text-white drop-shadow-lg"
-          fill="white"
-          style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }}
+      <MousePointer2
+        className="w-7 h-7 text-white"
+        fill="white"
+        style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.4))" }}
+      />
+      {isClicking && (
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-indigo-400/50"
+          style={{ animation: "ping 0.4s ease-out" }}
         />
-        {isClicking && (
-          <div className="absolute -inset-4 rounded-full bg-indigo-500/30 animate-ping" />
-        )}
-      </div>
+      )}
     </div>
+  );
+}
+
+// Smooth highlight border component
+function HighlightBorder({ rect }: { rect: DOMRect }) {
+  return (
+    <>
+      {/* Clean border highlight */}
+      <div
+        className="absolute z-[301] pointer-events-none"
+        style={{
+          top: rect.top - 6,
+          left: rect.left - 6,
+          width: rect.width + 12,
+          height: rect.height + 12,
+          borderRadius: 12,
+          border: "3px solid #6366f1",
+          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.7)",
+          transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      />
+      {/* Animated gradient border */}
+      <div
+        className="absolute z-[300] pointer-events-none"
+        style={{
+          top: rect.top - 8,
+          left: rect.left - 8,
+          width: rect.width + 16,
+          height: rect.height + 16,
+          borderRadius: 14,
+          background: "linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1)",
+          backgroundSize: "200% 100%",
+          animation: "shimmer 2s linear infinite",
+          padding: 2,
+          transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        <div
+          className="w-full h-full rounded-xl"
+          style={{ background: "transparent" }}
+        />
+      </div>
+      <style jsx>{`
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+      `}</style>
+    </>
   );
 }
 
@@ -175,15 +224,14 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const [secondaryRect, setSecondaryRect] = useState<DOMRect | null>(null);
   const [showCursor, setShowCursor] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   const step = steps[currentStep];
 
-  // Find and measure the highlighted element
   const updateHighlight = useCallback(() => {
     if (stepPhase === "show-target" && step.secondarySelector) {
-      // Try to find the secondary element (Mind Map button, Integrations tab)
       const selectors = step.secondarySelector.split(", ");
       for (const selector of selectors) {
         try {
@@ -193,11 +241,10 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
             setHighlightRect(null);
             return;
           }
-        } catch (e) {
+        } catch {
           // Invalid selector, try next
         }
       }
-      // Fallback: find by text content for Mind Map
       if (step.title.includes("Mind Map")) {
         const buttons = Array.from(document.querySelectorAll("button"));
         for (const btn of buttons) {
@@ -208,7 +255,6 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
           }
         }
       }
-      // Fallback for integrations tab
       if (step.title.includes("Slack")) {
         const buttons = Array.from(document.querySelectorAll("button"));
         for (const btn of buttons) {
@@ -251,7 +297,6 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     }
   }, [isOpen, currentStep, stepPhase, updateHighlight]);
 
-  // After navigation completes, transition to show-target phase
   useEffect(() => {
     if (
       step.requiresNavigation &&
@@ -259,11 +304,11 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       pathname === step.navigationPath &&
       stepPhase === "animate-cursor"
     ) {
-      // Wait a bit for the page to render, then show the target
       const timer = setTimeout(() => {
         setStepPhase("show-target");
         setShowCursor(false);
-      }, 800);
+        setIsTransitioning(false);
+      }, 600);
       return () => clearTimeout(timer);
     }
   }, [pathname, step, stepPhase]);
@@ -279,20 +324,35 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     if (currentStep < steps.length - 1) {
       const nextStep = steps[currentStep + 1];
 
-      // Move to next step
-      setCurrentStep(currentStep + 1);
+      // Smooth transition
+      setIsTransitioning(true);
 
-      // If next step requires navigation, start cursor animation immediately
-      if (nextStep.requiresNavigation) {
-        setStepPhase("animate-cursor");
-        setShowCursor(true);
-      } else {
-        setStepPhase("highlight");
-        setShowCursor(false);
-      }
+      setTimeout(() => {
+        setCurrentStep(currentStep + 1);
+
+        if (nextStep.requiresNavigation) {
+          setStepPhase("animate-cursor");
+          setShowCursor(true);
+        } else {
+          setStepPhase("highlight");
+          setShowCursor(false);
+          setTimeout(() => setIsTransitioning(false), 300);
+        }
+      }, 150);
     } else {
       handleComplete();
     }
+  };
+
+  const handleBack = () => {
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setCurrentStep(currentStep - 1);
+      setStepPhase("highlight");
+      setShowCursor(false);
+      router.push("/dashboard");
+      setTimeout(() => setIsTransitioning(false), 300);
+    }, 150);
   };
 
   const handleSkip = () => {
@@ -305,7 +365,6 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   };
 
   const handleCursorComplete = useCallback(() => {
-    // Cursor finished animating to sidebar, now navigate
     if (step.navigationPath && pathname !== step.navigationPath) {
       router.push(step.navigationPath);
     }
@@ -329,62 +388,27 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       };
     }
 
-    const padding = 16;
-    const tooltipWidth = 380;
-
     return {
       position: "fixed",
       top: activeRect.top + activeRect.height / 2,
-      left: activeRect.right + padding + 20,
+      left: activeRect.right + 32,
       transform: "translateY(-50%)",
-      maxWidth: tooltipWidth,
+      maxWidth: 360,
     };
   };
 
   return (
     <div className="fixed inset-0 z-[300]">
-      {/* Backdrop */}
-      {isCentered ? (
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      ) : (
-        <>
-          <div className="absolute inset-0 bg-black/70" />
-          {activeRect && (
-            <>
-              {/* Bright highlight box with glow */}
-              <div
-                className="absolute z-[301] rounded-xl pointer-events-none transition-all duration-300"
-                style={{
-                  top: activeRect.top - 8,
-                  left: activeRect.left - 8,
-                  width: activeRect.width + 16,
-                  height: activeRect.height + 16,
-                  boxShadow: `
-                    0 0 0 9999px rgba(0, 0, 0, 0.75),
-                    0 0 0 4px #6366f1,
-                    0 0 20px 8px rgba(99, 102, 241, 0.6),
-                    0 0 40px 16px rgba(99, 102, 241, 0.4)
-                  `,
-                  border: "2px solid #818cf8",
-                }}
-              />
-              {/* Pulsing glow effect */}
-              <div
-                className="absolute z-[300] rounded-xl animate-pulse pointer-events-none"
-                style={{
-                  top: activeRect.top - 12,
-                  left: activeRect.left - 12,
-                  width: activeRect.width + 24,
-                  height: activeRect.height + 24,
-                  boxShadow: "0 0 30px 10px rgba(99, 102, 241, 0.5)",
-                }}
-              />
-            </>
-          )}
-        </>
-      )}
+      {/* Backdrop with smooth transition */}
+      <div
+        className="absolute inset-0 bg-black/70 transition-opacity duration-500"
+        style={{ opacity: isTransitioning ? 0.5 : 1 }}
+      />
 
-      {/* Animated cursor for multi-phase steps */}
+      {/* Highlight border */}
+      {!isCentered && activeRect && <HighlightBorder rect={activeRect} />}
+
+      {/* Animated cursor */}
       {showCursor && highlightRect && (
         <AnimatedCursor
           fromRect={
@@ -395,67 +419,77 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
         />
       )}
 
-      {/* Tooltip/Modal */}
+      {/* Modal card with smooth transitions */}
       <div
-        className="z-[302] bg-white rounded-3xl shadow-2xl overflow-hidden"
-        style={getTooltipStyle()}
+        className="z-[302] bg-white rounded-2xl shadow-2xl overflow-hidden transition-all duration-300"
+        style={{
+          ...getTooltipStyle(),
+          opacity: isTransitioning ? 0 : 1,
+          transform: `${isCentered || !activeRect ? "translate(-50%, -50%)" : "translateY(-50%)"} scale(${isTransitioning ? 0.95 : 1})`,
+        }}
       >
+        {/* Arrow pointer for non-centered modals */}
         {!isCentered && activeRect && (
           <div
-            className="absolute w-4 h-4 bg-white transform rotate-45 -left-2 top-1/2 -translate-y-1/2"
-            style={{ boxShadow: "-2px 2px 4px rgba(0,0,0,0.1)" }}
+            className="absolute w-3 h-3 bg-white transform rotate-45 -left-1.5 top-1/2 -translate-y-1/2 transition-opacity duration-300"
+            style={{
+              boxShadow: "-2px 2px 4px rgba(0,0,0,0.08)",
+              opacity: isTransitioning ? 0 : 1,
+            }}
           />
         )}
 
         <button
           onClick={handleSkip}
-          className="absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-100 transition-colors z-10"
+          className="absolute top-3 right-3 p-2 rounded-lg hover:bg-gray-100 transition-colors z-10"
         >
-          <X className="w-5 h-5 text-gray-400" />
+          <X className="w-4 h-4 text-gray-400" />
         </button>
 
-        <div className={`p-6 ${isCentered ? "pt-10" : "pt-6"} text-center`}>
+        <div className="p-6 text-center">
+          {/* Icon with color transition */}
           <div
-            className={`w-14 h-14 ${step.color} rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg`}
+            className={`w-12 h-12 ${step.color} rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg transition-all duration-300`}
+            style={{ transform: isTransitioning ? "scale(0.9)" : "scale(1)" }}
           >
-            <Icon className="w-7 h-7 text-white" />
+            <Icon className="w-6 h-6 text-white" />
           </div>
 
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{step.title}</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 transition-opacity duration-200">
+            {step.title}
+          </h2>
 
-          <p className="text-gray-600 text-sm leading-relaxed mb-6">
+          <p className="text-gray-500 text-sm leading-relaxed mb-5 transition-opacity duration-200">
             {step.description}
           </p>
 
-          <div className="flex items-center justify-center gap-2 mb-6">
+          {/* Progress dots */}
+          <div className="flex items-center justify-center gap-1.5 mb-5">
             {steps.map((_, index) => (
               <div
                 key={index}
-                className={`
-                  h-2 rounded-full transition-all duration-300
-                  ${
+                className="rounded-full transition-all duration-300 ease-out"
+                style={{
+                  width: index === currentStep ? 20 : 6,
+                  height: 6,
+                  backgroundColor:
                     index === currentStep
-                      ? "w-6 bg-indigo-500"
+                      ? "#6366f1"
                       : index < currentStep
-                        ? "w-2 bg-indigo-300"
-                        : "w-2 bg-gray-200"
-                  }
-                `}
+                        ? "#a5b4fc"
+                        : "#e5e7eb",
+                }}
               />
             ))}
           </div>
 
-          <div className="flex gap-3">
+          {/* Buttons */}
+          <div className="flex gap-2">
             {currentStep > 0 && stepPhase !== "animate-cursor" && (
               <Button
                 variant="outline"
-                onClick={() => {
-                  setCurrentStep(currentStep - 1);
-                  setStepPhase("highlight");
-                  setShowCursor(false);
-                  router.push("/dashboard");
-                }}
-                className="flex-1 rounded-xl"
+                onClick={handleBack}
+                className="flex-1 rounded-lg h-9 text-sm"
                 size="sm"
               >
                 Back
@@ -463,26 +497,27 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
             )}
 
             {stepPhase === "animate-cursor" ? (
-              <div className="flex-1 text-sm text-gray-500 py-2">
-                Navigating...
+              <div className="flex-1 flex items-center justify-center text-sm text-gray-400 py-2">
+                <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-2" />
+                Loading...
               </div>
             ) : isLastStep ? (
               <Button
                 onClick={handleGetStarted}
-                className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-600"
+                className="flex-1 rounded-lg h-9 text-sm bg-indigo-500 hover:bg-indigo-600"
                 size="sm"
               >
-                Create Your First Decision
-                <ArrowRight className="w-4 h-4 ml-2" />
+                Get Started
+                <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             ) : (
               <Button
                 onClick={handleNext}
-                className="flex-1 rounded-xl"
+                className="flex-1 rounded-lg h-9 text-sm"
                 size="sm"
               >
                 {isFirstStep ? "Take a Tour" : "Next"}
-                <ArrowRight className="w-4 h-4 ml-2" />
+                <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             )}
           </div>
@@ -490,13 +525,35 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
           {!isLastStep && stepPhase !== "animate-cursor" && (
             <button
               onClick={handleSkip}
-              className="mt-3 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              className="mt-3 text-xs text-gray-400 hover:text-gray-500 transition-colors"
             >
               Skip tour
             </button>
           )}
         </div>
       </div>
+
+      {/* Global styles for animations */}
+      <style jsx global>{`
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+        @keyframes ping {
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(2);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </div>
   );
 }
