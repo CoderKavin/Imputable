@@ -326,20 +326,26 @@ export function MindMapView({
 
     setIsCreatingConnection(true);
     try {
-      await client.post("/decisions/relationships", {
+      const response = await client.post("/decisions/relationships", {
         source_decision_id: pendingConnection.source,
         target_decision_id: pendingConnection.target,
         relationship_type: relationshipType,
       });
+      console.log("Relationship created:", response.data);
       await fetchRelationships();
-      setPendingConnection(null);
     } catch (error: any) {
       console.error("Failed to create relationship:", error);
       if (error.response?.status === 409) {
         alert("This relationship already exists");
+      } else {
+        alert(
+          error.response?.data?.error ||
+            "Failed to create relationship. Please try again.",
+        );
       }
     } finally {
       setIsCreatingConnection(false);
+      setPendingConnection(null);
     }
   };
 
