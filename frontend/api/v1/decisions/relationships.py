@@ -278,7 +278,6 @@ class handler(BaseHTTPRequestHandler):
                                 dr.relationship_type::text,
                                 dr.description,
                                 dr.confidence_score,
-                                dr.is_ai_generated,
                                 dr.created_at,
                                 sd.decision_number as source_number,
                                 sd.status::text as source_status,
@@ -309,7 +308,6 @@ class handler(BaseHTTPRequestHandler):
                                 dr.relationship_type::text,
                                 dr.description,
                                 dr.confidence_score,
-                                dr.is_ai_generated,
                                 dr.created_at,
                                 sd.decision_number as source_number,
                                 sd.status::text as source_status,
@@ -338,21 +336,20 @@ class handler(BaseHTTPRequestHandler):
                             "relationship_type": row[3],
                             "description": row[4],
                             "confidence_score": row[5],
-                            "is_ai_generated": row[6],
-                            "created_at": row[7].isoformat() if row[7] else None,
+                            "created_at": row[6].isoformat() if row[6] else None,
                             "source_decision": {
                                 "id": str(row[1]),
-                                "decision_number": row[8],
-                                "status": row[9],
-                                "title": row[10],
-                                "impact_level": row[11]
+                                "decision_number": row[7],
+                                "status": row[8],
+                                "title": row[9],
+                                "impact_level": row[10]
                             },
                             "target_decision": {
                                 "id": str(row[2]),
-                                "decision_number": row[12],
-                                "status": row[13],
-                                "title": row[14],
-                                "impact_level": row[15]
+                                "decision_number": row[11],
+                                "status": row[12],
+                                "title": row[13],
+                                "impact_level": row[14]
                             }
                         })
 
@@ -446,8 +443,8 @@ class handler(BaseHTTPRequestHandler):
                             conn.execute(text("""
                                 INSERT INTO decision_relationships
                                 (id, source_decision_id, target_decision_id,
-                                 relationship_type, description, confidence_score, is_ai_generated, created_by, created_at)
-                                VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, :conf, true, :user_id, NOW())
+                                 relationship_type, description, confidence_score, created_by, created_at)
+                                VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, :conf, :user_id, NOW())
                             """), {
                                 "id": rel_id,
                                 "src": rel["source_id"],
@@ -463,8 +460,7 @@ class handler(BaseHTTPRequestHandler):
                                 "target_decision_id": rel["target_id"],
                                 "relationship_type": rel["relationship_type"],
                                 "description": rel.get("description", ""),
-                                "confidence_score": rel.get("confidence", 0.7),
-                                "is_ai_generated": True
+                                "confidence_score": rel.get("confidence", 0.7)
                             })
                             existing.add(key)
 
@@ -514,8 +510,8 @@ class handler(BaseHTTPRequestHandler):
                         conn.execute(text("""
                             INSERT INTO decision_relationships
                             (id, source_decision_id, target_decision_id,
-                             relationship_type, description, is_ai_generated, created_by, created_at)
-                            VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, false, :user_id, NOW())
+                             relationship_type, description, created_by, created_at)
+                            VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, :user_id, NOW())
                         """), {
                             "id": rel_id,
                             "src": source_id,
@@ -531,8 +527,7 @@ class handler(BaseHTTPRequestHandler):
                             "source_decision_id": source_id,
                             "target_decision_id": target_id,
                             "relationship_type": rel_type,
-                            "description": description,
-                            "is_ai_generated": False
+                            "description": description
                         })
 
                 # DELETE - handled by [id].py in the same folder
