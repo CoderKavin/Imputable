@@ -174,7 +174,14 @@ def analyze_with_gemini(messages: list, channel_name: str = None, hint: str = No
         elif "```" in text:
             text = text.split("```")[1].split("```")[0]
 
-        return json.loads(text.strip())
+        result = json.loads(text.strip())
+
+        # Ensure we got a dict, not a list or other type
+        if not isinstance(result, dict):
+            print(f"Gemini returned non-dict type: {type(result)}")
+            return None
+
+        return result
     except Exception as e:
         print(f"Gemini API error: {e}")
         return None
@@ -1104,12 +1111,18 @@ class SlackModals:
     @staticmethod
     def ai_prefilled_modal(analysis: dict, channel_id: str, message_ts: str, thread_ts: str = None):
         """Build modal pre-filled with AI-analyzed decision content."""
+        # Ensure analysis is a dict
+        if not isinstance(analysis, dict):
+            analysis = {}
+
         # Format alternatives
         alternatives_text = ""
-        if analysis.get("alternatives"):
+        alternatives = analysis.get("alternatives", [])
+        if alternatives and isinstance(alternatives, list):
             alt_lines = []
-            for alt in analysis.get("alternatives", [])[:5]:
-                alt_lines.append(f"- {alt.get('name', 'Unknown')}: {alt.get('rejected_reason', 'No reason given')}")
+            for alt in alternatives[:5]:
+                if isinstance(alt, dict):
+                    alt_lines.append(f"- {alt.get('name', 'Unknown')}: {alt.get('rejected_reason', 'No reason given')}")
             alternatives_text = "\n".join(alt_lines)
 
         # Confidence display
