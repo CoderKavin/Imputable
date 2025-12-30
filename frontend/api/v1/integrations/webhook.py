@@ -2617,22 +2617,24 @@ class handler(BaseHTTPRequestHandler):
                             votes = {"agree": [], "concern": [], "block": []}
                             blocks = SlackBlocks.consensus_poll(decision_id, next_num, question[:255], votes, "pending_review", channel_member_count, user_id)
 
-                            # Post to channel
-                            if token:
-                                msg_payload = json.dumps({
-                                    "channel": channel_id,
+                            # Replace loading message with poll via response_url
+                            if response_url:
+                                poll_payload = json.dumps({
+                                    "response_type": "in_channel",
+                                    "replace_original": True,
                                     "text": f"Poll: {question[:100]}",
                                     "blocks": blocks
                                 }).encode()
                                 req = urllib.request.Request(
-                                    "https://slack.com/api/chat.postMessage",
-                                    data=msg_payload,
-                                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                    response_url,
+                                    data=poll_payload,
+                                    headers={"Content-Type": "application/json"}
                                 )
                                 try:
                                     urllib.request.urlopen(req, timeout=10)
+                                    print(f"[SLACK ASYNC POLL] Posted poll via response_url")
                                 except Exception as e:
-                                    print(f"[SLACK ASYNC POLL] Failed to post message: {e}")
+                                    print(f"[SLACK ASYNC POLL] Failed to post poll: {e}")
 
                 except Exception as e:
                     print(f"[SLACK ASYNC POLL] Error: {e}")
@@ -2737,9 +2739,10 @@ class handler(BaseHTTPRequestHandler):
                                         matched_decisions.append((d["id"], d["decision_number"], d["title"], d["status"]))
                                 blocks = SlackBlocks.semantic_search_results(query, matched_decisions, explanation, best_match)
 
-                            # Send results via response_url (no replace_original since we sent empty response)
+                            # Send results via response_url, replacing the "Searching..." message
                             results_payload = json.dumps({
                                 "response_type": "ephemeral",
+                                "replace_original": True,
                                 "blocks": blocks
                             }).encode()
                             req = urllib.request.Request(response_url, data=results_payload, headers={"Content-Type": "application/json"})
@@ -2992,8 +2995,8 @@ class handler(BaseHTTPRequestHandler):
                     except:
                         pass  # Expected to timeout
 
-                    # Respond with empty 200 - the async handler will post via response_url
-                    self._send(200, {})
+                    # Respond with loading message - async handler will replace it
+                    self._send(200, {"response_type": "in_channel", "text": ":hourglass_flowing_sand: Creating poll..."})
                     return
 
                 # Search command needs async processing (Gemini API can be slow)
@@ -3022,8 +3025,8 @@ class handler(BaseHTTPRequestHandler):
                     except:
                         pass  # Expected to timeout
 
-                    # Respond with empty 200 - the async handler will post via response_url
-                    self._send(200, {})
+                    # Respond with loading message - async handler will replace it
+                    self._send(200, {"response_type": "ephemeral", "text": ":mag: Searching..."})
                     return
 
             # For Slack interactions, handle message shortcuts BEFORE database connection
