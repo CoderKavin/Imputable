@@ -3034,6 +3034,115 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
                 return
 
+            # Async handler for /decision log AI analysis
+            if platform == "slack" and req_type == "async_log":
+                print(f"[SLACK ASYNC LOG] Received async log request")
+                try:
+                    data = json.loads(body.decode())
+                    view_id = data.get("view_id", "")
+                    channel_id = data.get("channel_id", "")
+                    hint = data.get("hint", "")
+                    token = data.get("token", "")
+
+                    if not view_id or not token:
+                        print(f"[SLACK ASYNC LOG] Missing view_id or token")
+                        self._send(200, {"ok": False})
+                        return
+
+                    # Fetch recent messages
+                    print(f"[SLACK ASYNC LOG] Fetching messages for channel {channel_id}")
+                    messages = fetch_recent_channel_messages(token, channel_id, limit=50)
+                    print(f"[SLACK ASYNC LOG] Got {len(messages) if messages else 0} messages")
+
+                    if messages:
+                        messages = resolve_slack_user_names(token, messages)
+
+                        # Get channel name
+                        channel_name = ""
+                        try:
+                            channel_req = urllib.request.Request(
+                                f"https://slack.com/api/conversations.info?channel={channel_id}",
+                                headers={"Authorization": f"Bearer {token}"}
+                            )
+                            channel_resp = urllib.request.urlopen(channel_req, timeout=5)
+                            channel_data = json.loads(channel_resp.read().decode())
+                            if channel_data.get("ok"):
+                                channel_name = channel_data.get("channel", {}).get("name", "")
+                        except:
+                            pass
+
+                        # AI analysis
+                        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+                        if gemini_key:
+                            print(f"[SLACK ASYNC LOG] Starting AI analysis")
+                            analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
+                            print(f"[SLACK ASYNC LOG] AI analysis done, got result: {bool(analysis)}")
+                            if analysis:
+                                latest_ts = messages[-1].get("timestamp", "") if messages else ""
+                                modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
+                            else:
+                                prefill_title = hint if hint else "Decision from recent conversation"
+                                modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
+                        else:
+                            print(f"[SLACK ASYNC LOG] No GEMINI_API_KEY, using basic modal")
+                            prefill_title = hint if hint else "Decision from recent conversation"
+                            modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
+
+                        # Update modal with results
+                        print(f"[SLACK ASYNC LOG] Updating modal {view_id}")
+                        update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
+                        update_req = urllib.request.Request(
+                            "https://slack.com/api/views.update",
+                            data=update_data,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                        )
+                        update_resp = urllib.request.urlopen(update_req, timeout=10)
+                        update_resp_data = json.loads(update_resp.read().decode())
+                        print(f"[SLACK ASYNC LOG] Modal update response: ok={update_resp_data.get('ok')}, error={update_resp_data.get('error')}")
+                    else:
+                        # No messages - show error modal
+                        error_modal = {
+                            "type": "modal",
+                            "callback_id": "log_error_modal",
+                            "title": {"type": "plain_text", "text": "No Messages"},
+                            "close": {"type": "plain_text", "text": "Close"},
+                            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: No recent messages found in this channel to analyze."}}]
+                        }
+                        update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                        update_req = urllib.request.Request(
+                            "https://slack.com/api/views.update",
+                            data=update_data,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                        )
+                        urllib.request.urlopen(update_req, timeout=5)
+
+                except Exception as e:
+                    print(f"[SLACK ASYNC LOG] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Try to update modal with error
+                    try:
+                        if view_id and token:
+                            error_modal = {
+                                "type": "modal",
+                                "callback_id": "log_error_modal",
+                                "title": {"type": "plain_text", "text": "Error"},
+                                "close": {"type": "plain_text", "text": "Close"},
+                                "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: *Failed to analyze conversation.*\n\nPlease try again or use `/decision add` to create a decision manually."}}]
+                            }
+                            update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                            update_req = urllib.request.Request(
+                                "https://slack.com/api/views.update",
+                                data=update_data,
+                                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                            )
+                            urllib.request.urlopen(update_req, timeout=5)
+                    except:
+                        pass
+
+                self._send(200, {"ok": True})
+                return
+
             # FAST PATH for slash commands - respond immediately, process async
             if platform == "slack" and req_type == "command":
                 # Verify signature first
@@ -3224,96 +3333,29 @@ class handler(BaseHTTPRequestHandler):
                         print(f"[SLACK LOG] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
                         view_id = resp_data.get("view", {}).get("id") if resp_data.get("ok") else None
 
-                        # Now do AI analysis and update modal
                         if view_id:
+                            # Fire async request for AI analysis - respond to Slack immediately
+                            webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                            async_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_log"
+
+                            async_payload = json.dumps({
+                                "view_id": view_id,
+                                "channel_id": channel_id,
+                                "hint": hint,
+                                "token": token  # Pass token to avoid another DB lookup
+                            }).encode()
+
+                            async_req = urllib.request.Request(
+                                async_url,
+                                data=async_payload,
+                                headers={"Content-Type": "application/json"}
+                            )
                             try:
-                                # Fetch recent messages
-                                print(f"[SLACK LOG] Fetching messages, elapsed: {_time.time() - _start:.3f}s")
-                                messages = fetch_recent_channel_messages(token, channel_id, limit=50)
-                                print(f"[SLACK LOG] Got {len(messages) if messages else 0} messages, elapsed: {_time.time() - _start:.3f}s")
+                                urllib.request.urlopen(async_req, timeout=0.1)
+                            except:
+                                pass  # Expected to timeout, that's fine
 
-                                if messages:
-                                    messages = resolve_slack_user_names(token, messages)
-                                    print(f"[SLACK LOG] Resolved user names, elapsed: {_time.time() - _start:.3f}s")
-
-                                    # Get channel name
-                                    channel_name = ""
-                                    try:
-                                        channel_req = urllib.request.Request(
-                                            f"https://slack.com/api/conversations.info?channel={channel_id}",
-                                            headers={"Authorization": f"Bearer {token}"}
-                                        )
-                                        channel_resp = urllib.request.urlopen(channel_req, timeout=5)
-                                        channel_data = json.loads(channel_resp.read().decode())
-                                        if channel_data.get("ok"):
-                                            channel_name = channel_data.get("channel", {}).get("name", "")
-                                    except:
-                                        pass
-
-                                    # AI analysis
-                                    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-                                    if gemini_key:
-                                        print(f"[SLACK LOG] Starting AI analysis, elapsed: {_time.time() - _start:.3f}s")
-                                        analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
-                                        print(f"[SLACK LOG] AI analysis done, got result: {bool(analysis)}, elapsed: {_time.time() - _start:.3f}s")
-                                        if analysis:
-                                            latest_ts = messages[-1].get("timestamp", "") if messages else ""
-                                            modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
-                                        else:
-                                            prefill_title = hint if hint else "Decision from recent conversation"
-                                            modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
-                                    else:
-                                        print(f"[SLACK LOG] No GEMINI_API_KEY, using basic modal")
-                                        prefill_title = hint if hint else "Decision from recent conversation"
-                                        modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
-
-                                    # Update modal with results
-                                    print(f"[SLACK LOG] Updating modal, elapsed: {_time.time() - _start:.3f}s")
-                                    update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
-                                    update_req = urllib.request.Request(
-                                        "https://slack.com/api/views.update",
-                                        data=update_data,
-                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                                    )
-                                    update_resp = urllib.request.urlopen(update_req, timeout=10)
-                                    update_resp_data = json.loads(update_resp.read().decode())
-                                    print(f"[SLACK LOG] Modal update response: ok={update_resp_data.get('ok')}, error={update_resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
-                                else:
-                                    # No messages - show error modal
-                                    error_modal = {
-                                        "type": "modal",
-                                        "callback_id": "log_error_modal",
-                                        "title": {"type": "plain_text", "text": "No Messages"},
-                                        "close": {"type": "plain_text", "text": "Close"},
-                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: No recent messages found in this channel to analyze."}}]
-                                    }
-                                    update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
-                                    update_req = urllib.request.Request(
-                                        "https://slack.com/api/views.update",
-                                        data=update_data,
-                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                                    )
-                                    urllib.request.urlopen(update_req, timeout=5)
-                            except Exception as e:
-                                print(f"[SLACK LOG] AI analysis error: {e}, elapsed: {_time.time() - _start:.3f}s")
-                                # Update modal with error message so it doesn't stay stuck
-                                try:
-                                    error_modal = {
-                                        "type": "modal",
-                                        "callback_id": "log_error_modal",
-                                        "title": {"type": "plain_text", "text": "Error"},
-                                        "close": {"type": "plain_text", "text": "Close"},
-                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: *Failed to analyze conversation.*\n\nPlease try again or use `/decision add` to create a decision manually."}}]
-                                    }
-                                    update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
-                                    update_req = urllib.request.Request(
-                                        "https://slack.com/api/views.update",
-                                        data=update_data,
-                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-                                    )
-                                    urllib.request.urlopen(update_req, timeout=5)
-                                except:
-                                    pass
+                        # Respond immediately to Slack
                         self._send(200, {"response_type": "ephemeral", "text": ""})
                     except Exception as e:
                         print(f"[SLACK FAST PATH] Failed to open log modal: {e}")
