@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   X,
   FileText,
@@ -20,55 +20,91 @@ interface WelcomeModalProps {
   onComplete?: () => void;
 }
 
-const steps = [
+interface TourStep {
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  color: string;
+  // Element selector to highlight (null for centered modal)
+  highlightSelector?: string;
+  // Position of tooltip relative to highlighted element
+  position?: "top" | "bottom" | "left" | "right" | "center";
+}
+
+const steps: TourStep[] = [
   {
     title: "Welcome to Imputable",
     description:
       "The decision tracking platform that helps engineering teams document, track, and audit their key decisions.",
     icon: Sparkles,
     color: "bg-indigo-500",
+    position: "center",
   },
   {
     title: "Create Decisions",
     description:
-      "Document engineering decisions with context, alternatives considered, and expected outcomes. Every change creates a new version - nothing is ever lost.",
+      "Click here to document engineering decisions with context, alternatives, and expected outcomes. Every change creates a new version - nothing is ever lost.",
     icon: FileText,
     color: "bg-emerald-500",
+    highlightSelector: '[href="/decisions"]',
+    position: "right",
   },
   {
     title: "Visualize Relationships",
     description:
-      "Use the Mind Map view to see how decisions connect. AI can automatically discover relationships between your decisions.",
+      "Switch to Mind Map view to see how decisions connect. AI can automatically discover relationships between your decisions.",
     icon: GitBranch,
     color: "bg-purple-500",
+    highlightSelector: '[href="/decisions"]',
+    position: "right",
   },
   {
     title: "Works Best with Slack & Teams",
     description:
-      "Connect Slack or Microsoft Teams to create decisions without leaving your workflow. Get instant notifications when decisions need your review.",
+      "Connect Slack or Microsoft Teams in Settings to create decisions without leaving your workflow.",
     icon: MessageSquare,
     color: "bg-blue-500",
+    highlightSelector: '[href="/settings"]',
+    position: "right",
   },
   {
-    title: "Review & Approve",
+    title: "Audit Trail",
     description:
-      "Set up approval workflows for important decisions. Track who approved what and when with full audit trails.",
+      "Every action is logged. View the complete history of all decisions and changes for compliance and accountability.",
     icon: Shield,
     color: "bg-amber-500",
+    highlightSelector: '[href="/audit"]',
+    position: "right",
   },
   {
-    title: "Risk Monitoring",
+    title: "You're All Set!",
     description:
-      "Get alerted when decisions may need review. The risk dashboard helps you stay on top of decisions that might be impacted by changes.",
+      "Start by creating your first decision. You can always access help from the sidebar if you need guidance.",
     icon: Bell,
     color: "bg-rose-500",
+    position: "center",
   },
 ];
 
 export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const router = useRouter();
+
+  // Find and measure the highlighted element
+  const updateHighlight = useCallback(() => {
+    const step = steps[currentStep];
+    if (step.highlightSelector) {
+      const element = document.querySelector(step.highlightSelector);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        setHighlightRect(rect);
+        return;
+      }
+    }
+    setHighlightRect(null);
+  }, [currentStep]);
 
   useEffect(() => {
     // Check if onboarding is already complete
@@ -81,6 +117,15 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      updateHighlight();
+      // Update on resize
+      window.addEventListener("resize", updateHighlight);
+      return () => window.removeEventListener("resize", updateHighlight);
+    }
+  }, [isOpen, currentStep, updateHighlight]);
 
   const handleComplete = () => {
     localStorage.setItem(ONBOARDING_KEY, "true");
@@ -109,15 +154,84 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
 
   const step = steps[currentStep];
   const isLastStep = currentStep === steps.length - 1;
+  const isFirstStep = currentStep === 0;
+  const isCentered = step.position === "center" || !highlightRect;
   const Icon = step.icon;
 
-  return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+  // Calculate tooltip position based on highlighted element
+  const getTooltipStyle = (): React.CSSProperties => {
+    if (isCentered || !highlightRect) {
+      return {
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+      };
+    }
 
-      {/* Modal */}
-      <div className="relative z-[301] bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+    const padding = 16;
+    const tooltipWidth = 380;
+
+    // Position to the right of the sidebar element
+    return {
+      position: "fixed",
+      top: highlightRect.top + highlightRect.height / 2,
+      left: highlightRect.right + padding + 20,
+      transform: "translateY(-50%)",
+      maxWidth: tooltipWidth,
+    };
+  };
+
+  return (
+    <div className="fixed inset-0 z-[300]">
+      {/* Backdrop with cutout for highlighted element */}
+      {isCentered ? (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      ) : (
+        <>
+          {/* Dark overlay with hole for highlighted element */}
+          <div className="absolute inset-0 bg-black/60" />
+          {highlightRect && (
+            <>
+              {/* Highlight ring around element */}
+              <div
+                className="absolute z-[301] rounded-2xl ring-4 ring-indigo-500 ring-offset-4 ring-offset-transparent bg-transparent pointer-events-none transition-all duration-300"
+                style={{
+                  top: highlightRect.top - 8,
+                  left: highlightRect.left - 8,
+                  width: highlightRect.width + 16,
+                  height: highlightRect.height + 16,
+                  boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
+                }}
+              />
+              {/* Pulse animation */}
+              <div
+                className="absolute z-[300] rounded-2xl animate-ping bg-indigo-500/30 pointer-events-none"
+                style={{
+                  top: highlightRect.top - 8,
+                  left: highlightRect.left - 8,
+                  width: highlightRect.width + 16,
+                  height: highlightRect.height + 16,
+                }}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {/* Tooltip/Modal */}
+      <div
+        className="z-[302] bg-white rounded-3xl shadow-2xl overflow-hidden"
+        style={getTooltipStyle()}
+      >
+        {/* Arrow pointing to element (only when not centered) */}
+        {!isCentered && highlightRect && (
+          <div
+            className="absolute w-4 h-4 bg-white transform rotate-45 -left-2 top-1/2 -translate-y-1/2"
+            style={{ boxShadow: "-2px 2px 4px rgba(0,0,0,0.1)" }}
+          />
+        )}
+
         {/* Skip button */}
         <button
           onClick={handleSkip}
@@ -127,38 +241,36 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
         </button>
 
         {/* Content */}
-        <div className="p-8 pt-12 text-center">
+        <div className={`p-6 ${isCentered ? "pt-10" : "pt-6"} text-center`}>
           {/* Icon */}
           <div
-            className={`w-16 h-16 ${step.color} rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg`}
+            className={`w-14 h-14 ${step.color} rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg`}
           >
-            <Icon className="w-8 h-8 text-white" />
+            <Icon className="w-7 h-7 text-white" />
           </div>
 
           {/* Title */}
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">
-            {step.title}
-          </h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{step.title}</h2>
 
           {/* Description */}
-          <p className="text-gray-600 leading-relaxed mb-8">
+          <p className="text-gray-600 text-sm leading-relaxed mb-6">
             {step.description}
           </p>
 
           {/* Progress dots */}
-          <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="flex items-center justify-center gap-2 mb-6">
             {steps.map((_, index) => (
               <button
                 key={index}
                 onClick={() => setCurrentStep(index)}
                 className={`
-                  w-2 h-2 rounded-full transition-all duration-300
+                  h-2 rounded-full transition-all duration-300
                   ${
                     index === currentStep
-                      ? "w-8 bg-indigo-500"
+                      ? "w-6 bg-indigo-500"
                       : index < currentStep
-                        ? "bg-indigo-300"
-                        : "bg-gray-200"
+                        ? "w-2 bg-indigo-300"
+                        : "w-2 bg-gray-200"
                   }
                 `}
               />
@@ -172,6 +284,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
                 variant="outline"
                 onClick={() => setCurrentStep(currentStep - 1)}
                 className="flex-1 rounded-xl"
+                size="sm"
               >
                 Back
               </Button>
@@ -181,13 +294,18 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
               <Button
                 onClick={handleGetStarted}
                 className="flex-1 rounded-xl bg-indigo-500 hover:bg-indigo-600"
+                size="sm"
               >
                 Create Your First Decision
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button onClick={handleNext} className="flex-1 rounded-xl">
-                Next
+              <Button
+                onClick={handleNext}
+                className="flex-1 rounded-xl"
+                size="sm"
+              >
+                {isFirstStep ? "Take a Tour" : "Next"}
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             )}
@@ -197,9 +315,9 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
           {!isLastStep && (
             <button
               onClick={handleSkip}
-              className="mt-4 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+              className="mt-3 text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
-              Skip intro
+              Skip tour
             </button>
           )}
         </div>
