@@ -109,7 +109,9 @@ export default function AuditExportPage() {
       };
     },
     enabled: !!user && !!currentOrganization?.id,
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000,
+    placeholderData: (prev) => prev, // Show previous data while fetching
   });
 
   // Fetch decisions for report generation

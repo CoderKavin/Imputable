@@ -97,7 +97,7 @@ function DecisionsPageContent() {
     }
   }, [searchParams]);
   // Use server-side filtering when a status is selected, otherwise fetch a reasonable page size
-  const { data, isLoading, error } = useDecisionList(
+  const { data, isLoading, isFetching, error } = useDecisionList(
     page,
     20, // Reduced from 100 - server handles filtering, no need to overfetch
     statusFilter !== "all" ? statusFilter : undefined,
@@ -109,6 +109,9 @@ function DecisionsPageContent() {
   // Server handles filtering now, just use the data directly
   const decisions = data?.items || [];
   const totalPages = data?.total_pages || 1;
+
+  // Only show loading skeleton on first load, not background refetches
+  const showSkeleton = isLoading && !data;
 
   // Reset to page 1 when filter changes
   const handleFilterChange = (filter: StatusFilter) => {
@@ -224,7 +227,7 @@ function DecisionsPageContent() {
           </div>
 
           {/* Content */}
-          {isLoading ? (
+          {showSkeleton ? (
             <DecisionListSkeleton count={6} />
           ) : error ? (
             <ErrorState />

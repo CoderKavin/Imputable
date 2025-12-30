@@ -24,11 +24,16 @@ interface DashboardContentProps {
 
 export function DashboardContent({ hasOrg }: DashboardContentProps) {
   // Only fetch 10 decisions for dashboard - we only display 5 anyway
-  const { data: decisionData, isLoading: decisionsLoading } = useDecisionList(
-    1,
-    10,
-  );
-  const { data: riskStats, isLoading: riskLoading } = useRiskStats();
+  const {
+    data: decisionData,
+    isLoading: decisionsLoading,
+    isFetching: decisionsFetching,
+  } = useDecisionList(1, 10);
+  const {
+    data: riskStats,
+    isLoading: riskLoading,
+    isFetching: riskFetching,
+  } = useRiskStats();
   const { organizations, currentOrganization } = useOrganization();
 
   if (!hasOrg) {
@@ -49,7 +54,10 @@ export function DashboardContent({ hasOrg }: DashboardContentProps) {
   // Get the 5 most recent decisions for the activity feed
   const recentDecisions = decisionData?.items?.slice(0, 5) || [];
 
-  const isLoading = decisionsLoading || riskLoading;
+  // Only show loading on FIRST load, not background refetches
+  // If we have data, show it even while fetching in background
+  const hasData = !!decisionData || !!riskStats;
+  const isLoading = (decisionsLoading || riskLoading) && !hasData;
 
   return (
     <div className="space-y-8">
