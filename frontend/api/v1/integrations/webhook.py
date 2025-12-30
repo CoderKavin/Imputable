@@ -3041,7 +3041,6 @@ class handler(BaseHTTPRequestHandler):
 
             # Async handler for /decision log AI analysis
             if platform == "slack" and req_type == "async_log":
-                print(f"[SLACK ASYNC LOG] Received async log request")
                 try:
                     data = json.loads(body.decode())
                     view_id = data.get("view_id", "")
@@ -3050,14 +3049,11 @@ class handler(BaseHTTPRequestHandler):
                     token = data.get("token", "")
 
                     if not view_id or not token:
-                        print(f"[SLACK ASYNC LOG] Missing view_id or token")
                         self._send(200, {"ok": False})
                         return
 
                     # Fetch recent messages
-                    print(f"[SLACK ASYNC LOG] Fetching messages for channel {channel_id}")
                     messages = fetch_recent_channel_messages(token, channel_id, limit=50)
-                    print(f"[SLACK ASYNC LOG] Got {len(messages) if messages else 0} messages")
 
                     if messages:
                         messages = resolve_slack_user_names(token, messages)
@@ -3079,9 +3075,7 @@ class handler(BaseHTTPRequestHandler):
                         # AI analysis
                         gemini_key = os.environ.get("GEMINI_API_KEY", "")
                         if gemini_key:
-                            print(f"[SLACK ASYNC LOG] Starting AI analysis")
                             analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
-                            print(f"[SLACK ASYNC LOG] AI analysis done, got result: {bool(analysis)}")
                             if analysis:
                                 latest_ts = messages[-1].get("timestamp", "") if messages else ""
                                 modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
@@ -3089,21 +3083,17 @@ class handler(BaseHTTPRequestHandler):
                                 prefill_title = hint if hint else "Decision from recent conversation"
                                 modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
                         else:
-                            print(f"[SLACK ASYNC LOG] No GEMINI_API_KEY, using basic modal")
                             prefill_title = hint if hint else "Decision from recent conversation"
                             modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
 
                         # Update modal with results
-                        print(f"[SLACK ASYNC LOG] Updating modal {view_id}")
                         update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
                         update_req = urllib.request.Request(
                             "https://slack.com/api/views.update",
                             data=update_data,
                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                         )
-                        update_resp = urllib.request.urlopen(update_req, timeout=10)
-                        update_resp_data = json.loads(update_resp.read().decode())
-                        print(f"[SLACK ASYNC LOG] Modal update response: ok={update_resp_data.get('ok')}, error={update_resp_data.get('error')}")
+                        urllib.request.urlopen(update_req, timeout=10)
                     else:
                         # No messages - show error modal
                         error_modal = {
@@ -3122,9 +3112,7 @@ class handler(BaseHTTPRequestHandler):
                         urllib.request.urlopen(update_req, timeout=5)
 
                 except Exception as e:
-                    print(f"[SLACK ASYNC LOG] Error: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    print(f"[SLACK] Async log error: {e}")
                     # Try to update modal with error
                     try:
                         if view_id and token:
@@ -3235,10 +3223,6 @@ class handler(BaseHTTPRequestHandler):
 
                 # Add/create/new command - open modal immediately
                 if cmd_text.startswith(("add ", "create ", "new ")):
-                    import time as _time
-                    _start = _time.time()
-                    print(f"[SLACK ADD] Starting fast path at {_start}")
-
                     trigger_id = form_data.get("trigger_id", "")
                     team_id = form_data.get("team_id", "")
                     prefill = form_data.get("text", "").split(" ", 1)[1] if " " in form_data.get("text", "") else ""
@@ -3249,7 +3233,6 @@ class handler(BaseHTTPRequestHandler):
 
                     # Try env var first (fastest)
                     token = os.environ.get("SLACK_BOT_TOKEN", "")
-                    print(f"[SLACK ADD] Token from env: {'YES' if token else 'NO'}, elapsed: {_time.time() - _start:.3f}s")
 
                     # Fallback to DB if needed
                     if not token:
@@ -3272,23 +3255,16 @@ class handler(BaseHTTPRequestHandler):
                         data=payload_data,
                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                     )
-                    print(f"[SLACK ADD] About to call views.open, elapsed: {_time.time() - _start:.3f}s")
                     try:
-                        resp = urllib.request.urlopen(req, timeout=5)
-                        resp_data = json.loads(resp.read().decode())
-                        print(f"[SLACK ADD] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
+                        urllib.request.urlopen(req, timeout=5)
                         self._send(200, {})
                     except Exception as e:
-                        print(f"[SLACK ADD] Failed to open modal: {e}, elapsed: {_time.time() - _start:.3f}s")
+                        print(f"[SLACK] Failed to open add modal: {e}")
                         self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
                     return
 
-                # Log command - open loading modal immediately, then do AI analysis
+                # Log command - open loading modal immediately, then do AI analysis async
                 if cmd_text == "log" or cmd_text.startswith("log "):
-                    import time as _time
-                    _start = _time.time()
-                    print(f"[SLACK LOG] Starting fast path at {_start}")
-
                     trigger_id = form_data.get("trigger_id", "")
                     team_id = form_data.get("team_id", "")
                     channel_id = form_data.get("channel_id", "")
@@ -3300,7 +3276,6 @@ class handler(BaseHTTPRequestHandler):
 
                     # Try env var first (fastest)
                     token = os.environ.get("SLACK_BOT_TOKEN", "")
-                    print(f"[SLACK LOG] Token from env: {'YES' if token else 'NO'}, elapsed: {_time.time() - _start:.3f}s")
 
                     # Fallback to DB if needed
                     if not token:
@@ -3331,15 +3306,13 @@ class handler(BaseHTTPRequestHandler):
                         data=payload_data,
                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                     )
-                    print(f"[SLACK LOG] About to call views.open, elapsed: {_time.time() - _start:.3f}s")
                     try:
                         resp = urllib.request.urlopen(req, timeout=5)
                         resp_data = json.loads(resp.read().decode())
-                        print(f"[SLACK LOG] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
                         view_id = resp_data.get("view", {}).get("id") if resp_data.get("ok") else None
 
                         if view_id:
-                            # Fire async request for AI analysis - respond to Slack immediately
+                            # Fire async request for AI analysis
                             webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
                             async_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_log"
 
@@ -3347,7 +3320,7 @@ class handler(BaseHTTPRequestHandler):
                                 "view_id": view_id,
                                 "channel_id": channel_id,
                                 "hint": hint,
-                                "token": token  # Pass token to avoid another DB lookup
+                                "token": token
                             }).encode()
 
                             async_req = urllib.request.Request(
@@ -3358,12 +3331,11 @@ class handler(BaseHTTPRequestHandler):
                             try:
                                 urllib.request.urlopen(async_req, timeout=0.1)
                             except:
-                                pass  # Expected to timeout, that's fine
+                                pass  # Expected to timeout
 
-                        # Respond immediately to Slack (empty response = no message shown)
                         self._send(200, {})
                     except Exception as e:
-                        print(f"[SLACK FAST PATH] Failed to open log modal: {e}")
+                        print(f"[SLACK] Failed to open log modal: {e}")
                         self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
                     return
 
