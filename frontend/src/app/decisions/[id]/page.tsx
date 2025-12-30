@@ -8,15 +8,18 @@
  * - version: specific version to view (time travel)
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { DecisionView } from "@/components/decision/DecisionView";
 import { ProposeChangeModal } from "@/components/decision/ProposeChangeModal";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2 } from "lucide-react";
 
 export default function DecisionPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
   const decisionId = params.id as string;
   const initialVersion = searchParams.get("version")
@@ -24,6 +27,41 @@ export default function DecisionPage() {
     : undefined;
 
   const [showProposeChange, setShowProposeChange] = useState(false);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      // Store the current URL to redirect back after login
+      const returnUrl = encodeURIComponent(
+        window.location.pathname + window.location.search,
+      );
+      router.push(`/login?returnUrl=${returnUrl}`);
+    }
+  }, [authLoading, user, router]);
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50/50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50/50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="text-sm text-gray-500">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleProposeChange = useCallback(() => {
     setShowProposeChange(true);

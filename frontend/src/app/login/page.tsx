@@ -1,17 +1,23 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Legacy login page - redirects to the new Firebase sign-in page.
  */
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    router.replace("/sign-in");
-  }, [router]);
+    const returnUrl = searchParams.get("returnUrl");
+    if (returnUrl) {
+      router.replace(`/sign-in?returnUrl=${encodeURIComponent(returnUrl)}`);
+    } else {
+      router.replace("/sign-in");
+    }
+  }, [router, searchParams]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

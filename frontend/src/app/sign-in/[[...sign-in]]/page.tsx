@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,15 @@ import { signInWithEmail, signInWithGoogle } from "@/lib/firebase";
 
 export default function SignInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Get returnUrl from query params, default to dashboard
+  const returnUrl = searchParams.get("returnUrl") || "/dashboard";
+  const redirectTo = decodeURIComponent(returnUrl);
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +26,7 @@ export default function SignInPage() {
 
     try {
       await signInWithEmail(email, password);
-      router.push("/dashboard");
+      router.push(redirectTo);
     } catch (err: unknown) {
       const firebaseError = err as { code?: string; message?: string };
       if (firebaseError.message === "Firebase Auth not available") {
@@ -50,7 +55,7 @@ export default function SignInPage() {
 
     try {
       await signInWithGoogle();
-      router.push("/dashboard");
+      router.push(redirectTo);
     } catch (err: unknown) {
       const firebaseError = err as { code?: string; message?: string };
       if (firebaseError.code === "auth/popup-closed-by-user") {
