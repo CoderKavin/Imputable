@@ -7,7 +7,32 @@ import {
   View,
   StyleSheet,
   pdf,
+  Font,
+  Image,
 } from "@react-pdf/renderer";
+
+// Register Inter font from Google Fonts
+Font.register({
+  family: "Inter",
+  fonts: [
+    {
+      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2",
+      fontWeight: 400,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI6fAZ9hiJ-Ek-_EeA.woff2",
+      fontWeight: 500,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiJ-Ek-_EeA.woff2",
+      fontWeight: 600,
+    },
+    {
+      src: "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZ9hiJ-Ek-_EeA.woff2",
+      fontWeight: 700,
+    },
+  ],
+});
 
 // Types
 interface DecisionForReport {
@@ -66,19 +91,19 @@ const colors = {
 const styles = StyleSheet.create({
   page: {
     padding: 0,
-    fontFamily: "Helvetica",
+    fontFamily: "Inter",
     fontSize: 10,
     color: colors.gray700,
     backgroundColor: colors.white,
   },
   headerBand: {
     backgroundColor: colors.primary,
-    height: 8,
+    height: 6,
   },
   header: {
     padding: 32,
     paddingTop: 24,
-    backgroundColor: colors.gray50,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.gray200,
   },
@@ -86,56 +111,50 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   logoSection: {
     flexDirection: "row",
     alignItems: "center",
   },
-  logoBox: {
-    width: 36,
-    height: 36,
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
+  logoImage: {
+    width: 40,
+    height: 40,
     marginRight: 12,
   },
-  logoText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: "bold",
-  },
   brandName: {
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: 700,
     color: colors.gray900,
   },
   brandTagline: {
-    fontSize: 9,
+    fontSize: 10,
     color: colors.gray500,
     marginTop: 2,
+    fontWeight: 400,
   },
   reportType: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.gray900,
     paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    borderRadius: 20,
   },
   reportTypeText: {
     fontSize: 9,
-    color: colors.primary,
-    fontWeight: "bold",
+    color: colors.white,
+    fontWeight: 600,
+    letterSpacing: 0.5,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: 700,
     color: colors.gray900,
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.gray500,
+    fontWeight: 400,
   },
   complianceBadges: {
     flexDirection: "row",
@@ -145,15 +164,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.successLight,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     marginRight: 8,
   },
   complianceBadgeText: {
-    fontSize: 8,
+    fontSize: 9,
     color: colors.successDark,
-    fontWeight: "bold",
+    fontWeight: 600,
   },
   content: {
     padding: 32,
@@ -161,30 +180,37 @@ const styles = StyleSheet.create({
   },
   infoCardsRow: {
     flexDirection: "row",
-    marginBottom: 24,
+    marginBottom: 28,
+    backgroundColor: colors.gray50,
+    borderRadius: 16,
+    padding: 20,
   },
   infoCard: {
     flex: 1,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.gray200,
-    borderRadius: 12,
-    padding: 16,
-    marginRight: 12,
+    paddingRight: 20,
+    borderRightWidth: 1,
+    borderRightColor: colors.gray200,
   },
   infoCardLast: {
-    marginRight: 0,
+    borderRightWidth: 0,
+    paddingRight: 0,
+    paddingLeft: 20,
+  },
+  infoCardMiddle: {
+    paddingLeft: 20,
   },
   infoCardLabel: {
-    fontSize: 9,
+    fontSize: 10,
     color: colors.gray500,
     textTransform: "uppercase",
-    marginBottom: 4,
+    marginBottom: 6,
+    fontWeight: 500,
+    letterSpacing: 0.5,
   },
   infoCardValue: {
-    fontSize: 11,
+    fontSize: 13,
     color: colors.gray900,
-    fontWeight: "bold",
+    fontWeight: 600,
   },
   statsSection: {
     marginBottom: 24,
@@ -256,16 +282,18 @@ const styles = StyleSheet.create({
   },
   tableHeaderCell: {
     color: colors.white,
-    fontWeight: "bold",
+    fontWeight: 600,
     fontSize: 9,
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.gray100,
+    alignItems: "flex-start",
   },
   tableRowAlt: {
     backgroundColor: colors.gray50,
@@ -273,28 +301,31 @@ const styles = StyleSheet.create({
   tableCell: {
     fontSize: 9,
     color: colors.gray700,
+    fontWeight: 400,
   },
   colNumber: {
-    width: 80,
+    width: 70,
   },
   colTitle: {
     flex: 1,
-    paddingRight: 12,
+    paddingRight: 16,
   },
   colStatus: {
-    width: 90,
+    width: 100,
   },
   colDate: {
-    width: 80,
+    width: 85,
+    textAlign: "right",
   },
   statusBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     fontSize: 7,
     textAlign: "center",
-    fontWeight: "bold",
+    fontWeight: 600,
     textTransform: "uppercase",
+    letterSpacing: 0.3,
   },
   statusApproved: {
     backgroundColor: colors.successLight,
@@ -322,11 +353,11 @@ const styles = StyleSheet.create({
     color: colors.gray500,
   },
   hashSection: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.gray50,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#c7d2fe",
+    borderColor: colors.gray200,
   },
   hashHeader: {
     flexDirection: "row",
@@ -336,7 +367,7 @@ const styles = StyleSheet.create({
   hashIcon: {
     width: 20,
     height: 20,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.gray900,
     borderRadius: 4,
     justifyContent: "center",
     alignItems: "center",
@@ -345,35 +376,40 @@ const styles = StyleSheet.create({
   hashIconText: {
     fontSize: 10,
     color: colors.white,
+    fontWeight: 600,
   },
   hashTitle: {
-    fontSize: 10,
-    fontWeight: "bold",
-    color: colors.primaryDark,
+    fontSize: 11,
+    fontWeight: 600,
+    color: colors.gray900,
   },
   hashValue: {
     fontSize: 8,
-    color: colors.primary,
+    color: colors.gray600,
     fontFamily: "Courier",
     backgroundColor: colors.white,
-    padding: 10,
-    borderRadius: 6,
+    padding: 12,
+    borderRadius: 8,
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.gray200,
   },
   hashNote: {
-    fontSize: 8,
+    fontSize: 9,
     color: colors.gray500,
     marginTop: 8,
+    fontWeight: 400,
   },
   footer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.gray50,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.gray200,
-    padding: 16,
+    padding: 20,
+    paddingHorizontal: 32,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -382,27 +418,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  footerLogoBox: {
-    width: 16,
-    height: 16,
-    backgroundColor: colors.primary,
-    borderRadius: 4,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 6,
-  },
-  footerLogoText: {
-    fontSize: 8,
-    color: colors.white,
-    fontWeight: "bold",
+  footerLogoImage: {
+    width: 18,
+    height: 18,
+    marginRight: 8,
   },
   footerBrand: {
-    fontSize: 8,
+    fontSize: 9,
     color: colors.gray500,
+    fontWeight: 400,
   },
   footerRight: {
-    fontSize: 8,
+    fontSize: 9,
     color: colors.gray400,
+    fontWeight: 500,
   },
 });
 
@@ -437,6 +466,9 @@ function formatDate(dateString: string): string {
   }
 }
 
+// Logo URL - using the public icon
+const LOGO_URL = "https://app.imputable.io/icon.png";
+
 // PDF Document Component
 function AuditReportDocument({ data }: { data: ReportData }) {
   return (
@@ -449,12 +481,10 @@ function AuditReportDocument({ data }: { data: ReportData }) {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.logoSection}>
-              <View style={styles.logoBox}>
-                <Text style={styles.logoText}>I</Text>
-              </View>
+              <Image src={LOGO_URL} style={styles.logoImage} />
               <View>
                 <Text style={styles.brandName}>Imputable</Text>
-                <Text style={styles.brandTagline}>Decision Documentation</Text>
+                <Text style={styles.brandTagline}>Decision Ledger</Text>
               </View>
             </View>
             <View style={styles.reportType}>
@@ -480,13 +510,13 @@ function AuditReportDocument({ data }: { data: ReportData }) {
 
         {/* Content */}
         <View style={styles.content}>
-          {/* Info Cards */}
+          {/* Info Cards - Redesigned as a clean bar */}
           <View style={styles.infoCardsRow}>
             <View style={styles.infoCard}>
               <Text style={styles.infoCardLabel}>Generated By</Text>
               <Text style={styles.infoCardValue}>{data.generatedBy}</Text>
             </View>
-            <View style={styles.infoCard}>
+            <View style={[styles.infoCard, styles.infoCardMiddle]}>
               <Text style={styles.infoCardLabel}>Date Range</Text>
               <Text style={styles.infoCardValue}>
                 {formatDate(data.dateRange.start)} -{" "}
@@ -562,7 +592,7 @@ function AuditReportDocument({ data }: { data: ReportData }) {
                 </Text>
               </View>
 
-              {/* Table Rows */}
+              {/* Table Rows - Show full titles */}
               {data.decisions.slice(0, 20).map((decision, index) => (
                 <View
                   key={decision.decision_number}
@@ -570,14 +600,13 @@ function AuditReportDocument({ data }: { data: ReportData }) {
                     styles.tableRow,
                     index % 2 === 1 ? styles.tableRowAlt : {},
                   ]}
+                  wrap={false}
                 >
                   <Text style={[styles.tableCell, styles.colNumber]}>
                     DEC-{decision.decision_number}
                   </Text>
                   <Text style={[styles.tableCell, styles.colTitle]}>
-                    {decision.title.length > 40
-                      ? decision.title.substring(0, 40) + "..."
-                      : decision.title}
+                    {decision.title}
                   </Text>
                   <View style={styles.colStatus}>
                     <Text
@@ -623,16 +652,19 @@ function AuditReportDocument({ data }: { data: ReportData }) {
         </View>
 
         {/* Footer */}
-        <View style={styles.footer}>
+        <View style={styles.footer} fixed>
           <View style={styles.footerLeft}>
-            <View style={styles.footerLogoBox}>
-              <Text style={styles.footerLogoText}>I</Text>
-            </View>
+            <Image src={LOGO_URL} style={styles.footerLogoImage} />
             <Text style={styles.footerBrand}>
-              Generated by Imputable - Decision Documentation Platform
+              Generated by Imputable - Decision Ledger
             </Text>
           </View>
-          <Text style={styles.footerRight}>Page 1</Text>
+          <Text
+            style={styles.footerRight}
+            render={({ pageNumber, totalPages }) =>
+              `Page ${pageNumber} of ${totalPages}`
+            }
+          />
         </View>
       </Page>
     </Document>
