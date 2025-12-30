@@ -2362,14 +2362,19 @@ def handle_teams_activity(activity: dict, conn) -> dict:
 # =============================================================================
 
 class handler(BaseHTTPRequestHandler):
-    def _send(self, status, body):
+    def _send(self, status, body=None):
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Slack-Signature, X-Slack-Request-Timestamp")
-        self.end_headers()
-        self.wfile.write(json.dumps(body).encode() if isinstance(body, (dict, list)) else body.encode() if isinstance(body, str) else body)
+        # Only write body if provided and not empty
+        if body is not None and body != {}:
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode() if isinstance(body, (dict, list)) else body.encode() if isinstance(body, str) else body)
+        else:
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         self.wfile.flush()
 
     def do_OPTIONS(self):
