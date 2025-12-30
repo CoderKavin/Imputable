@@ -2737,10 +2737,9 @@ class handler(BaseHTTPRequestHandler):
                                         matched_decisions.append((d["id"], d["decision_number"], d["title"], d["status"]))
                                 blocks = SlackBlocks.semantic_search_results(query, matched_decisions, explanation, best_match)
 
-                            # Send results via response_url
+                            # Send results via response_url (no replace_original since we sent empty response)
                             results_payload = json.dumps({
                                 "response_type": "ephemeral",
-                                "replace_original": True,
                                 "blocks": blocks
                             }).encode()
                             req = urllib.request.Request(response_url, data=results_payload, headers={"Content-Type": "application/json"})
@@ -2993,8 +2992,8 @@ class handler(BaseHTTPRequestHandler):
                     except:
                         pass  # Expected to timeout
 
-                    # Respond immediately
-                    self._send(200, {"response_type": "ephemeral", "text": ":hourglass: Creating poll..."})
+                    # Respond with empty 200 - the async handler will post via response_url
+                    self._send(200, {})
                     return
 
                 # Search command needs async processing (Gemini API can be slow)
@@ -3023,8 +3022,8 @@ class handler(BaseHTTPRequestHandler):
                     except:
                         pass  # Expected to timeout
 
-                    # Respond immediately
-                    self._send(200, {"response_type": "ephemeral", "text": ":mag: Searching..."})
+                    # Respond with empty 200 - the async handler will post via response_url
+                    self._send(200, {})
                     return
 
             # For Slack interactions, handle message shortcuts BEFORE database connection
