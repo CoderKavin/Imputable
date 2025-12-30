@@ -28,10 +28,26 @@ export default function DecisionPage() {
 
   const [showProposeChange, setShowProposeChange] = useState(false);
 
+  // All hooks must be called before any conditional returns
+  const handleProposeChange = useCallback(() => {
+    setShowProposeChange(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setShowProposeChange(false);
+  }, []);
+
+  const handleSuccess = useCallback(() => {
+    router.refresh();
+  }, [router]);
+
+  const handleBack = useCallback(() => {
+    router.push("/decisions");
+  }, [router]);
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
-      // Store the current URL to redirect back after login
       const returnUrl = encodeURIComponent(
         window.location.pathname + window.location.search,
       );
@@ -62,23 +78,6 @@ export default function DecisionPage() {
       </div>
     );
   }
-
-  const handleProposeChange = useCallback(() => {
-    setShowProposeChange(true);
-  }, []);
-
-  const handleCloseModal = useCallback(() => {
-    setShowProposeChange(false);
-  }, []);
-
-  const handleSuccess = useCallback(() => {
-    // Refresh the page to show new version
-    router.refresh();
-  }, [router]);
-
-  const handleBack = useCallback(() => {
-    router.push("/decisions");
-  }, [router]);
 
   return (
     <>
