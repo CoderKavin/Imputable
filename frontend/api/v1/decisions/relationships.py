@@ -255,7 +255,6 @@ class handler(BaseHTTPRequestHandler):
                     return
 
                 parsed = urlparse(self.path)
-                path = parsed.path
                 params = parse_qs(parsed.query)
 
                 # GET /api/v1/decisions/relationships - List all relationships
@@ -264,9 +263,8 @@ class handler(BaseHTTPRequestHandler):
                     decision_ids = params.get("decision_ids", [None])[0]
 
                     if decision_ids:
-                        # Filter by specific decisions
+                        # Filter by specific decisions - join with decisions to filter by org
                         ids_list = decision_ids.split(",")
-                        # Create separate placeholders for source and target to avoid duplication issues
                         src_placeholders = ",".join([f":src_id{i}" for i in range(len(ids_list))])
                         tgt_placeholders = ",".join([f":tgt_id{i}" for i in range(len(ids_list))])
                         id_params = {}
@@ -297,14 +295,14 @@ class handler(BaseHTTPRequestHandler):
                             JOIN decision_versions sdv ON sd.current_version_id = sdv.id
                             JOIN decisions td ON dr.target_decision_id = td.id
                             JOIN decision_versions tdv ON td.current_version_id = tdv.id
-                            WHERE (dr.organization_id = :org_id OR dr.organization_id IS NULL)
+                            WHERE sd.organization_id = :org_id
+                              AND td.organization_id = :org_id
                               AND (dr.source_decision_id IN ({src_placeholders})
                                    OR dr.target_decision_id IN ({tgt_placeholders}))
-                              AND dr.invalidated_at IS NULL
                             ORDER BY dr.created_at DESC
                         """), {"org_id": org_id, **id_params})
                     else:
-                        # Get all relationships for org
+                        # Get all relationships for org - filter by decisions belonging to org
                         result = conn.execute(text("""
                             SELECT
                                 dr.id,
@@ -328,8 +326,8 @@ class handler(BaseHTTPRequestHandler):
                             JOIN decision_versions sdv ON sd.current_version_id = sdv.id
                             JOIN decisions td ON dr.target_decision_id = td.id
                             JOIN decision_versions tdv ON td.current_version_id = tdv.id
-                            WHERE (dr.organization_id = :org_id OR dr.organization_id IS NULL)
-                              AND dr.invalidated_at IS NULL
+                            WHERE sd.organization_id = :org_id
+                              AND td.organization_id = :org_id
                             ORDER BY dr.created_at DESC
                         """), {"org_id": org_id})
 
@@ -423,10 +421,10 @@ class handler(BaseHTTPRequestHandler):
                         # Get existing relationships to avoid duplicates
                         existing = set()
                         result = conn.execute(text("""
-                            SELECT source_decision_id, target_decision_id, relationship_type::text
-                            FROM decision_relationships
-                            WHERE (organization_id = :org_id OR organization_id IS NULL)
-                              AND invalidated_at IS NULL
+                            SELECT dr.source_decision_id, dr.target_decision_id, dr.relationship_type::text
+                            FROM decision_relationships dr
+                            JOIN decisions sd ON dr.source_decision_id = sd.id
+                            WHERE sd.organization_id = :org_id
                         """), {"org_id": org_id})
                         for row in result.fetchall():
                             existing.add((str(row[0]), str(row[1]), row[2]))
@@ -449,12 +447,11 @@ class handler(BaseHTTPRequestHandler):
                             rel_id = str(uuid4())
                             conn.execute(text("""
                                 INSERT INTO decision_relationships
-                                (id, organization_id, source_decision_id, target_decision_id,
+                                (id, source_decision_id, target_decision_id,
                                  relationship_type, description, confidence_score, is_ai_generated, created_by, created_at)
-                                VALUES (:id, :org_id, :src, :tgt, :type::relationship_type, :desc, :conf, true, :user_id, NOW())
+                                VALUES (:id, :src, :tgt, :type::relationship_type, :desc, :conf, true, :user_id, NOW())
                             """), {
                                 "id": rel_id,
-                                "org_id": org_id,
                                 "src": rel["source_id"],
                                 "tgt": rel["target_id"],
                                 "type": rel["relationship_type"],
@@ -497,7 +494,7 @@ class handler(BaseHTTPRequestHandler):
                             self._send(400, {"error": "Cannot create self-referencing relationship"})
                             return
 
-                        # Verify decisions exist
+                        # Verify decisions exist and belong to org
                         check = conn.execute(text("""
                             SELECT COUNT(*) FROM decisions
                             WHERE id IN (:src, :tgt) AND organization_id = :org_id AND deleted_at IS NULL
@@ -511,9 +508,7 @@ class handler(BaseHTTPRequestHandler):
                             SELECT id FROM decision_relationships
                             WHERE source_decision_id = :src AND target_decision_id = :tgt
                               AND relationship_type = :type::relationship_type
-                              AND (organization_id = :org_id OR organization_id IS NULL)
-                              AND invalidated_at IS NULL
-                        """), {"src": source_id, "tgt": target_id, "type": rel_type, "org_id": org_id})
+                        """), {"src": source_id, "tgt": target_id, "type": rel_type})
                         if existing.fetchone():
                             self._send(409, {"error": "Relationship already exists"})
                             return
@@ -521,12 +516,11 @@ class handler(BaseHTTPRequestHandler):
                         rel_id = str(uuid4())
                         conn.execute(text("""
                             INSERT INTO decision_relationships
-                            (id, organization_id, source_decision_id, target_decision_id,
+                            (id, source_decision_id, target_decision_id,
                              relationship_type, description, is_ai_generated, created_by, created_at)
-                            VALUES (:id, :org_id, :src, :tgt, :type::relationship_type, :desc, false, :user_id, NOW())
+                            VALUES (:id, :src, :tgt, :type::relationship_type, :desc, false, :user_id, NOW())
                         """), {
                             "id": rel_id,
-                            "org_id": org_id,
                             "src": source_id,
                             "tgt": target_id,
                             "type": rel_type,

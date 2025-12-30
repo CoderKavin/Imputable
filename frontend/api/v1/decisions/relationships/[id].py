@@ -104,17 +104,18 @@ class handler(BaseHTTPRequestHandler):
                     self._send(403, {"error": "Not a member of this organization"})
                     return
 
-                user_id = str(user_row[0])
-
-                # Soft delete the relationship (set invalidated_at)
+                # Delete the relationship - verify ownership through decisions table
+                # Both source and target decisions must belong to the organization
                 result = conn.execute(text("""
-                    UPDATE decision_relationships
-                    SET invalidated_at = NOW(), invalidated_by = :user_id
-                    WHERE id = :rel_id
-                      AND (organization_id = :org_id OR organization_id IS NULL)
-                      AND invalidated_at IS NULL
-                    RETURNING id
-                """), {"rel_id": relationship_id, "org_id": org_id, "user_id": user_id})
+                    DELETE FROM decision_relationships dr
+                    USING decisions sd, decisions td
+                    WHERE dr.id = :rel_id
+                      AND dr.source_decision_id = sd.id
+                      AND dr.target_decision_id = td.id
+                      AND sd.organization_id = :org_id
+                      AND td.organization_id = :org_id
+                    RETURNING dr.id
+                """), {"rel_id": relationship_id, "org_id": org_id})
 
                 deleted = result.fetchone()
                 conn.commit()
