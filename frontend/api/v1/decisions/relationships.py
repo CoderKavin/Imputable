@@ -58,7 +58,10 @@ def analyze_relationships_with_gemini(decisions: list) -> list:
     """Use Gemini AI to analyze decisions and find relationships."""
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     if not gemini_key:
+        print("[RELATIONSHIPS] No GEMINI_API_KEY configured")
         return []
+
+    print(f"[RELATIONSHIPS] Analyzing {len(decisions)} decisions with Gemini")
 
     # Format decisions for analysis
     decision_summaries = []
@@ -119,9 +122,11 @@ Return a JSON array of relationships. Focus on the most meaningful connections."
 
         candidates = data.get("candidates", [])
         if not candidates:
+            print("[RELATIONSHIPS] No candidates in Gemini response")
             return []
 
         text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        print(f"[RELATIONSHIPS] Gemini raw response: {text[:500]}")
 
         # Parse JSON from response
         if "```json" in text:
@@ -130,15 +135,20 @@ Return a JSON array of relationships. Focus on the most meaningful connections."
             text = text.split("```")[1].split("```")[0]
 
         result = json.loads(text.strip())
+        print(f"[RELATIONSHIPS] Parsed {len(result) if isinstance(result, list) else 0} relationships from AI")
 
         if not isinstance(result, list):
             return []
 
         # Filter by confidence
-        return [r for r in result if r.get("confidence", 0) >= 0.6]
+        filtered = [r for r in result if r.get("confidence", 0) >= 0.6]
+        print(f"[RELATIONSHIPS] {len(filtered)} relationships passed confidence threshold")
+        return filtered
 
     except Exception as e:
+        import traceback
         print(f"[RELATIONSHIPS] Gemini API error: {e}")
+        traceback.print_exc()
         return []
 
 
@@ -404,8 +414,11 @@ class handler(BaseHTTPRequestHandler):
                             self._send(200, {"relationships": [], "message": "Need at least 2 decisions to analyze"})
                             return
 
+                        print(f"[RELATIONSHIPS] Sending {len(decisions)} decisions to AI for analysis")
+
                         # Get AI analysis
                         ai_relationships = analyze_relationships_with_gemini(decisions)
+                        print(f"[RELATIONSHIPS] AI returned {len(ai_relationships)} relationships")
 
                         # Get existing relationships to avoid duplicates
                         existing = set()
