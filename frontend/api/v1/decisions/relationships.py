@@ -449,7 +449,7 @@ class handler(BaseHTTPRequestHandler):
                                 INSERT INTO decision_relationships
                                 (id, source_decision_id, target_decision_id,
                                  relationship_type, description, confidence_score, is_ai_generated, created_by, created_at)
-                                VALUES (:id, :src, :tgt, :type::relationship_type, :desc, :conf, true, :user_id, NOW())
+                                VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, :conf, true, :user_id, NOW())
                             """), {
                                 "id": rel_id,
                                 "src": rel["source_id"],
@@ -507,7 +507,7 @@ class handler(BaseHTTPRequestHandler):
                         existing = conn.execute(text("""
                             SELECT id FROM decision_relationships
                             WHERE source_decision_id = :src AND target_decision_id = :tgt
-                              AND relationship_type = :type::relationship_type
+                              AND relationship_type = CAST(:type AS relationship_type)
                         """), {"src": source_id, "tgt": target_id, "type": rel_type})
                         if existing.fetchone():
                             self._send(409, {"error": "Relationship already exists"})
@@ -518,7 +518,7 @@ class handler(BaseHTTPRequestHandler):
                             INSERT INTO decision_relationships
                             (id, source_decision_id, target_decision_id,
                              relationship_type, description, is_ai_generated, created_by, created_at)
-                            VALUES (:id, :src, :tgt, :type::relationship_type, :desc, false, :user_id, NOW())
+                            VALUES (:id, :src, :tgt, CAST(:type AS relationship_type), :desc, false, :user_id, NOW())
                         """), {
                             "id": rel_id,
                             "src": source_id,
