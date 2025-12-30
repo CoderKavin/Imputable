@@ -569,6 +569,34 @@ def resolve_or_create_user_from_slack(conn, org_id: str, slack_user_info: dict, 
     return user_id
 
 
+def get_active_member_user_id(conn, org_id: str, slack_user_id: str) -> tuple:
+    """Check if a Slack user is an active member and return their user_id.
+
+    Returns:
+        (user_id, status, error_message) where:
+        - user_id: UUID string if user is active, None otherwise
+        - status: "active", "inactive", or "not_found"
+        - error_message: Error message to show user, or None if active
+    """
+    from sqlalchemy import text
+
+    result = conn.execute(text("""
+        SELECT u.id, om.status
+        FROM users u
+        JOIN organization_members om ON om.user_id = u.id AND om.organization_id = :org_id
+        WHERE u.slack_user_id = :slack_id AND u.deleted_at IS NULL
+    """), {"org_id": org_id, "slack_id": slack_user_id})
+    row = result.fetchone()
+
+    if row:
+        user_id, status = str(row[0]), row[1] or "active"
+        if status == "inactive":
+            return (None, "inactive", "Your account is inactive. Ask your organization admin to activate your account.")
+        return (user_id, "active", None)
+
+    return (None, "not_found", "You're not a member of this Imputable workspace. Ask your organization admin to add you.")
+
+
 def send_approval_dm(token: str, approver_slack_id: str, decision_id: str, decision_number: int,
                      title: str, requester_name: str, context: str = None) -> dict:
     """Send a DM to the approver with approve/reject buttons.
@@ -1188,7 +1216,18 @@ def handle_slack_command(form_data: dict, conn) -> dict:
                     {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Organization: {org_name}"}]}
                 ]
             }
-    # Note: If user not found in our DB yet, they'll be created on first action (backwards compatible)
+    else:
+        # User not in DB - they need to be imported/activated by an admin first
+        # This prevents bypassing the plan limits by having new Slack users auto-create accounts
+        return {
+            "response_type": "ephemeral",
+            "text": ":wave: *Welcome to Imputable!*\n\nYou're not yet a member of this organization's Imputable workspace. Please ask your organization admin to add you as a member.",
+            "blocks": [
+                {"type": "section", "text": {"type": "mrkdwn", "text": ":wave: *Welcome to Imputable!*"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": "You're not yet a member of this organization's Imputable workspace.\n\n*To get access:*\n1. Ask your organization admin to add you as a member\n2. They can do this from the Team settings in Imputable"}},
+                {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Organization: {org_name}"}]}
+            ]
+        }
 
     # Parse command
     cmd_lower = cmd_text.lower()
@@ -1283,24 +1322,17 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
             decision_id, decision_number, title, decision_status = str(dec[0]), dec[1], dec[2], dec[3]
         else:
+            # Verify user is an active member before creating poll
+            db_user_id, member_status, error_msg = get_active_member_user_id(conn, org_id, user_id)
+            if not db_user_id:
+                return {"response_type": "ephemeral", "text": f":warning: {error_msg}"}
+
             # Create new decision from question
             result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
             next_num = result.fetchone()[0]
 
             decision_id = str(uuid4())
             version_id = str(uuid4())
-
-            # Get or create user
-            result = conn.execute(text("SELECT id FROM users WHERE slack_user_id = :slack_id"), {"slack_id": user_id})
-            user_row = result.fetchone()
-            if user_row:
-                db_user_id = user_row[0]
-            else:
-                db_user_id = str(uuid4())
-                conn.execute(text("""
-                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
-                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
-                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
             # Get channel member count for dynamic threshold
             channel_member_count = 0
@@ -1541,6 +1573,32 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
     org_id, slack_token = str(org[0]), org[1]
     token = decrypt_token(slack_token) if slack_token else None
 
+    # Check membership for interactions that require it
+    # Note: poll_vote_* actions are intentionally exempt - anyone in Slack channel can vote
+    # But poll_approve_decision and approve/reject_decision require membership
+    needs_membership = False
+    if interaction_type in ("message_action", "view_submission"):
+        needs_membership = True
+    elif interaction_type == "block_actions":
+        actions = payload.get("actions", [])
+        if actions:
+            action_id = actions[0].get("action_id", "")
+            # These actions require active membership
+            if action_id in ("poll_approve_decision", "approve_decision", "reject_decision", "open_create_decision_modal"):
+                needs_membership = True
+
+    if needs_membership:
+        db_user_id, member_status, error_msg = get_active_member_user_id(conn, org_id, user_id)
+        if not db_user_id:
+            # For view_submission, return error in modal
+            if interaction_type == "view_submission":
+                return {"response_action": "errors", "errors": {"title_block": error_msg}}
+            # For block_actions, return ephemeral message
+            if interaction_type == "block_actions":
+                return {"response_type": "ephemeral", "text": f":warning: {error_msg}"}
+            # For message_action, we can't show error easily, just return empty
+            return {}
+
     # Message shortcut (Log as Decision) - AI-powered
     if interaction_type == "message_action":
         callback_id = payload.get("callback_id")
@@ -1691,17 +1749,10 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
             confidence_score = metadata.get("confidence_score", 0.0)
             suggested_status = metadata.get("suggested_status", "draft")
 
-            # Get or create user
-            result = conn.execute(text("SELECT id FROM users WHERE slack_user_id = :slack_id"), {"slack_id": user_id})
-            user_row = result.fetchone()
-            if user_row:
-                db_user_id = str(user_row[0])
-            else:
-                db_user_id = str(uuid4())
-                conn.execute(text("""
-                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
-                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
-                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
+            # Verify user is an active member
+            db_user_id, member_status, error_msg = get_active_member_user_id(conn, org_id, user_id)
+            if not db_user_id:
+                return {"response_action": "errors", "errors": {"title_block": error_msg}}
 
             # Get next decision number
             result = conn.execute(text("SELECT COALESCE(MAX(decision_number), 0) + 1 FROM decisions WHERE organization_id = :org_id"), {"org_id": org_id})
@@ -2404,16 +2455,14 @@ class handler(BaseHTTPRequestHandler):
                                 return
 
                             org_id = str(row[0])
-                            db_user_id = str(row[1]) if row[1] else None
                             next_num = row[2]
 
-                            # Create user if needed
+                            # Verify user is an active member (don't auto-create)
+                            db_user_id, member_status, error_msg = get_active_member_user_id(conn, org_id, user_id)
                             if not db_user_id:
-                                db_user_id = str(uuid4())
-                                conn.execute(text("""
-                                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
-                                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
-                                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
+                                print(f"[SLACK ASYNC SAVE] User not active member: {error_msg}")
+                                self._send(200, {})
+                                return
 
                             decision_id = str(uuid4())
                             version_id = str(uuid4())
@@ -2584,17 +2633,22 @@ class handler(BaseHTTPRequestHandler):
                             if not token and org[1]:
                                 token = decrypt_token(org[1])
 
-                            # Get or create user
-                            result = conn.execute(text("SELECT id FROM users WHERE slack_user_id = :slack_id"), {"slack_id": user_id})
-                            user_row = result.fetchone()
-                            if user_row:
-                                db_user_id = str(user_row[0])
-                            else:
-                                db_user_id = str(uuid4())
-                                conn.execute(text("""
-                                    INSERT INTO users (id, email, name, slack_user_id, auth_provider, created_at, updated_at)
-                                    VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
-                                """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
+                            # Verify user is an active member
+                            db_user_id, member_status, error_msg = get_active_member_user_id(conn, org_id, user_id)
+                            if not db_user_id:
+                                # Send error via response_url
+                                if response_url:
+                                    error_payload = json.dumps({
+                                        "response_type": "ephemeral",
+                                        "text": f":warning: {error_msg}"
+                                    }).encode()
+                                    try:
+                                        req = urllib.request.Request(response_url, data=error_payload, headers={"Content-Type": "application/json"})
+                                        urllib.request.urlopen(req, timeout=5)
+                                    except Exception:
+                                        pass
+                                self._send(200, {})
+                                return
 
                             # Get channel member count for dynamic threshold
                             channel_member_count = 0
@@ -3052,6 +3106,179 @@ class handler(BaseHTTPRequestHandler):
                     self._send(200, {"response_type": "ephemeral", "text": ":mag: Searching..."})
                     return
 
+                # Add/create/new command - open modal immediately
+                if cmd_text.startswith(("add ", "create ", "new ")):
+                    import time as _time
+                    _start = _time.time()
+                    print(f"[SLACK ADD] Starting fast path at {_start}")
+
+                    trigger_id = form_data.get("trigger_id", "")
+                    team_id = form_data.get("team_id", "")
+                    prefill = form_data.get("text", "").split(" ", 1)[1] if " " in form_data.get("text", "") else ""
+
+                    if not trigger_id:
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Unable to open form. Please try again."})
+                        return
+
+                    # Try env var first (fastest)
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+                    print(f"[SLACK ADD] Token from env: {'YES' if token else 'NO'}, elapsed: {_time.time() - _start:.3f}s")
+
+                    # Fallback to DB if needed
+                    if not token:
+                        engine = get_db_connection()
+                        if engine:
+                            with engine.connect() as conn:
+                                from sqlalchemy import text
+                                result = conn.execute(text("SELECT slack_access_token FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
+                                org = result.fetchone()
+                                token = decrypt_token(org[0]) if org and org[0] else None
+
+                    if not token:
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Workspace not connected. Please reconnect Slack in settings."})
+                        return
+
+                    modal = SlackModals.create_decision(prefill_title=prefill)
+                    payload_data = json.dumps({"trigger_id": trigger_id, "view": modal}).encode()
+                    req = urllib.request.Request(
+                        "https://slack.com/api/views.open",
+                        data=payload_data,
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                    )
+                    print(f"[SLACK ADD] About to call views.open, elapsed: {_time.time() - _start:.3f}s")
+                    try:
+                        resp = urllib.request.urlopen(req, timeout=5)
+                        resp_data = json.loads(resp.read().decode())
+                        print(f"[SLACK ADD] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
+                        self._send(200, {"response_type": "ephemeral", "text": ""})
+                    except Exception as e:
+                        print(f"[SLACK ADD] Failed to open modal: {e}, elapsed: {_time.time() - _start:.3f}s")
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
+                    return
+
+                # Log command - open loading modal immediately, then do AI analysis
+                if cmd_text == "log" or cmd_text.startswith("log "):
+                    import time as _time
+                    _start = _time.time()
+                    print(f"[SLACK LOG] Starting fast path at {_start}")
+
+                    trigger_id = form_data.get("trigger_id", "")
+                    team_id = form_data.get("team_id", "")
+                    channel_id = form_data.get("channel_id", "")
+                    hint = form_data.get("text", "")[4:].strip() if cmd_text.startswith("log ") else ""
+
+                    if not trigger_id:
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Unable to open form. Please try again."})
+                        return
+
+                    # Try env var first (fastest)
+                    token = os.environ.get("SLACK_BOT_TOKEN", "")
+                    print(f"[SLACK LOG] Token from env: {'YES' if token else 'NO'}, elapsed: {_time.time() - _start:.3f}s")
+
+                    # Fallback to DB if needed
+                    if not token:
+                        engine = get_db_connection()
+                        if engine:
+                            with engine.connect() as conn:
+                                from sqlalchemy import text
+                                result = conn.execute(text("SELECT slack_access_token FROM organizations WHERE slack_team_id = :team_id"), {"team_id": team_id})
+                                org = result.fetchone()
+                                token = decrypt_token(org[0]) if org and org[0] else None
+
+                    if not token:
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Workspace not connected. Please reconnect Slack in settings."})
+                        return
+
+                    # Open loading modal IMMEDIATELY
+                    loading_modal = {
+                        "type": "modal",
+                        "callback_id": "ai_loading_modal",
+                        "title": {"type": "plain_text", "text": "Analyzing..."},
+                        "close": {"type": "plain_text", "text": "Cancel"},
+                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":sparkles: *AI is analyzing the recent conversation...*\n\nThis may take a few seconds."}}]
+                    }
+
+                    payload_data = json.dumps({"trigger_id": trigger_id, "view": loading_modal}).encode()
+                    req = urllib.request.Request(
+                        "https://slack.com/api/views.open",
+                        data=payload_data,
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                    )
+                    print(f"[SLACK LOG] About to call views.open, elapsed: {_time.time() - _start:.3f}s")
+                    try:
+                        resp = urllib.request.urlopen(req, timeout=5)
+                        resp_data = json.loads(resp.read().decode())
+                        print(f"[SLACK LOG] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
+                        view_id = resp_data.get("view", {}).get("id") if resp_data.get("ok") else None
+
+                        # Now do AI analysis and update modal
+                        if view_id:
+                            try:
+                                # Fetch recent messages
+                                messages = fetch_recent_channel_messages(token, channel_id, limit=50)
+                                if messages:
+                                    messages = resolve_slack_user_names(token, messages)
+
+                                    # Get channel name
+                                    channel_name = ""
+                                    try:
+                                        channel_req = urllib.request.Request(
+                                            f"https://slack.com/api/conversations.info?channel={channel_id}",
+                                            headers={"Authorization": f"Bearer {token}"}
+                                        )
+                                        channel_resp = urllib.request.urlopen(channel_req, timeout=5)
+                                        channel_data = json.loads(channel_resp.read().decode())
+                                        if channel_data.get("ok"):
+                                            channel_name = channel_data.get("channel", {}).get("name", "")
+                                    except:
+                                        pass
+
+                                    # AI analysis
+                                    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+                                    if gemini_key:
+                                        analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
+                                        if analysis:
+                                            latest_ts = messages[-1].get("timestamp", "") if messages else ""
+                                            modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
+                                        else:
+                                            prefill_title = hint if hint else "Decision from recent conversation"
+                                            modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
+                                    else:
+                                        prefill_title = hint if hint else "Decision from recent conversation"
+                                        modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
+
+                                    # Update modal with results
+                                    update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
+                                    update_req = urllib.request.Request(
+                                        "https://slack.com/api/views.update",
+                                        data=update_data,
+                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                    )
+                                    urllib.request.urlopen(update_req, timeout=10)
+                                else:
+                                    # No messages - show error modal
+                                    error_modal = {
+                                        "type": "modal",
+                                        "callback_id": "log_error_modal",
+                                        "title": {"type": "plain_text", "text": "No Messages"},
+                                        "close": {"type": "plain_text", "text": "Close"},
+                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: No recent messages found in this channel to analyze."}}]
+                                    }
+                                    update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                                    update_req = urllib.request.Request(
+                                        "https://slack.com/api/views.update",
+                                        data=update_data,
+                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                    )
+                                    urllib.request.urlopen(update_req, timeout=5)
+                            except Exception as e:
+                                print(f"[SLACK FAST PATH] AI analysis error: {e}")
+                        self._send(200, {"response_type": "ephemeral", "text": ""})
+                    except Exception as e:
+                        print(f"[SLACK FAST PATH] Failed to open log modal: {e}")
+                        self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
+                    return
+
             # For Slack interactions, handle message shortcuts BEFORE database connection
             # because trigger_id expires in 3 seconds and DB connection can be slow
             if platform == "slack" and req_type == "interactions":
@@ -3071,7 +3298,12 @@ class handler(BaseHTTPRequestHandler):
                         payload_str = unquote(pair[8:].replace("+", " "))
                         break
 
-                payload = json.loads(payload_str) if payload_str else {}
+                try:
+                    payload = json.loads(payload_str) if payload_str else {}
+                except json.JSONDecodeError as e:
+                    print(f"[SLACK FAST PATH] JSON parse error: {e}")
+                    self._send(200, {"response_type": "ephemeral", "text": "Error processing request."})
+                    return
                 interaction_type = payload.get("type")
                 callback_id = payload.get("callback_id", "")
                 trigger_id = payload.get("trigger_id", "")
@@ -3356,6 +3588,8 @@ class handler(BaseHTTPRequestHandler):
                             return
 
                 # FAST PATH: For message shortcuts, open modal immediately before DB connection
+                # Note: Membership is checked when they SUBMIT the modal (in view_submission handler)
+                # We don't check here because trigger_id expires in 3 seconds and DB is slow
                 if interaction_type == "message_action" and callback_id == "log_message_as_decision":
                     message = payload.get("message", {})
                     channel = payload.get("channel", {})
@@ -3562,7 +3796,12 @@ class handler(BaseHTTPRequestHandler):
                             payload_str = unquote(pair[8:].replace("+", " "))
                             break
 
-                    payload = json.loads(payload_str) if payload_str else {}
+                    try:
+                        payload = json.loads(payload_str) if payload_str else {}
+                    except json.JSONDecodeError as e:
+                        print(f"[SLACK INTERACTIONS] JSON parse error: {e}")
+                        self._send(200, {})
+                        return
                     callback_id = payload.get('callback_id', payload.get('view', {}).get('callback_id', 'N/A'))
                     print(f"[SLACK INTERACTIONS] Payload type: {payload.get('type')}, callback_id: {callback_id}")
 
@@ -3578,7 +3817,12 @@ class handler(BaseHTTPRequestHandler):
 
                 # Teams
                 elif platform == "teams":
-                    activity = json.loads(body.decode()) if body else {}
+                    try:
+                        activity = json.loads(body.decode()) if body else {}
+                    except json.JSONDecodeError as e:
+                        print(f"[TEAMS] JSON parse error: {e}")
+                        self._send(200, {})
+                        return
                     result = handle_teams_activity(activity, conn)
                     self._send(200, result)
 

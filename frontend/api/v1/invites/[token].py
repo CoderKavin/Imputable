@@ -53,14 +53,16 @@ class handler(BaseHTTPRequestHandler):
             engine = create_engine(db_url, connect_args={"sslmode": "require"})
 
             with engine.connect() as conn:
-                # Get invitation
-                result = conn.execute(text("""
+                # Get invitation (use FOR UPDATE on POST to prevent race conditions)
+                lock_clause = "FOR UPDATE" if method == "POST" else ""
+                result = conn.execute(text(f"""
                     SELECT i.id, i.organization_id, i.email, i.role, i.status, i.expires_at, i.created_at,
                            o.name as org_name, o.slug as org_slug, u.name as invited_by_name
                     FROM invitations i
                     JOIN organizations o ON i.organization_id = o.id
                     LEFT JOIN users u ON i.invited_by = u.id
                     WHERE i.token = :token
+                    {lock_clause}
                 """), {"token": token})
                 invite = result.fetchone()
 
@@ -228,10 +230,13 @@ class handler(BaseHTTPRequestHandler):
                             })
                             return
 
-                        # Add as member
+                        # Add as member (use ON CONFLICT to handle race conditions)
                         conn.execute(text("""
                             INSERT INTO organization_members (id, organization_id, user_id, role, status, created_at)
                             VALUES (:id, :org_id, :user_id, :role, 'active', NOW())
+                            ON CONFLICT (organization_id, user_id) DO UPDATE SET
+                                status = 'active',
+                                role = EXCLUDED.role
                         """), {
                             "id": str(uuid4()),
                             "org_id": org_id,

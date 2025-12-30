@@ -13,8 +13,12 @@
 -- =============================================================================
 
 -- Add status column with default 'active'
+-- First add as nullable, backfill, then make NOT NULL
 ALTER TABLE organization_members
-ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+
+-- Backfill existing rows that might have NULL status
+UPDATE organization_members SET status = 'active' WHERE status IS NULL;
 
 -- Add constraint for valid status values
 DO $$

@@ -10,10 +10,26 @@ DELETE /me/members?invite_id=X - Cancel invite
 from http.server import BaseHTTPRequestHandler
 import json
 import os
+import re
 import secrets
 from uuid import uuid4
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
+
+
+# RFC 5322 compliant email regex (simplified but robust)
+EMAIL_REGEX = re.compile(
+    r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+    r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
+)
+
+
+def is_valid_email(email: str) -> bool:
+    """Validate email format using RFC 5322 compliant regex."""
+    if not email or len(email) > 254:  # Max email length per RFC
+        return False
+    return bool(EMAIL_REGEX.match(email))
 
 
 def get_plan_limits(subscription_tier: str) -> dict:
@@ -247,7 +263,7 @@ class handler(BaseHTTPRequestHandler):
                     email = body.get("email", "").strip().lower()
                     role = body.get("role", "member")
 
-                    if not email or "@" not in email:
+                    if not is_valid_email(email):
                         self._send(400, {"error": "Valid email required"})
                         return
 
