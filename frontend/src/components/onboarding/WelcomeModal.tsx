@@ -222,7 +222,15 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     if (!step.highlightSelector) return;
 
     const element = findElement(step.highlightSelector);
-    if (!element) return;
+    if (!element) {
+      // No element found, skip animation and just navigate
+      setIsAnimating(false);
+      setContentVisible(true);
+      if (step.navigationPath) {
+        router.push(step.navigationPath);
+      }
+      return;
+    }
 
     const rect = element.getBoundingClientRect();
     const targetX = rect.left + rect.width / 2;
@@ -241,16 +249,17 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     // Click animation
     setTimeout(() => {
       setCursorClicking(true);
-    }, 700);
+    }, 600);
 
-    // Navigate
+    // Navigate and hide cursor
     setTimeout(() => {
       setCursorClicking(false);
+      setShowCursor(false);
       navigationPendingRef.current = true;
       if (step.navigationPath) {
         router.push(step.navigationPath);
       }
-    }, 900);
+    }, 800);
   }, [step, findElement, router]);
 
   const handleNext = useCallback(() => {
@@ -304,24 +313,37 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/75 transition-opacity duration-300" />
 
-      {/* Highlight cutout */}
+      {/* Highlight cutout - uses clip-path to cut out the highlighted area */}
       {highlightRect && !isAnimating && (
-        <div
-          className="absolute pointer-events-none transition-all duration-500 ease-out"
-          style={{
-            top: highlightRect.top - 6,
-            left: highlightRect.left - 6,
-            width: highlightRect.width + 12,
-            height: highlightRect.height + 12,
-            borderRadius: 10,
-            border: "2px solid #818cf8",
-            boxShadow: `
-              0 0 0 4000px rgba(0, 0, 0, 0.75),
-              0 0 0 2px #6366f1,
-              0 0 15px 5px rgba(99, 102, 241, 0.4)
-            `,
-          }}
-        />
+        <>
+          {/* Border around highlighted element */}
+          <div
+            className="absolute pointer-events-none z-[10000] transition-all duration-500 ease-out"
+            style={{
+              top: highlightRect.top - 4,
+              left: highlightRect.left - 4,
+              width: highlightRect.width + 8,
+              height: highlightRect.height + 8,
+              borderRadius: 8,
+              border: "2px solid #6366f1",
+              boxShadow: "0 0 12px 2px rgba(99, 102, 241, 0.5)",
+            }}
+          />
+          {/* Dark overlay with cutout */}
+          <div
+            className="absolute inset-0 pointer-events-none bg-black/75"
+            style={{
+              clipPath: `polygon(
+                0% 0%, 0% 100%, 100% 100%, 100% 0%, 0% 0%,
+                ${highlightRect.left - 4}px ${highlightRect.top - 4}px,
+                ${highlightRect.left - 4}px ${highlightRect.top + highlightRect.height + 4}px,
+                ${highlightRect.left + highlightRect.width + 4}px ${highlightRect.top + highlightRect.height + 4}px,
+                ${highlightRect.left + highlightRect.width + 4}px ${highlightRect.top - 4}px,
+                ${highlightRect.left - 4}px ${highlightRect.top - 4}px
+              )`,
+            }}
+          />
+        </>
       )}
 
       {/* Animated cursor */}
