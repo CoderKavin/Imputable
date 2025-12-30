@@ -2447,7 +2447,7 @@ class handler(BaseHTTPRequestHandler):
 
                             # Get updated votes and decision info
                             result = conn.execute(text("""
-                                SELECT d.decision_number, dv.title, d.status
+                                SELECT d.decision_number, dv.title, d.status, dv.custom_fields, d.created_at
                                 FROM decisions d
                                 JOIN decision_versions dv ON d.current_version_id = dv.id
                                 WHERE d.id = :did
@@ -2462,7 +2462,49 @@ class handler(BaseHTTPRequestHandler):
                                     if vt in votes:
                                         votes[vt].append(name)
 
-                                blocks = SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                                # Get channel_member_count and creator from custom_fields
+                                channel_member_count = 0
+                                creator_slack_id = ""
+                                if dec[3]:
+                                    cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
+                                    channel_member_count = cf.get("channel_member_count", 0)
+                                    creator_slack_id = cf.get("poll_creator_slack_id", "")
+
+                                # Check if consensus just reached on old poll (1+ day old)
+                                import math
+                                from datetime import datetime, timezone
+                                threshold = max(2, min(10, math.ceil(channel_member_count * 0.6))) if channel_member_count > 0 else 3
+                                consensus_reached = len(votes["agree"]) >= threshold and len(votes["block"]) == 0
+
+                                if consensus_reached and dec[2] != "approved" and creator_slack_id:
+                                    # Check if poll is 1+ day old
+                                    created_at = dec[4]
+                                    if created_at:
+                                        now = datetime.now(timezone.utc)
+                                        if hasattr(created_at, 'tzinfo') and created_at.tzinfo is None:
+                                            created_at = created_at.replace(tzinfo=timezone.utc)
+                                        age_hours = (now - created_at).total_seconds() / 3600
+
+                                        if age_hours >= 24:
+                                            # Send DM to creator
+                                            token = os.environ.get("SLACK_BOT_TOKEN", "")
+                                            if token:
+                                                frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
+                                                dm_blocks = [
+                                                    {"type": "section", "text": {"type": "mrkdwn", "text": f":tada: *Consensus reached on your poll!*\n\n*{dec[1]}*\n\nThe team has reached consensus. You can now approve this decision."}},
+                                                    {"type": "actions", "elements": [
+                                                        {"type": "button", "text": {"type": "plain_text", "text": "View Decision"}, "url": f"{frontend_url}/decisions/{decision_id}"}
+                                                    ]}
+                                                ]
+                                                dm_payload = json.dumps({"channel": creator_slack_id, "text": f"Consensus reached on: {dec[1]}", "blocks": dm_blocks}).encode()
+                                                dm_req = urllib.request.Request("https://slack.com/api/chat.postMessage", data=dm_payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                                                try:
+                                                    urllib.request.urlopen(dm_req, timeout=5)
+                                                    print(f"[SLACK ASYNC VOTE] Sent consensus DM to creator {creator_slack_id}")
+                                                except Exception as dm_e:
+                                                    print(f"[SLACK ASYNC VOTE] Failed to send DM: {dm_e}")
+
+                                blocks = SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count, creator_slack_id)
                                 update_payload = json.dumps({
                                     "replace_original": True,
                                     "blocks": blocks
@@ -2633,11 +2675,10 @@ class handler(BaseHTTPRequestHandler):
 
                 print(f"[SLACK FAST PATH] type={interaction_type}, callback_id={callback_id}")
 
-                # FAST PATH: For poll votes - process inline (fast DB operation)
+                # FAST PATH: For poll votes - respond immediately, process async
                 if interaction_type == "block_actions":
                     actions = payload.get("actions", [])
                     if actions and actions[0].get("action_id", "").startswith("poll_vote_"):
-                        from sqlalchemy import text
                         action = actions[0]
                         action_id = action.get("action_id", "")
                         decision_id = action.get("value", "")
@@ -2645,8 +2686,38 @@ class handler(BaseHTTPRequestHandler):
                         user_info = payload.get("user", {})
                         user_id = user_info.get("id", "")
                         user_name = user_info.get("username", "") or user_info.get("name", "")
+                        response_url = payload.get("response_url", "")
 
                         if decision_id and vote_type in ("agree", "concern", "block"):
+                            # Fire async request to process vote
+                            webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
+                            vote_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_poll_vote"
+
+                            vote_payload = json.dumps({
+                                "team_id": team_id,
+                                "decision_id": decision_id,
+                                "vote_type": vote_type,
+                                "user_id": user_id,
+                                "user_name": user_name,
+                                "response_url": response_url
+                            }).encode()
+
+                            req = urllib.request.Request(
+                                vote_url,
+                                data=vote_payload,
+                                headers={"Content-Type": "application/json"}
+                            )
+                            try:
+                                urllib.request.urlopen(req, timeout=0.1)
+                            except:
+                                pass  # Expected to timeout
+
+                            # Respond immediately
+                            self._send(200, {})
+                            return
+
+                    # DEAD CODE BELOW - keeping for reference but async_poll_vote handles this now
+                    if False and decision_id and vote_type in ("agree", "concern", "block"):
                             try:
                                 engine = get_db_connection()
                                 if engine:
