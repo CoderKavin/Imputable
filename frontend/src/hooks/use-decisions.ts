@@ -3,6 +3,7 @@
  * Provides efficient data fetching with caching for version switching
  *
  * These hooks now use Firebase authentication via useDecisionApi hook.
+ * Includes localStorage caching for instant page loads.
  */
 
 import {
@@ -28,6 +29,53 @@ import type {
   DecisionLineage,
   ApproveDecisionRequest,
 } from "@/types/decision";
+
+// =============================================================================
+// LOCALSTORAGE CACHING FOR INSTANT LOADS
+// =============================================================================
+
+const DECISIONS_CACHE_KEY = "imputable_decisions_cache";
+const CACHE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CachedDecisions {
+  orgId: string;
+  data: PaginatedResponse<DecisionSummary>;
+  timestamp: number;
+}
+
+function getCachedDecisions(
+  orgId: string,
+): PaginatedResponse<DecisionSummary> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem(DECISIONS_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached) as CachedDecisions;
+    // Only return if same org and not expired
+    if (
+      parsed.orgId === orgId &&
+      Date.now() - parsed.timestamp < CACHE_MAX_AGE_MS
+    ) {
+      return parsed.data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedDecisions(
+  orgId: string,
+  data: PaginatedResponse<DecisionSummary>,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const cached: CachedDecisions = { orgId, data, timestamp: Date.now() };
+    localStorage.setItem(DECISIONS_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 // =============================================================================
 // DECISION QUERIES
@@ -116,6 +164,7 @@ export const useVersionCompare = useVersionComparison;
 
 /**
  * Fetch decision list with pagination and optional status filter
+ * Uses localStorage caching for instant page loads on subsequent visits
  */
 export function useDecisionList(
   page = 1,
@@ -125,6 +174,11 @@ export function useDecisionList(
   const { listDecisions } = useDecisionApi();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
+  const orgId = currentOrganization?.id || "";
+
+  // Get cached data for instant initial render (only for first page, no filter)
+  const cachedData =
+    page === 1 && !statusFilter ? getCachedDecisions(orgId) : null;
 
   return useQuery({
     queryKey: [
@@ -132,11 +186,19 @@ export function useDecisionList(
       currentOrganization?.id,
       statusFilter,
     ],
-    queryFn: () => listDecisions(page, pageSize, statusFilter),
+    queryFn: async () => {
+      const data = await listDecisions(page, pageSize, statusFilter);
+      // Cache first page results for instant future loads
+      if (page === 1 && !statusFilter && orgId) {
+        setCachedDecisions(orgId, data);
+      }
+      return data;
+    },
     staleTime: 2 * 60 * 1000, // 2 minutes - lists don't change that frequently
     gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     enabled: !!user && !!currentOrganization?.id, // Only fetch when signed in with org
-    placeholderData: (previousData) => previousData, // Show previous data while fetching
+    placeholderData: (previousData) => previousData || cachedData || undefined, // Use localStorage cache as placeholder
+    initialData: cachedData || undefined, // Start with cached data immediately
   });
 }
 
@@ -317,6 +379,35 @@ export function usePendingApprovals() {
 
 // Need to import useApiClient for usePendingApprovals
 import { useApiClient } from "./use-api";
+
+// =============================================================================
+// RELATIONSHIPS (for Mind Map)
+// =============================================================================
+
+/**
+ * Fetch decision relationships for mind map visualization
+ * Uses caching for instant subsequent loads
+ */
+export function useDecisionRelationships(decisionIds: string[]) {
+  const client = useApiClient();
+  const { currentOrganization } = useOrganization();
+  const idsKey = decisionIds.sort().join(",");
+
+  return useQuery({
+    queryKey: ["relationships", currentOrganization?.id, idsKey],
+    queryFn: async () => {
+      if (decisionIds.length === 0) return { relationships: [] };
+      const response = await client.get(
+        `/decisions/relationships?decision_ids=${decisionIds.join(",")}`,
+      );
+      return response.data as { relationships: any[] };
+    },
+    staleTime: 60 * 1000, // 1 minute
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    enabled: decisionIds.length > 0 && !!currentOrganization?.id,
+    placeholderData: { relationships: [] },
+  });
+}
 
 // =============================================================================
 // OPTIMISTIC VERSION SWITCHING

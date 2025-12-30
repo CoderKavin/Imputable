@@ -22,6 +22,8 @@ import { DecisionNode, type DecisionNodeData } from "./DecisionNode";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, Plus, Trash2 } from "lucide-react";
 import { useApiClient } from "@/hooks/use-api";
+import { useDecisionRelationships } from "@/hooks/use-decisions";
+import { useQueryClient } from "@tanstack/react-query";
 import type {
   DecisionSummary,
   MindMapRelationship,
@@ -64,11 +66,10 @@ export function MindMapView({
   onAddRelationship,
 }: MindMapViewProps) {
   const client = useApiClient();
+  const queryClient = useQueryClient();
   const [nodes, setNodes, onNodesChange] = useNodesState<DecisionNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [relationships, setRelationships] = useState<MindMapRelationship[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [pendingConnection, setPendingConnection] = useState<{
     source: string;
@@ -85,29 +86,19 @@ export function MindMapView({
     return sorted.slice(0, maxDecisions);
   }, [decisions, maxDecisions]);
 
-  // Fetch existing relationships
-  const fetchRelationships = useCallback(async () => {
-    if (limitedDecisions.length === 0) {
-      setIsLoading(false);
-      return;
-    }
+  // Use React Query hook for relationships - cached and instant on subsequent loads
+  const decisionIds = useMemo(
+    () => limitedDecisions.map((d) => d.id),
+    [limitedDecisions],
+  );
+  const { data: relationshipsData, isLoading } =
+    useDecisionRelationships(decisionIds);
+  const relationships = relationshipsData?.relationships || [];
 
-    try {
-      const ids = limitedDecisions.map((d) => d.id).join(",");
-      const response = await client.get(
-        `/decisions/relationships?decision_ids=${ids}`,
-      );
-      setRelationships(response.data.relationships || []);
-    } catch (error) {
-      console.error("Failed to fetch relationships:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [client, limitedDecisions]);
-
-  useEffect(() => {
-    fetchRelationships();
-  }, [fetchRelationships]);
+  // Invalidate relationships cache to refetch
+  const refreshRelationships = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["relationships"] });
+  }, [queryClient]);
 
   // Calculate node positions in a circular/grid layout
   const calculateNodePositions = useCallback((count: number) => {
@@ -281,7 +272,7 @@ export function MindMapView({
       const newRelationships = response.data.relationships || [];
 
       if (newRelationships.length > 0) {
-        await fetchRelationships();
+        refreshRelationships();
         setAiMessage({
           type: "success",
           text: `Found ${newRelationships.length} new connection${newRelationships.length > 1 ? "s" : ""}!`,
@@ -315,7 +306,7 @@ export function MindMapView({
 
     try {
       await client.delete(`/decisions/relationships/${selectedEdge}`);
-      setRelationships((prev) => prev.filter((r) => r.id !== selectedEdge));
+      refreshRelationships();
       setSelectedEdge(null);
     } catch (error) {
       console.error("Failed to delete relationship:", error);
@@ -358,7 +349,7 @@ export function MindMapView({
         relationship_type: relationshipType,
       });
       console.log("Relationship created:", response.data);
-      await fetchRelationships();
+      refreshRelationships();
     } catch (error: any) {
       console.error("Failed to create relationship:", error);
       if (error.response?.status === 409) {
