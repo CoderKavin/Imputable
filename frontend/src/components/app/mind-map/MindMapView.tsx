@@ -267,8 +267,14 @@ export function MindMapView({
   }, [relationships, limitedDecisions, setEdges, selectedEdge]);
 
   // Generate AI relationships
+  const [aiMessage, setAiMessage] = useState<{
+    type: "success" | "info" | "error";
+    text: string;
+  } | null>(null);
+
   const handleGenerateRelationships = async () => {
     setIsGenerating(true);
+    setAiMessage(null);
     try {
       const decisionIds = limitedDecisions.map((d) => d.id);
       const response = await client.post("/decisions/relationships", {
@@ -276,12 +282,32 @@ export function MindMapView({
         decision_ids: decisionIds,
       });
 
-      if (response.data.relationships?.length > 0) {
-        // Refresh relationships
+      const newRelationships = response.data.relationships || [];
+
+      if (newRelationships.length > 0) {
         await fetchRelationships();
+        setAiMessage({
+          type: "success",
+          text: `Found ${newRelationships.length} new connection${newRelationships.length > 1 ? "s" : ""}!`,
+        });
+      } else {
+        setAiMessage({
+          type: "info",
+          text: "No new connections found. Try adding more decisions with detailed context.",
+        });
       }
-    } catch (error) {
+
+      // Auto-hide message after 5 seconds
+      setTimeout(() => setAiMessage(null), 5000);
+    } catch (error: any) {
       console.error("Failed to generate relationships:", error);
+      setAiMessage({
+        type: "error",
+        text:
+          error.response?.data?.error ||
+          "Failed to analyze decisions. Please try again.",
+      });
+      setTimeout(() => setAiMessage(null), 5000);
     } finally {
       setIsGenerating(false);
     }
@@ -474,6 +500,22 @@ export function MindMapView({
             </Button>
           )}
         </Panel>
+
+        {/* AI Message Toast */}
+        {aiMessage && (
+          <Panel position="top-center" className="pointer-events-none">
+            <div
+              className={`
+                px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium pointer-events-auto
+                ${aiMessage.type === "success" ? "bg-emerald-500 text-white" : ""}
+                ${aiMessage.type === "info" ? "bg-amber-500 text-white" : ""}
+                ${aiMessage.type === "error" ? "bg-red-500 text-white" : ""}
+              `}
+            >
+              {aiMessage.text}
+            </div>
+          </Panel>
+        )}
 
         {/* Legend */}
         <Panel
