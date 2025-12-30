@@ -114,13 +114,11 @@ class AuditAction(str, enum.Enum):
 
 
 class RelationshipType(str, enum.Enum):
-    INFLUENCED_BY = "influenced_by"  # This decision was influenced by another
-    LED_TO = "led_to"  # This decision led to another
-    RELATED_TO = "related_to"  # General relationship
     SUPERSEDES = "supersedes"  # This decision replaces another
-    CONFLICTS_WITH = "conflicts_with"  # Decisions are in tension
     BLOCKED_BY = "blocked_by"  # This decision is blocked by another
+    RELATED_TO = "related_to"  # General relationship
     IMPLEMENTS = "implements"  # This decision implements another
+    CONFLICTS_WITH = "conflicts_with"  # Decisions are in tension
 
 
 # =============================================================================
