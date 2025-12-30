@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 
@@ -39,9 +40,13 @@ export function LandingNavbar() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center font-bold text-white text-sm group-hover:scale-105 transition-transform">
-                IM
-              </div>
+              <Image
+                src="/icon.png"
+                alt="Imputable"
+                width={32}
+                height={32}
+                className="w-8 h-8 object-contain group-hover:scale-105 transition-transform"
+              />
               <span className="text-white font-semibold text-lg">
                 Imputable
               </span>

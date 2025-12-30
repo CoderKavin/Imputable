@@ -45,6 +45,28 @@ const OrganizationContext = createContext<OrganizationContextType | undefined>(
 );
 
 const CURRENT_ORG_KEY = "imputable_current_org";
+const ORGS_CACHE_KEY = "imputable_orgs_cache";
+
+// Helper to get cached orgs from localStorage
+function getCachedOrgs(): {
+  orgs: Organization[];
+  currentOrg: Organization | null;
+} {
+  if (typeof window === "undefined") return { orgs: [], currentOrg: null };
+  try {
+    const cached = localStorage.getItem(ORGS_CACHE_KEY);
+    const currentOrgId = localStorage.getItem(CURRENT_ORG_KEY);
+    if (cached) {
+      const orgs = JSON.parse(cached) as Organization[];
+      const currentOrg =
+        orgs.find((o) => o.id === currentOrgId) || orgs[0] || null;
+      return { orgs, currentOrg };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { orgs: [], currentOrg: null };
+}
 
 export function OrganizationProvider({
   children,
@@ -52,10 +74,15 @@ export function OrganizationProvider({
   children: React.ReactNode;
 }) {
   const { user, loading: authLoading, getToken } = useAuth();
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
+
+  // Initialize from cache for instant loading
+  const cached = getCachedOrgs();
+  const [organizations, setOrganizations] = useState<Organization[]>(
+    cached.orgs,
+  );
   const [currentOrganization, setCurrentOrganization] =
-    useState<Organization | null>(null);
-  const [loading, setLoading] = useState(true);
+    useState<Organization | null>(cached.currentOrg);
+  const [loading, setLoading] = useState(cached.orgs.length === 0); // Only show loading if no cache
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrganizations = useCallback(async () => {
@@ -93,6 +120,13 @@ export function OrganizationProvider({
       const data = await response.json();
       const orgs: Organization[] = data.organizations || data || [];
       setOrganizations(orgs);
+
+      // Cache orgs in localStorage for instant loading on next visit
+      try {
+        localStorage.setItem(ORGS_CACHE_KEY, JSON.stringify(orgs));
+      } catch {
+        // Ignore storage errors
+      }
 
       // Restore previously selected org from localStorage
       const savedOrgId = localStorage.getItem(CURRENT_ORG_KEY);

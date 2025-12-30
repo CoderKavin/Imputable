@@ -134,7 +134,9 @@ export function useDecisionList(
     ],
     queryFn: () => listDecisions(page, pageSize, statusFilter),
     staleTime: 2 * 60 * 1000, // 2 minutes - lists don't change that frequently
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     enabled: !!user && !!currentOrganization?.id, // Only fetch when signed in with org
+    placeholderData: (previousData) => previousData, // Show previous data while fetching
   });
 }
 
