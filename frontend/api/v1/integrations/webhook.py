@@ -180,6 +180,109 @@ def analyze_with_gemini(messages: list, channel_name: str = None, hint: str = No
         return None
 
 
+def semantic_search_decisions(query: str, decisions: list) -> dict:
+    """Use Gemini to find the most relevant decisions based on semantic understanding.
+
+    Args:
+        query: The user's search query (natural language)
+        decisions: List of decision dicts with id, decision_number, title, content, status, created_at
+
+    Returns:
+        dict with 'matches' (list of decision IDs ranked by relevance) and 'explanation'
+    """
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    if not gemini_key or not decisions:
+        return {"matches": [], "explanation": "No results found."}
+
+    # Format decisions for the prompt
+    decision_summaries = []
+    for d in decisions:
+        content = d.get("content", {})
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except:
+                content = {"context": content}
+
+        summary = f"""
+DECISION-{d['decision_number']} (ID: {d['id']})
+Title: {d['title']}
+Status: {d['status']}
+Created: {d.get('created_at', 'Unknown')}
+Context: {content.get('context', 'N/A')[:300]}
+Decision: {content.get('choice', 'N/A')[:300]}
+"""
+        decision_summaries.append(summary)
+
+    decisions_text = "\n---\n".join(decision_summaries)
+
+    search_prompt = f"""You are a search assistant for a decision log system.
+A user is searching for past decisions. Understand their intent (not just keywords) and find the most relevant decisions.
+
+USER SEARCH QUERY: "{query}"
+
+AVAILABLE DECISIONS:
+{decisions_text}
+
+Analyze the user's query and find decisions that match their intent. Consider:
+- Semantic similarity (e.g., "database migration" matches "Postgres Migration")
+- Topic relevance (e.g., "auth" matches decisions about "authentication", "login", "OAuth")
+- Temporal context clues (e.g., "that thing we decided last month" if dates match)
+
+Return a JSON object with:
+- "matches": array of decision IDs (just the UUID strings) ranked by relevance, max 5
+- "explanation": a brief, friendly explanation of what you found (1-2 sentences)
+- "best_match_summary": if there's a strong match, a one-line summary of why it's relevant
+
+Example response:
+{{"matches": ["uuid1", "uuid2"], "explanation": "Found 2 decisions about database migrations. The June decision specifically covers Postgres.", "best_match_summary": "DECISION-42 from June 12th decided to use Postgres for the migration."}}
+
+If no relevant decisions found, return:
+{{"matches": [], "explanation": "No decisions found matching your search. Try different keywords or check /decision list for recent decisions."}}
+"""
+
+    url = f"{GEMINI_API_URL}?key={gemini_key}"
+    payload = json.dumps({
+        "contents": [{
+            "parts": [{"text": search_prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "topP": 0.8,
+            "maxOutputTokens": 1024,
+            "responseMimeType": "application/json"
+        }
+    }).encode()
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"}
+    )
+
+    try:
+        response = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(response.read().decode())
+
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return {"matches": [], "explanation": "Search service unavailable."}
+
+        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
+        # Parse JSON from response
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0]
+
+        result = json.loads(text.strip())
+        return result
+    except Exception as e:
+        print(f"Semantic search error: {e}")
+        return {"matches": [], "explanation": "Search failed. Try a simpler query."}
+
+
 def fetch_slack_thread(token: str, channel_id: str, thread_ts: str) -> list:
     """Fetch all messages in a Slack thread."""
     messages = []
@@ -868,6 +971,45 @@ class SlackBlocks:
         return blocks
 
     @staticmethod
+    def semantic_search_results(query: str, decisions: list, explanation: str = "", best_match: str = ""):
+        """Format AI-powered semantic search results."""
+        frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
+
+        if not decisions:
+            blocks = [
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":mag: *Search:* {query}"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": explanation or "No matching decisions found. Try different keywords or check `/decision list` for recent decisions."}}
+            ]
+            return blocks
+
+        blocks = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": f":mag: *Search:* {query}"}}
+        ]
+
+        # Add AI explanation if provided
+        if explanation:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"_{explanation}_"}})
+
+        # Add best match summary if provided
+        if best_match:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f":bulb: *Best match:* {best_match}"}})
+
+        blocks.append({"type": "divider"})
+
+        status_emoji = {"draft": ":white_circle:", "pending_review": ":large_yellow_circle:", "approved": ":large_green_circle:", "deprecated": ":red_circle:", "superseded": ":black_circle:"}
+
+        for d in decisions[:5]:
+            dec_id, dec_num, title, status = d
+            emoji = status_emoji.get(status, ":white_circle:")
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"{emoji} *<{frontend_url}/decisions/{dec_id}|DECISION-{dec_num}>*\n{title}"},
+                "accessory": {"type": "button", "text": {"type": "plain_text", "text": "View"}, "url": f"{frontend_url}/decisions/{dec_id}", "action_id": f"view_decision_{dec_id}"}
+            })
+
+        return blocks
+
+    @staticmethod
     def decision_created(decision_id: str, decision_number: int, title: str):
         frontend_url = os.environ.get("FRONTEND_URL", "https://imputable.vercel.app")
         return [
@@ -1044,19 +1186,56 @@ def handle_slack_command(form_data: dict, conn) -> dict:
         decisions = result.fetchall()
         return {"response_type": "ephemeral", "blocks": SlackBlocks.search_results("recent decisions", decisions)}
 
-    # Search
+    # Search (AI-powered semantic search)
     if cmd_lower.startswith("search "):
         query = cmd_text[7:].strip()
+
+        # First, fetch all decisions for semantic search
         result = conn.execute(text("""
-            SELECT d.id, d.decision_number, dv.title, d.status
+            SELECT d.id, d.decision_number, dv.title, d.status, dv.content, d.created_at
             FROM decisions d
             JOIN decision_versions dv ON d.current_version_id = dv.id
             WHERE d.organization_id = :org_id AND d.deleted_at IS NULL
-              AND (LOWER(dv.title) LIKE :query OR LOWER(dv.content::text) LIKE :query)
-            ORDER BY d.created_at DESC LIMIT 5
-        """), {"org_id": org_id, "query": f"%{query.lower()}%"})
-        decisions = result.fetchall()
-        return {"response_type": "ephemeral", "blocks": SlackBlocks.search_results(query, decisions)}
+            ORDER BY d.created_at DESC LIMIT 50
+        """), {"org_id": org_id})
+        all_decisions = result.fetchall()
+
+        if not all_decisions:
+            return {"response_type": "ephemeral", "text": ":mag: No decisions found in your organization yet."}
+
+        # Convert to list of dicts for semantic search
+        decisions_for_search = []
+        decisions_by_id = {}
+        for row in all_decisions:
+            d = {
+                "id": str(row[0]),
+                "decision_number": row[1],
+                "title": row[2],
+                "status": row[3],
+                "content": row[4],
+                "created_at": str(row[5]) if row[5] else ""
+            }
+            decisions_for_search.append(d)
+            decisions_by_id[str(row[0])] = d
+
+        # Use AI to find relevant decisions
+        search_result = semantic_search_decisions(query, decisions_for_search)
+
+        matched_ids = search_result.get("matches", [])
+        explanation = search_result.get("explanation", "")
+        best_match = search_result.get("best_match_summary", "")
+
+        if not matched_ids:
+            return {"response_type": "ephemeral", "blocks": SlackBlocks.semantic_search_results(query, [], explanation)}
+
+        # Get matched decisions in order
+        matched_decisions = []
+        for mid in matched_ids:
+            if mid in decisions_by_id:
+                d = decisions_by_id[mid]
+                matched_decisions.append((d["id"], d["decision_number"], d["title"], d["status"]))
+
+        return {"response_type": "ephemeral", "blocks": SlackBlocks.semantic_search_results(query, matched_decisions, explanation, best_match)}
 
     # Poll
     if cmd_lower.startswith("poll "):
@@ -1100,6 +1279,22 @@ def handle_slack_command(form_data: dict, conn) -> dict:
                     VALUES (:id, :email, :name, :slack_id, 'slack', NOW(), NOW())
                 """), {"id": db_user_id, "email": f"{user_id}@slack.local", "name": user_name, "slack_id": user_id})
 
+            # Get channel member count for dynamic threshold
+            channel_member_count = 0
+            if slack_token:
+                token = decrypt_token(slack_token)
+                try:
+                    members_req = urllib.request.Request(
+                        f"https://slack.com/api/conversations.members?channel={channel_id}&limit=100",
+                        headers={"Authorization": f"Bearer {token}"}
+                    )
+                    members_resp = urllib.request.urlopen(members_req, timeout=5)
+                    members_data = json.loads(members_resp.read().decode())
+                    if members_data.get("ok"):
+                        channel_member_count = len(members_data.get("members", []))
+                except Exception as e:
+                    print(f"[SLACK POLL] Failed to get channel members: {e}")
+
             conn.execute(text("""
                 INSERT INTO decisions (id, organization_id, decision_number, status, created_by, source, slack_channel_id, is_temporary, created_at, updated_at)
                 VALUES (:id, :org_id, :num, 'pending_review', :user_id, 'slack', :channel_id, false, NOW(), NOW())
@@ -1107,10 +1302,11 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
             content = json.dumps({"context": "This decision was proposed via Slack poll for team consensus.", "choice": f"Team is voting on: {question}", "rationale": None, "alternatives": []})
             tags = '{"slack-logged", "poll"}'
+            custom_fields = json.dumps({"channel_member_count": channel_member_count, "poll_creator_slack_id": user_id})
             conn.execute(text("""
                 INSERT INTO decision_versions (id, decision_id, version_number, title, impact_level, content, tags, created_by, created_at, custom_fields)
-                VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), '{}')
-            """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "tags": tags, "user_id": db_user_id})
+                VALUES (:id, :did, 1, :title, 'medium', :content, :tags, :user_id, NOW(), :custom_fields)
+            """), {"id": version_id, "did": decision_id, "title": question[:255], "content": content, "tags": tags, "user_id": db_user_id, "custom_fields": custom_fields})
 
             conn.execute(text("UPDATE decisions SET current_version_id = :vid WHERE id = :did"), {"vid": version_id, "did": decision_id})
             conn.commit()
@@ -1118,7 +1314,7 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             decision_number = next_num
             title = question[:255]
 
-        # Get current votes
+        # Get current votes and custom_fields
         result = conn.execute(text("""
             SELECT vote_type, external_user_name FROM poll_votes WHERE decision_id = :did
         """), {"did": decision_id})
@@ -1129,7 +1325,21 @@ def handle_slack_command(form_data: dict, conn) -> dict:
             if vote_type in votes:
                 votes[vote_type].append(name)
 
-        return {"response_type": "in_channel", "blocks": SlackBlocks.consensus_poll(decision_id, decision_number, title, votes, decision_status)}
+        # Get channel_member_count and creator from custom_fields
+        channel_member_count = 0
+        creator_slack_id = user_id  # Default to current user for new polls
+        result = conn.execute(text("""
+            SELECT dv.custom_fields FROM decision_versions dv
+            JOIN decisions d ON d.current_version_id = dv.id
+            WHERE d.id = :did
+        """), {"did": decision_id})
+        cf_row = result.fetchone()
+        if cf_row and cf_row[0]:
+            cf = cf_row[0] if isinstance(cf_row[0], dict) else json.loads(cf_row[0]) if cf_row[0] else {}
+            channel_member_count = cf.get("channel_member_count", 0)
+            creator_slack_id = cf.get("poll_creator_slack_id", user_id)
+
+        return {"response_type": "in_channel", "blocks": SlackBlocks.consensus_poll(decision_id, decision_number, title, votes, decision_status, channel_member_count, creator_slack_id)}
 
     # Add/create
     if cmd_lower.startswith(("add ", "create ", "new ")):
@@ -1634,8 +1844,23 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
 
             # Approve decision from poll (consensus reached)
             if action_id == "poll_approve_decision":
-                decision_id = action.get("value", "")
+                action_value = action.get("value", "")
+                # Parse decision_id and creator_id from value (format: "decision_id|creator_id")
+                if "|" in action_value:
+                    decision_id, creator_id = action_value.split("|", 1)
+                else:
+                    decision_id = action_value
+                    creator_id = ""
+
                 if decision_id:
+                    # Check if user is the poll creator
+                    if creator_id and user_id != creator_id:
+                        return {
+                            "response_type": "ephemeral",
+                            "replace_original": False,
+                            "text": ":warning: Only the poll creator can approve this decision."
+                        }
+
                     # Update decision status to approved
                     conn.execute(text("""
                         UPDATE decisions SET status = 'approved', updated_at = NOW()
@@ -1643,9 +1868,9 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                     """), {"did": decision_id})
                     conn.commit()
 
-                    # Get updated decision info
+                    # Get updated decision info including custom_fields
                     result = conn.execute(text("""
-                        SELECT d.decision_number, dv.title, d.status
+                        SELECT d.decision_number, dv.title, d.status, dv.custom_fields
                         FROM decisions d
                         JOIN decision_versions dv ON d.current_version_id = dv.id
                         WHERE d.id = :did
@@ -1661,10 +1886,18 @@ def handle_slack_interactions(payload: dict, conn) -> dict:
                             if vt in votes:
                                 votes[vt].append(name)
 
+                        # Get channel_member_count and creator from custom_fields
+                        channel_member_count = 0
+                        creator_slack_id = creator_id or user_id
+                        if dec[3]:
+                            cf = dec[3] if isinstance(dec[3], dict) else json.loads(dec[3]) if dec[3] else {}
+                            channel_member_count = cf.get("channel_member_count", 0)
+                            creator_slack_id = cf.get("poll_creator_slack_id", creator_slack_id)
+
                         return {
                             "response_type": "in_channel",
                             "replace_original": True,
-                            "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2])
+                            "blocks": SlackBlocks.consensus_poll(decision_id, dec[0], dec[1], votes, dec[2], channel_member_count, creator_slack_id)
                         }
 
             # Help button
