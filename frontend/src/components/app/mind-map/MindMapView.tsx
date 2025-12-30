@@ -58,11 +58,13 @@ const edgeLabels: Record<RelationshipType, string> = {
 
 interface MindMapViewProps {
   decisions: DecisionSummary[];
+  maxDecisions?: number;
   onAddRelationship?: () => void;
 }
 
 export function MindMapView({
   decisions,
+  maxDecisions = 8,
   onAddRelationship,
 }: MindMapViewProps) {
   const client = useApiClient();
@@ -78,10 +80,10 @@ export function MindMapView({
   } | null>(null);
   const [isCreatingConnection, setIsCreatingConnection] = useState(false);
 
-  // Limit to 8 most recent decisions
+  // Limit to maxDecisions most recent decisions
   const limitedDecisions = useMemo(() => {
-    return decisions.slice(0, 8);
-  }, [decisions]);
+    return decisions.slice(0, maxDecisions);
+  }, [decisions, maxDecisions]);
 
   // Fetch existing relationships
   const fetchRelationships = useCallback(async () => {
@@ -110,37 +112,80 @@ export function MindMapView({
   // Calculate node positions in a circular/grid layout
   const calculateNodePositions = useCallback((count: number) => {
     const positions: { x: number; y: number }[] = [];
-    const centerX = 400;
-    const centerY = 300;
+    const centerX = 500;
+    const centerY = 350;
 
     if (count <= 4) {
       // 2x2 grid
       const gridPositions = [
-        { x: centerX - 150, y: centerY - 120 },
-        { x: centerX + 150, y: centerY - 120 },
-        { x: centerX - 150, y: centerY + 120 },
-        { x: centerX + 150, y: centerY + 120 },
+        { x: centerX - 180, y: centerY - 140 },
+        { x: centerX + 180, y: centerY - 140 },
+        { x: centerX - 180, y: centerY + 140 },
+        { x: centerX + 180, y: centerY + 140 },
       ];
       return gridPositions.slice(0, count);
     } else if (count <= 6) {
       // 3x2 grid
       const gridPositions = [
-        { x: centerX - 250, y: centerY - 120 },
-        { x: centerX, y: centerY - 120 },
-        { x: centerX + 250, y: centerY - 120 },
-        { x: centerX - 250, y: centerY + 120 },
-        { x: centerX, y: centerY + 120 },
-        { x: centerX + 250, y: centerY + 120 },
+        { x: centerX - 280, y: centerY - 140 },
+        { x: centerX, y: centerY - 140 },
+        { x: centerX + 280, y: centerY - 140 },
+        { x: centerX - 280, y: centerY + 140 },
+        { x: centerX, y: centerY + 140 },
+        { x: centerX + 280, y: centerY + 140 },
       ];
       return gridPositions.slice(0, count);
-    } else {
+    } else if (count <= 8) {
       // Circular layout for 7-8 nodes
-      const radius = 280;
+      const radius = 300;
       for (let i = 0; i < count; i++) {
         const angle = (i * 2 * Math.PI) / count - Math.PI / 2;
         positions.push({
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle),
+        });
+      }
+      return positions;
+    } else if (count <= 12) {
+      // Dual ring layout for 9-12 nodes
+      const innerRadius = 200;
+      const outerRadius = 380;
+      const innerCount = Math.min(4, count);
+      const outerCount = count - innerCount;
+
+      // Inner ring
+      for (let i = 0; i < innerCount; i++) {
+        const angle = (i * 2 * Math.PI) / innerCount - Math.PI / 2;
+        positions.push({
+          x: centerX + innerRadius * Math.cos(angle),
+          y: centerY + innerRadius * Math.sin(angle),
+        });
+      }
+
+      // Outer ring
+      for (let i = 0; i < outerCount; i++) {
+        const angle =
+          (i * 2 * Math.PI) / outerCount - Math.PI / 2 + Math.PI / outerCount;
+        positions.push({
+          x: centerX + outerRadius * Math.cos(angle),
+          y: centerY + outerRadius * Math.sin(angle),
+        });
+      }
+      return positions;
+    } else {
+      // Large grid layout for 13+ nodes (4 columns)
+      const cols = 4;
+      const spacing = { x: 280, y: 180 };
+      const startX = centerX - ((cols - 1) * spacing.x) / 2;
+      const rows = Math.ceil(count / cols);
+      const startY = centerY - ((rows - 1) * spacing.y) / 2;
+
+      for (let i = 0; i < count; i++) {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        positions.push({
+          x: startX + col * spacing.x,
+          y: startY + row * spacing.y,
         });
       }
       return positions;

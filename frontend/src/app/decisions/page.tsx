@@ -41,6 +41,7 @@ const AddRelationshipModal = lazy(() =>
 
 type StatusFilter = "all" | "approved" | "pending_review" | "draft" | "at_risk";
 type ViewMode = "list" | "mindmap";
+type DecisionCount = 4 | 6 | 8 | 12 | 16;
 
 export default function DecisionsPage() {
   return (
@@ -69,6 +70,8 @@ function DecisionsPageContent() {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showAddRelationshipModal, setShowAddRelationshipModal] =
     useState(false);
+  const [mindMapDecisionCount, setMindMapDecisionCount] =
+    useState<DecisionCount>(8);
   const { currentOrganization, loading: orgLoading } = useOrganization();
 
   // Read status filter and view mode from URL query params on mount and when URL changes
@@ -157,35 +160,53 @@ function DecisionsPageContent() {
                 </button>
               </div>
 
-              {/* Status filters - only show in list view */}
-              {viewMode === "list" && (
-                <>
-                  <FilterPill
-                    label="All Status"
-                    active={statusFilter === "all"}
-                    onClick={() => handleFilterChange("all")}
-                  />
-                  <FilterPill
-                    label="Approved"
-                    active={statusFilter === "approved"}
-                    onClick={() => handleFilterChange("approved")}
-                  />
-                  <FilterPill
-                    label="In Review"
-                    active={statusFilter === "pending_review"}
-                    onClick={() => handleFilterChange("pending_review")}
-                  />
-                  <FilterPill
-                    label="Draft"
-                    active={statusFilter === "draft"}
-                    onClick={() => handleFilterChange("draft")}
-                  />
-                  <FilterPill
-                    label="At Risk"
-                    active={statusFilter === "at_risk"}
-                    onClick={() => handleFilterChange("at_risk")}
-                  />
-                </>
+              {/* Status filters - show for both views */}
+              <FilterPill
+                label="All Status"
+                active={statusFilter === "all"}
+                onClick={() => handleFilterChange("all")}
+              />
+              <FilterPill
+                label="Approved"
+                active={statusFilter === "approved"}
+                onClick={() => handleFilterChange("approved")}
+              />
+              <FilterPill
+                label="In Review"
+                active={statusFilter === "pending_review"}
+                onClick={() => handleFilterChange("pending_review")}
+              />
+              <FilterPill
+                label="Draft"
+                active={statusFilter === "draft"}
+                onClick={() => handleFilterChange("draft")}
+              />
+              <FilterPill
+                label="At Risk"
+                active={statusFilter === "at_risk"}
+                onClick={() => handleFilterChange("at_risk")}
+              />
+
+              {/* Decision count selector - only in mind map view */}
+              {viewMode === "mindmap" && (
+                <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
+                  <span className="text-xs text-gray-500">Show:</span>
+                  <select
+                    value={mindMapDecisionCount}
+                    onChange={(e) =>
+                      setMindMapDecisionCount(
+                        Number(e.target.value) as DecisionCount,
+                      )
+                    }
+                    className="text-xs font-medium bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value={4}>4 decisions</option>
+                    <option value={6}>6 decisions</option>
+                    <option value={8}>8 decisions</option>
+                    <option value={12}>12 decisions</option>
+                    <option value={16}>16 decisions</option>
+                  </select>
+                </div>
               )}
             </div>
             <Button
@@ -215,7 +236,8 @@ function DecisionsPageContent() {
               }
             >
               <MindMapView
-                decisions={data?.items || []}
+                decisions={filteredDecisions}
+                maxDecisions={mindMapDecisionCount}
                 onAddRelationship={() => setShowAddRelationshipModal(true)}
               />
             </Suspense>
