@@ -211,44 +211,45 @@ export function MindMapView({
 
     const newEdges: Edge[] = relationships
       .filter(
-        (rel) =>
+        (rel: MindMapRelationship) =>
           decisionIds.has(rel.source_decision_id) &&
           decisionIds.has(rel.target_decision_id),
       )
-      .map((rel) => ({
-        id: rel.id,
-        source: rel.source_decision_id,
-        target: rel.target_decision_id,
-        type: "smoothstep",
-        animated:
-          rel.relationship_type === "conflicts_with" ||
-          rel.relationship_type === "blocked_by",
-        label: edgeLabels[rel.relationship_type],
-        labelStyle: {
-          fontSize: 10,
-          fontWeight: 500,
-          fill: edgeColors[rel.relationship_type],
-        },
-        labelBgStyle: {
-          fill: "white",
-          fillOpacity: 0.9,
-        },
-        labelBgPadding: [4, 2] as [number, number],
-        labelBgBorderRadius: 4,
-        style: {
-          stroke: edgeColors[rel.relationship_type],
-          strokeWidth: selectedEdge === rel.id ? 3 : 2,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: edgeColors[rel.relationship_type],
-          width: 20,
-          height: 20,
-        },
-        data: {
-          relationship: rel,
-        },
-      }));
+      .map((rel: MindMapRelationship) => {
+        const relType = rel.relationship_type as RelationshipType;
+        return {
+          id: rel.id,
+          source: rel.source_decision_id,
+          target: rel.target_decision_id,
+          type: "smoothstep",
+          animated: relType === "conflicts_with" || relType === "blocked_by",
+          label: edgeLabels[relType],
+          labelStyle: {
+            fontSize: 10,
+            fontWeight: 500,
+            fill: edgeColors[relType],
+          },
+          labelBgStyle: {
+            fill: "white",
+            fillOpacity: 0.9,
+          },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 4,
+          style: {
+            stroke: edgeColors[relType],
+            strokeWidth: selectedEdge === rel.id ? 3 : 2,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: edgeColors[relType],
+            width: 20,
+            height: 20,
+          },
+          data: {
+            relationship: rel,
+          },
+        };
+      });
 
     setEdges(newEdges);
   }, [relationships, limitedDecisions, setEdges, selectedEdge]);
