@@ -256,35 +256,41 @@ class handler(BaseHTTPRequestHandler):
                     if decision_ids:
                         # Filter by specific decisions
                         ids_list = decision_ids.split(",")
-                        placeholders = ",".join([f":id{i}" for i in range(len(ids_list))])
-                        id_params = {f"id{i}": id for i, id in enumerate(ids_list)}
+                        # Create separate placeholders for source and target to avoid duplication issues
+                        src_placeholders = ",".join([f":src_id{i}" for i in range(len(ids_list))])
+                        tgt_placeholders = ",".join([f":tgt_id{i}" for i in range(len(ids_list))])
+                        id_params = {}
+                        for i, id in enumerate(ids_list):
+                            id_params[f"src_id{i}"] = id
+                            id_params[f"tgt_id{i}"] = id
 
                         result = conn.execute(text(f"""
                             SELECT
                                 dr.id,
                                 dr.source_decision_id,
                                 dr.target_decision_id,
-                                dr.relationship_type,
+                                dr.relationship_type::text,
                                 dr.description,
                                 dr.confidence_score,
                                 dr.is_ai_generated,
                                 dr.created_at,
                                 sd.decision_number as source_number,
-                                sd.status as source_status,
+                                sd.status::text as source_status,
                                 sdv.title as source_title,
-                                sdv.impact_level as source_impact,
+                                sdv.impact_level::text as source_impact,
                                 td.decision_number as target_number,
-                                td.status as target_status,
+                                td.status::text as target_status,
                                 tdv.title as target_title,
-                                tdv.impact_level as target_impact
+                                tdv.impact_level::text as target_impact
                             FROM decision_relationships dr
                             JOIN decisions sd ON dr.source_decision_id = sd.id
                             JOIN decision_versions sdv ON sd.current_version_id = sdv.id
                             JOIN decisions td ON dr.target_decision_id = td.id
                             JOIN decision_versions tdv ON td.current_version_id = tdv.id
-                            WHERE dr.organization_id = :org_id
-                              AND (dr.source_decision_id IN ({placeholders})
-                                   OR dr.target_decision_id IN ({placeholders}))
+                            WHERE (dr.organization_id = :org_id OR dr.organization_id IS NULL)
+                              AND (dr.source_decision_id IN ({src_placeholders})
+                                   OR dr.target_decision_id IN ({tgt_placeholders}))
+                              AND dr.invalidated_at IS NULL
                             ORDER BY dr.created_at DESC
                         """), {"org_id": org_id, **id_params})
                     else:
@@ -294,25 +300,26 @@ class handler(BaseHTTPRequestHandler):
                                 dr.id,
                                 dr.source_decision_id,
                                 dr.target_decision_id,
-                                dr.relationship_type,
+                                dr.relationship_type::text,
                                 dr.description,
                                 dr.confidence_score,
                                 dr.is_ai_generated,
                                 dr.created_at,
                                 sd.decision_number as source_number,
-                                sd.status as source_status,
+                                sd.status::text as source_status,
                                 sdv.title as source_title,
-                                sdv.impact_level as source_impact,
+                                sdv.impact_level::text as source_impact,
                                 td.decision_number as target_number,
-                                td.status as target_status,
+                                td.status::text as target_status,
                                 tdv.title as target_title,
-                                tdv.impact_level as target_impact
+                                tdv.impact_level::text as target_impact
                             FROM decision_relationships dr
                             JOIN decisions sd ON dr.source_decision_id = sd.id
                             JOIN decision_versions sdv ON sd.current_version_id = sdv.id
                             JOIN decisions td ON dr.target_decision_id = td.id
                             JOIN decision_versions tdv ON td.current_version_id = tdv.id
-                            WHERE dr.organization_id = :org_id
+                            WHERE (dr.organization_id = :org_id OR dr.organization_id IS NULL)
+                              AND dr.invalidated_at IS NULL
                             ORDER BY dr.created_at DESC
                         """), {"org_id": org_id})
 
@@ -403,9 +410,10 @@ class handler(BaseHTTPRequestHandler):
                         # Get existing relationships to avoid duplicates
                         existing = set()
                         result = conn.execute(text("""
-                            SELECT source_decision_id, target_decision_id, relationship_type
+                            SELECT source_decision_id, target_decision_id, relationship_type::text
                             FROM decision_relationships
-                            WHERE organization_id = :org_id
+                            WHERE (organization_id = :org_id OR organization_id IS NULL)
+                              AND invalidated_at IS NULL
                         """), {"org_id": org_id})
                         for row in result.fetchall():
                             existing.add((str(row[0]), str(row[1]), row[2]))
@@ -430,7 +438,7 @@ class handler(BaseHTTPRequestHandler):
                                 INSERT INTO decision_relationships
                                 (id, organization_id, source_decision_id, target_decision_id,
                                  relationship_type, description, confidence_score, is_ai_generated, created_by, created_at)
-                                VALUES (:id, :org_id, :src, :tgt, :type, :desc, :conf, true, :user_id, NOW())
+                                VALUES (:id, :org_id, :src, :tgt, :type::relationship_type, :desc, :conf, true, :user_id, NOW())
                             """), {
                                 "id": rel_id,
                                 "org_id": org_id,
@@ -489,7 +497,9 @@ class handler(BaseHTTPRequestHandler):
                         existing = conn.execute(text("""
                             SELECT id FROM decision_relationships
                             WHERE source_decision_id = :src AND target_decision_id = :tgt
-                              AND relationship_type = :type AND organization_id = :org_id
+                              AND relationship_type = :type::relationship_type
+                              AND (organization_id = :org_id OR organization_id IS NULL)
+                              AND invalidated_at IS NULL
                         """), {"src": source_id, "tgt": target_id, "type": rel_type, "org_id": org_id})
                         if existing.fetchone():
                             self._send(409, {"error": "Relationship already exists"})
@@ -500,7 +510,7 @@ class handler(BaseHTTPRequestHandler):
                             INSERT INTO decision_relationships
                             (id, organization_id, source_decision_id, target_decision_id,
                              relationship_type, description, is_ai_generated, created_by, created_at)
-                            VALUES (:id, :org_id, :src, :tgt, :type, :desc, false, :user_id, NOW())
+                            VALUES (:id, :org_id, :src, :tgt, :type::relationship_type, :desc, false, :user_id, NOW())
                         """), {
                             "id": rel_id,
                             "org_id": org_id,

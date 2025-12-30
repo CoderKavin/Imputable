@@ -104,12 +104,17 @@ class handler(BaseHTTPRequestHandler):
                     self._send(403, {"error": "Not a member of this organization"})
                     return
 
-                # Delete the relationship
+                user_id = str(user_row[0])
+
+                # Soft delete the relationship (set invalidated_at)
                 result = conn.execute(text("""
-                    DELETE FROM decision_relationships
-                    WHERE id = :rel_id AND organization_id = :org_id
+                    UPDATE decision_relationships
+                    SET invalidated_at = NOW(), invalidated_by = :user_id
+                    WHERE id = :rel_id
+                      AND (organization_id = :org_id OR organization_id IS NULL)
+                      AND invalidated_at IS NULL
                     RETURNING id
-                """), {"rel_id": relationship_id, "org_id": org_id})
+                """), {"rel_id": relationship_id, "org_id": org_id, "user_id": user_id})
 
                 deleted = result.fetchone()
                 conn.commit()
