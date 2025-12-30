@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   X,
   FileText,
@@ -20,8 +20,6 @@ const ONBOARDING_KEY = "imputable_onboarding_complete";
 interface WelcomeModalProps {
   onComplete?: () => void;
 }
-
-type StepPhase = "highlight" | "animate-cursor" | "show-target";
 
 interface TourStep {
   title: string;
@@ -63,8 +61,7 @@ const steps: TourStep[] = [
     position: "right",
     requiresNavigation: true,
     navigationPath: "/decisions",
-    secondarySelector:
-      'button:has(.lucide-git-branch), [class*="mindmap"], button:contains("Mind Map")',
+    secondarySelector: "mind-map-button",
   },
   {
     title: "Works Best with Slack & Teams",
@@ -76,8 +73,7 @@ const steps: TourStep[] = [
     position: "right",
     requiresNavigation: true,
     navigationPath: "/settings",
-    secondarySelector:
-      '[data-tab="integrations"], button:contains("Integrations")',
+    secondarySelector: "integrations-tab",
   },
   {
     title: "Audit Trail",
@@ -98,462 +94,382 @@ const steps: TourStep[] = [
   },
 ];
 
-// Animated cursor component
-function AnimatedCursor({
-  fromRect,
-  toRect,
-  onComplete,
-}: {
-  fromRect: DOMRect;
-  toRect: DOMRect;
-  onComplete: () => void;
-}) {
-  const [position, setPosition] = useState({
-    x: fromRect.left + fromRect.width / 2,
-    y: fromRect.top + fromRect.height / 2,
-  });
-  const [isClicking, setIsClicking] = useState(false);
-
-  useEffect(() => {
-    const targetX = toRect.left + toRect.width / 2;
-    const targetY = toRect.top + toRect.height / 2;
-
-    const moveTimer = setTimeout(() => {
-      setPosition({ x: targetX, y: targetY });
-    }, 200);
-
-    const clickTimer = setTimeout(() => {
-      setIsClicking(true);
-    }, 900);
-
-    const completeTimer = setTimeout(() => {
-      setIsClicking(false);
-      onComplete();
-    }, 1200);
-
-    return () => {
-      clearTimeout(moveTimer);
-      clearTimeout(clickTimer);
-      clearTimeout(completeTimer);
-    };
-  }, [toRect, onComplete]);
-
-  return (
-    <div
-      className="fixed z-[400] pointer-events-none"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: `translate(-50%, -50%) ${isClicking ? "scale(0.85)" : "scale(1)"}`,
-        transition:
-          "left 0.6s cubic-bezier(0.4, 0, 0.2, 1), top 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s ease-out",
-      }}
-    >
-      <MousePointer2
-        className="w-7 h-7 text-white"
-        fill="white"
-        style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.4))" }}
-      />
-      {isClicking && (
-        <div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-indigo-400/50"
-          style={{ animation: "ping 0.4s ease-out" }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Smooth highlight border component
-function HighlightBorder({ rect }: { rect: DOMRect }) {
-  return (
-    <>
-      {/* Clean border highlight */}
-      <div
-        className="absolute z-[301] pointer-events-none"
-        style={{
-          top: rect.top - 6,
-          left: rect.left - 6,
-          width: rect.width + 12,
-          height: rect.height + 12,
-          borderRadius: 12,
-          border: "3px solid #6366f1",
-          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.7)",
-          transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
-        }}
-      />
-      {/* Animated gradient border */}
-      <div
-        className="absolute z-[300] pointer-events-none"
-        style={{
-          top: rect.top - 8,
-          left: rect.left - 8,
-          width: rect.width + 16,
-          height: rect.height + 16,
-          borderRadius: 14,
-          background: "linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1)",
-          backgroundSize: "200% 100%",
-          animation: "shimmer 2s linear infinite",
-          padding: 2,
-          transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
-        }}
-      >
-        <div
-          className="w-full h-full rounded-xl"
-          style={{ background: "transparent" }}
-        />
-      </div>
-      <style jsx>{`
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-      `}</style>
-    </>
-  );
-}
-
 export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [stepPhase, setStepPhase] = useState<StepPhase>("highlight");
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
-  const [secondaryRect, setSecondaryRect] = useState<DOMRect | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
   const [showCursor, setShowCursor] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const [cursorClicking, setCursorClicking] = useState(false);
+  const [contentVisible, setContentVisible] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const navigationPendingRef = useRef(false);
 
   const step = steps[currentStep];
 
-  const updateHighlight = useCallback(() => {
-    if (stepPhase === "show-target" && step.secondarySelector) {
-      const selectors = step.secondarySelector.split(", ");
-      for (const selector of selectors) {
-        try {
-          const element = document.querySelector(selector);
-          if (element) {
-            setSecondaryRect(element.getBoundingClientRect());
-            setHighlightRect(null);
-            return;
-          }
-        } catch {
-          // Invalid selector, try next
-        }
-      }
-      if (step.title.includes("Mind Map")) {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        for (const btn of buttons) {
-          if (btn.textContent?.includes("Mind Map")) {
-            setSecondaryRect(btn.getBoundingClientRect());
-            setHighlightRect(null);
-            return;
-          }
-        }
-      }
-      if (step.title.includes("Slack")) {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        for (const btn of buttons) {
-          if (btn.textContent?.includes("Integrations")) {
-            setSecondaryRect(btn.getBoundingClientRect());
-            setHighlightRect(null);
-            return;
-          }
+  // Find element to highlight
+  const findElement = useCallback((selector: string): Element | null => {
+    // Direct selector
+    const direct = document.querySelector(selector);
+    if (direct) return direct;
+
+    // Fallback for Mind Map button
+    if (selector === "mind-map-button") {
+      const buttons = document.querySelectorAll("button");
+      for (let i = 0; i < buttons.length; i++) {
+        if (buttons[i].textContent?.includes("Mind Map")) {
+          return buttons[i];
         }
       }
     }
 
-    if (step.highlightSelector) {
-      const element = document.querySelector(step.highlightSelector);
+    // Fallback for Integrations tab
+    if (selector === "integrations-tab") {
+      const buttons = document.querySelectorAll("button");
+      for (let i = 0; i < buttons.length; i++) {
+        if (buttons[i].textContent?.includes("Integrations")) {
+          return buttons[i];
+        }
+      }
+    }
+
+    return null;
+  }, []);
+
+  // Update highlight position
+  const updateHighlight = useCallback(() => {
+    if (!step.highlightSelector && !step.secondarySelector) {
+      setHighlightRect(null);
+      return;
+    }
+
+    // If we navigated and have a secondary selector, use that
+    if (
+      step.requiresNavigation &&
+      step.navigationPath === pathname &&
+      step.secondarySelector
+    ) {
+      const element = findElement(step.secondarySelector);
       if (element) {
         setHighlightRect(element.getBoundingClientRect());
-        setSecondaryRect(null);
         return;
       }
     }
-    setHighlightRect(null);
-    setSecondaryRect(null);
-  }, [currentStep, stepPhase, step]);
 
+    // Otherwise use primary selector
+    if (step.highlightSelector) {
+      const element = findElement(step.highlightSelector);
+      if (element) {
+        setHighlightRect(element.getBoundingClientRect());
+        return;
+      }
+    }
+
+    setHighlightRect(null);
+  }, [step, pathname, findElement]);
+
+  // Check if onboarding should show
   useEffect(() => {
     if (typeof window !== "undefined") {
       const completed = localStorage.getItem(ONBOARDING_KEY);
       if (!completed) {
-        const timer = setTimeout(() => setIsOpen(true), 500);
-        return () => clearTimeout(timer);
+        setTimeout(() => setIsOpen(true), 500);
       }
     }
   }, []);
 
+  // Update highlight when step or path changes
+  useEffect(() => {
+    if (isOpen && !isAnimating) {
+      // Small delay to let DOM settle after navigation
+      const timer = setTimeout(updateHighlight, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, currentStep, pathname, isAnimating, updateHighlight]);
+
+  // Handle resize
   useEffect(() => {
     if (isOpen) {
-      updateHighlight();
       window.addEventListener("resize", updateHighlight);
       return () => window.removeEventListener("resize", updateHighlight);
     }
-  }, [isOpen, currentStep, stepPhase, updateHighlight]);
+  }, [isOpen, updateHighlight]);
 
+  // Handle navigation completion
   useEffect(() => {
-    if (
-      step.requiresNavigation &&
-      step.navigationPath &&
-      pathname === step.navigationPath &&
-      stepPhase === "animate-cursor"
-    ) {
-      const timer = setTimeout(() => {
-        setStepPhase("show-target");
+    if (navigationPendingRef.current && step.navigationPath === pathname) {
+      navigationPendingRef.current = false;
+      // Navigation complete, show the secondary element
+      setTimeout(() => {
+        setIsAnimating(false);
         setShowCursor(false);
-        setIsTransitioning(false);
-      }, 600);
-      return () => clearTimeout(timer);
+        setContentVisible(true);
+        updateHighlight();
+      }, 300);
     }
-  }, [pathname, step, stepPhase]);
+  }, [pathname, step.navigationPath, updateHighlight]);
 
-  const handleComplete = () => {
+  const handleComplete = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, "true");
     setIsOpen(false);
     router.push("/dashboard");
     onComplete?.();
-  };
+  }, [router, onComplete]);
 
-  const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-      const nextStep = steps[currentStep + 1];
+  const animateCursorAndNavigate = useCallback(() => {
+    if (!step.highlightSelector) return;
 
-      // Smooth transition
-      setIsTransitioning(true);
+    const element = findElement(step.highlightSelector);
+    if (!element) return;
 
-      setTimeout(() => {
-        setCurrentStep(currentStep + 1);
+    const rect = element.getBoundingClientRect();
+    const targetX = rect.left + rect.width / 2;
+    const targetY = rect.top + rect.height / 2;
 
-        if (nextStep.requiresNavigation) {
-          setStepPhase("animate-cursor");
-          setShowCursor(true);
-        } else {
-          setStepPhase("highlight");
-          setShowCursor(false);
-          setTimeout(() => setIsTransitioning(false), 300);
-        }
-      }, 150);
-    } else {
+    // Start cursor from center of screen
+    setCursorPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    setShowCursor(true);
+    setContentVisible(false);
+
+    // Animate to target
+    setTimeout(() => {
+      setCursorPos({ x: targetX, y: targetY });
+    }, 100);
+
+    // Click animation
+    setTimeout(() => {
+      setCursorClicking(true);
+    }, 700);
+
+    // Navigate
+    setTimeout(() => {
+      setCursorClicking(false);
+      navigationPendingRef.current = true;
+      if (step.navigationPath) {
+        router.push(step.navigationPath);
+      }
+    }, 900);
+  }, [step, findElement, router]);
+
+  const handleNext = useCallback(() => {
+    if (currentStep >= steps.length - 1) {
       handleComplete();
+      return;
     }
-  };
 
-  const handleBack = () => {
-    setIsTransitioning(true);
+    const nextStep = steps[currentStep + 1];
+
+    // Fade out content
+    setContentVisible(false);
+
+    setTimeout(() => {
+      setCurrentStep(currentStep + 1);
+
+      if (nextStep.requiresNavigation) {
+        setIsAnimating(true);
+        // Start cursor animation after step updates
+        setTimeout(() => {
+          animateCursorAndNavigate();
+        }, 50);
+      } else {
+        setContentVisible(true);
+      }
+    }, 200);
+  }, [currentStep, handleComplete, animateCursorAndNavigate]);
+
+  const handleBack = useCallback(() => {
+    setContentVisible(false);
     setTimeout(() => {
       setCurrentStep(currentStep - 1);
-      setStepPhase("highlight");
-      setShowCursor(false);
+      setContentVisible(true);
       router.push("/dashboard");
-      setTimeout(() => setIsTransitioning(false), 300);
-    }, 150);
-  };
+    }, 200);
+  }, [currentStep, router]);
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     handleComplete();
-  };
-
-  const handleGetStarted = () => {
-    handleComplete();
-    router.push("/decisions/new");
-  };
-
-  const handleCursorComplete = useCallback(() => {
-    if (step.navigationPath && pathname !== step.navigationPath) {
-      router.push(step.navigationPath);
-    }
-  }, [step.navigationPath, pathname, router]);
+  }, [handleComplete]);
 
   if (!isOpen) return null;
 
   const isLastStep = currentStep === steps.length - 1;
   const isFirstStep = currentStep === 0;
-  const activeRect = secondaryRect || highlightRect;
-  const isCentered = step.position === "center" || !activeRect;
+  const isCentered = step.position === "center" || !highlightRect;
   const Icon = step.icon;
 
-  const getTooltipStyle = (): React.CSSProperties => {
-    if (isCentered || !activeRect) {
-      return {
-        position: "fixed",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-      };
-    }
-
-    return {
-      position: "fixed",
-      top: activeRect.top + activeRect.height / 2,
-      left: activeRect.right + 32,
-      transform: "translateY(-50%)",
-      maxWidth: 360,
-    };
-  };
-
   return (
-    <div className="fixed inset-0 z-[300]">
-      {/* Backdrop with smooth transition */}
-      <div
-        className="absolute inset-0 bg-black/70 transition-opacity duration-500"
-        style={{ opacity: isTransitioning ? 0.5 : 1 }}
-      />
+    <div className="fixed inset-0 z-[9999]">
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/75 transition-opacity duration-300" />
 
-      {/* Highlight border */}
-      {!isCentered && activeRect && <HighlightBorder rect={activeRect} />}
-
-      {/* Animated cursor */}
-      {showCursor && highlightRect && (
-        <AnimatedCursor
-          fromRect={
-            new DOMRect(window.innerWidth / 2, window.innerHeight / 2, 0, 0)
-          }
-          toRect={highlightRect}
-          onComplete={handleCursorComplete}
+      {/* Highlight cutout */}
+      {highlightRect && !isAnimating && (
+        <div
+          className="absolute pointer-events-none transition-all duration-500 ease-out"
+          style={{
+            top: highlightRect.top - 6,
+            left: highlightRect.left - 6,
+            width: highlightRect.width + 12,
+            height: highlightRect.height + 12,
+            borderRadius: 10,
+            border: "2px solid #818cf8",
+            boxShadow: `
+              0 0 0 4000px rgba(0, 0, 0, 0.75),
+              0 0 0 2px #6366f1,
+              0 0 15px 5px rgba(99, 102, 241, 0.4)
+            `,
+          }}
         />
       )}
 
-      {/* Modal card with smooth transitions */}
+      {/* Animated cursor */}
+      {showCursor && (
+        <div
+          className="fixed pointer-events-none z-[10000]"
+          style={{
+            left: cursorPos.x,
+            top: cursorPos.y,
+            transform: `translate(-50%, -50%) scale(${cursorClicking ? 0.8 : 1})`,
+            transition:
+              "left 0.5s ease-out, top 0.5s ease-out, transform 0.1s ease-out",
+          }}
+        >
+          <MousePointer2
+            className="w-8 h-8 text-white"
+            fill="white"
+            style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
+          />
+          {cursorClicking && (
+            <div className="absolute top-0 left-0 w-8 h-8 rounded-full bg-indigo-400/40 animate-ping" />
+          )}
+        </div>
+      )}
+
+      {/* Modal */}
       <div
-        className="z-[302] bg-white rounded-2xl shadow-2xl overflow-hidden transition-all duration-300"
+        className="fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[340px] transition-all duration-300"
         style={{
-          ...getTooltipStyle(),
-          opacity: isTransitioning ? 0 : 1,
-          transform: `${isCentered || !activeRect ? "translate(-50%, -50%)" : "translateY(-50%)"} scale(${isTransitioning ? 0.95 : 1})`,
+          ...(isCentered
+            ? {
+                top: "50%",
+                left: "50%",
+                transform: `translate(-50%, -50%) scale(${contentVisible ? 1 : 0.95})`,
+              }
+            : highlightRect
+              ? {
+                  top: highlightRect.top + highlightRect.height / 2,
+                  left: highlightRect.right + 24,
+                  transform: `translateY(-50%) scale(${contentVisible ? 1 : 0.95})`,
+                }
+              : {
+                  top: "50%",
+                  left: "50%",
+                  transform: `translate(-50%, -50%) scale(${contentVisible ? 1 : 0.95})`,
+                }),
+          opacity: contentVisible ? 1 : 0,
         }}
       >
-        {/* Arrow pointer for non-centered modals */}
-        {!isCentered && activeRect && (
+        {/* Arrow */}
+        {!isCentered && highlightRect && (
           <div
-            className="absolute w-3 h-3 bg-white transform rotate-45 -left-1.5 top-1/2 -translate-y-1/2 transition-opacity duration-300"
-            style={{
-              boxShadow: "-2px 2px 4px rgba(0,0,0,0.08)",
-              opacity: isTransitioning ? 0 : 1,
-            }}
+            className="absolute w-3 h-3 bg-white rotate-45 -left-1.5 top-1/2 -translate-y-1/2"
+            style={{ boxShadow: "-1px 1px 2px rgba(0,0,0,0.1)" }}
           />
         )}
 
+        {/* Close button */}
         <button
           onClick={handleSkip}
-          className="absolute top-3 right-3 p-2 rounded-lg hover:bg-gray-100 transition-colors z-10"
+          className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
         >
           <X className="w-4 h-4 text-gray-400" />
         </button>
 
-        <div className="p-6 text-center">
-          {/* Icon with color transition */}
+        {/* Content */}
+        <div className="p-5 text-center">
           <div
-            className={`w-12 h-12 ${step.color} rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg transition-all duration-300`}
-            style={{ transform: isTransitioning ? "scale(0.9)" : "scale(1)" }}
+            className={`w-11 h-11 ${step.color} rounded-xl flex items-center justify-center mx-auto mb-3 shadow-md`}
           >
-            <Icon className="w-6 h-6 text-white" />
+            <Icon className="w-5 h-5 text-white" />
           </div>
 
-          <h2 className="text-lg font-semibold text-gray-900 mb-2 transition-opacity duration-200">
+          <h2 className="text-base font-semibold text-gray-900 mb-1.5">
             {step.title}
           </h2>
 
-          <p className="text-gray-500 text-sm leading-relaxed mb-5 transition-opacity duration-200">
+          <p className="text-gray-500 text-sm leading-relaxed mb-4">
             {step.description}
           </p>
 
           {/* Progress dots */}
-          <div className="flex items-center justify-center gap-1.5 mb-5">
+          <div className="flex items-center justify-center gap-1.5 mb-4">
             {steps.map((_, index) => (
               <div
                 key={index}
-                className="rounded-full transition-all duration-300 ease-out"
-                style={{
-                  width: index === currentStep ? 20 : 6,
-                  height: 6,
-                  backgroundColor:
-                    index === currentStep
-                      ? "#6366f1"
-                      : index < currentStep
-                        ? "#a5b4fc"
-                        : "#e5e7eb",
-                }}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  index === currentStep
+                    ? "w-5 bg-indigo-500"
+                    : index < currentStep
+                      ? "w-1.5 bg-indigo-300"
+                      : "w-1.5 bg-gray-200"
+                }`}
               />
             ))}
           </div>
 
           {/* Buttons */}
           <div className="flex gap-2">
-            {currentStep > 0 && stepPhase !== "animate-cursor" && (
+            {currentStep > 0 && !isAnimating && (
               <Button
                 variant="outline"
                 onClick={handleBack}
-                className="flex-1 rounded-lg h-9 text-sm"
+                className="flex-1 h-9 text-sm rounded-lg"
                 size="sm"
               >
                 Back
               </Button>
             )}
 
-            {stepPhase === "animate-cursor" ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-gray-400 py-2">
-                <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-2" />
-                Loading...
+            {isAnimating ? (
+              <div className="flex-1 flex items-center justify-center h-9 text-sm text-gray-400">
+                <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mr-2" />
               </div>
             ) : isLastStep ? (
               <Button
-                onClick={handleGetStarted}
-                className="flex-1 rounded-lg h-9 text-sm bg-indigo-500 hover:bg-indigo-600"
+                onClick={() => {
+                  handleComplete();
+                  router.push("/decisions/new");
+                }}
+                className="flex-1 h-9 text-sm rounded-lg bg-indigo-500 hover:bg-indigo-600"
                 size="sm"
               >
                 Get Started
-                <ArrowRight className="w-4 h-4 ml-1.5" />
+                <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             ) : (
               <Button
                 onClick={handleNext}
-                className="flex-1 rounded-lg h-9 text-sm"
+                className="flex-1 h-9 text-sm rounded-lg"
                 size="sm"
               >
                 {isFirstStep ? "Take a Tour" : "Next"}
-                <ArrowRight className="w-4 h-4 ml-1.5" />
+                <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             )}
           </div>
 
-          {!isLastStep && stepPhase !== "animate-cursor" && (
+          {!isLastStep && !isAnimating && (
             <button
               onClick={handleSkip}
-              className="mt-3 text-xs text-gray-400 hover:text-gray-500 transition-colors"
+              className="mt-2.5 text-xs text-gray-400 hover:text-gray-500 transition-colors"
             >
               Skip tour
             </button>
           )}
         </div>
       </div>
-
-      {/* Global styles for animations */}
-      <style jsx global>{`
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-        @keyframes ping {
-          0% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(2);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 }
