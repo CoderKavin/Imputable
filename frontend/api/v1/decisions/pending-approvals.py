@@ -74,12 +74,28 @@ class handler(BaseHTTPRequestHandler):
             engine = create_engine(db_url, connect_args={"sslmode": "require"})
 
             with engine.connect() as conn:
-                # Get user
+                # Get user - first try by Firebase UID, then by email
                 result = conn.execute(text("""
                     SELECT id, name, email FROM users
                     WHERE auth_provider = 'firebase' AND auth_provider_id = :uid AND deleted_at IS NULL
                 """), {"uid": firebase_uid})
                 user_row = result.fetchone()
+
+                if not user_row and firebase_email:
+                    # Try to find by email (may have been created via Slack)
+                    result = conn.execute(text("""
+                        SELECT id, name, email FROM users
+                        WHERE email = :email AND deleted_at IS NULL
+                    """), {"email": firebase_email})
+                    user_row = result.fetchone()
+
+                    if user_row:
+                        # Found user by email - link Firebase auth to this user
+                        conn.execute(text("""
+                            UPDATE users SET auth_provider = 'firebase', auth_provider_id = :uid, updated_at = NOW()
+                            WHERE id = :user_id
+                        """), {"uid": firebase_uid, "user_id": user_row[0]})
+                        conn.commit()
 
                 if not user_row:
                     self._send(401, {"error": "User not found"})

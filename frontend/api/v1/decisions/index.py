@@ -354,7 +354,7 @@ class handler(BaseHTTPRequestHandler):
             engine = create_engine(db_url, connect_args={"sslmode": "require"})
 
             with engine.connect() as conn:
-                # Get or create user
+                # Get or create user - first try by Firebase UID, then by email
                 result = conn.execute(text("""
                     SELECT id, email, name FROM users
                     WHERE auth_provider = 'firebase' AND auth_provider_id = :uid AND deleted_at IS NULL
@@ -366,18 +366,41 @@ class handler(BaseHTTPRequestHandler):
                     user_email = user_row[1]
                     user_name = user_row[2]
                 else:
+                    # No Firebase user found - try to find by email (may have been created via Slack)
                     email = firebase_email or f"{firebase_uid}@firebase.local"
-                    name = firebase_name or email.split("@")[0]
-                    result = conn.execute(text("""
-                        INSERT INTO users (id, email, name, auth_provider, auth_provider_id, created_at, updated_at)
-                        VALUES (gen_random_uuid(), :email, :name, 'firebase', :uid, NOW(), NOW())
-                        RETURNING id, email, name
-                    """), {"email": email, "name": name, "uid": firebase_uid})
-                    row = result.fetchone()
-                    user_id = row[0]
-                    user_email = row[1]
-                    user_name = row[2]
-                    conn.commit()
+                    if firebase_email:
+                        result = conn.execute(text("""
+                            SELECT id, email, name FROM users
+                            WHERE email = :email AND deleted_at IS NULL
+                        """), {"email": firebase_email})
+                        user_row = result.fetchone()
+
+                        if user_row:
+                            # Found user by email - link Firebase auth to this user
+                            user_id = user_row[0]
+                            user_email = user_row[1]
+                            user_name = user_row[2]
+                            conn.execute(text("""
+                                UPDATE users SET auth_provider = 'firebase', auth_provider_id = :uid, updated_at = NOW()
+                                WHERE id = :user_id
+                            """), {"uid": firebase_uid, "user_id": user_id})
+                            conn.commit()
+                        else:
+                            user_row = None
+
+                    if not user_row:
+                        # Create new user
+                        name = firebase_name or email.split("@")[0]
+                        result = conn.execute(text("""
+                            INSERT INTO users (id, email, name, auth_provider, auth_provider_id, created_at, updated_at)
+                            VALUES (gen_random_uuid(), :email, :name, 'firebase', :uid, NOW(), NOW())
+                            RETURNING id, email, name
+                        """), {"email": email, "name": name, "uid": firebase_uid})
+                        row = result.fetchone()
+                        user_id = row[0]
+                        user_email = row[1]
+                        user_name = row[2]
+                        conn.commit()
 
                 # Check membership
                 result = conn.execute(text("""
