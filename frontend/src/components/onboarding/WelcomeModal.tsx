@@ -34,7 +34,6 @@ interface TourStep {
   requiresNavigation?: boolean;
   navigationPath?: string;
   secondarySelector?: string;
-  secondaryDescription?: string;
 }
 
 const steps: TourStep[] = [
@@ -57,7 +56,8 @@ const steps: TourStep[] = [
   },
   {
     title: "Visualize with Mind Map",
-    description: "Watch how to access the Mind Map view...",
+    description:
+      "Switch to Mind Map view here to see how decisions connect. AI can automatically discover relationships!",
     icon: GitBranch,
     color: "bg-purple-500",
     highlightSelector: '[href="/decisions"]',
@@ -66,12 +66,11 @@ const steps: TourStep[] = [
     navigationPath: "/decisions",
     secondarySelector:
       'button:has(.lucide-git-branch), [class*="mindmap"], button:contains("Mind Map")',
-    secondaryDescription:
-      "Switch to Mind Map view here to see how decisions connect. AI can automatically discover relationships!",
   },
   {
     title: "Works Best with Slack & Teams",
-    description: "Watch how to connect your integrations...",
+    description:
+      "Connect Slack or Microsoft Teams here to create decisions without leaving your workflow!",
     icon: MessageSquare,
     color: "bg-blue-500",
     highlightSelector: '[href="/settings"]',
@@ -80,8 +79,6 @@ const steps: TourStep[] = [
     navigationPath: "/settings",
     secondarySelector:
       '[data-tab="integrations"], button:contains("Integrations")',
-    secondaryDescription:
-      "Connect Slack or Microsoft Teams here to create decisions without leaving your workflow!",
   },
   {
     title: "Audit Trail",
@@ -295,17 +292,19 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
-      // Check if this is a multi-phase step
-      if (step.requiresNavigation && stepPhase === "highlight") {
-        setStepPhase("animate-cursor");
-        setShowCursor(true);
-        return;
-      }
+      const nextStep = steps[currentStep + 1];
 
       // Move to next step
       setCurrentStep(currentStep + 1);
-      setStepPhase("highlight");
-      setShowCursor(false);
+
+      // If next step requires navigation, start cursor animation immediately
+      if (nextStep.requiresNavigation) {
+        setStepPhase("animate-cursor");
+        setShowCursor(true);
+      } else {
+        setStepPhase("highlight");
+        setShowCursor(false);
+      }
     } else {
       handleComplete();
     }
@@ -334,11 +333,6 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   const activeRect = secondaryRect || highlightRect;
   const isCentered = step.position === "center" || !activeRect;
   const Icon = step.icon;
-
-  const currentDescription =
-    stepPhase === "show-target" && step.secondaryDescription
-      ? step.secondaryDescription
-      : step.description;
 
   const getTooltipStyle = (): React.CSSProperties => {
     if (isCentered || !activeRect) {
@@ -436,7 +430,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
           <h2 className="text-xl font-bold text-gray-900 mb-2">{step.title}</h2>
 
           <p className="text-gray-600 text-sm leading-relaxed mb-6">
-            {currentDescription}
+            {step.description}
           </p>
 
           <div className="flex items-center justify-center gap-2 mb-6">
