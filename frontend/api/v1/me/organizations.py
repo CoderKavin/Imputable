@@ -111,14 +111,14 @@ class handler(BaseHTTPRequestHandler):
                 if method == "GET":
                     # Get user's organizations
                     result = conn.execute(text("""
-                        SELECT o.id, o.name, o.slug, om.role
+                        SELECT o.id, o.name, o.slug, om.role, o.subscription_tier
                         FROM organizations o
                         JOIN organization_members om ON om.organization_id = o.id
                         WHERE om.user_id = :user_id AND o.deleted_at IS NULL
                         ORDER BY o.name
                     """), {"user_id": user_id})
 
-                    orgs = [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3]} for r in result.fetchall()]
+                    orgs = [{"id": str(r[0]), "name": r[1], "slug": r[2], "role": r[3], "subscription_tier": r[4] or "free"} for r in result.fetchall()]
                     self._send(200, {"organizations": orgs})
 
                 elif method == "POST":

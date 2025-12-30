@@ -74,6 +74,12 @@ function DecisionsPageContent() {
     useState<DecisionCount>(8);
   const { currentOrganization, loading: orgLoading } = useOrganization();
 
+  // Determine max decisions allowed based on subscription tier
+  const isPro =
+    currentOrganization?.subscription_tier === "professional" ||
+    currentOrganization?.subscription_tier === "enterprise";
+  const maxMindMapDecisions = isPro ? 16 : 6;
+
   // Read status filter and view mode from URL query params on mount and when URL changes
   useEffect(() => {
     const statusParam = searchParams.get("status");
@@ -192,7 +198,7 @@ function DecisionsPageContent() {
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
                   <span className="text-xs text-gray-500">Show:</span>
                   <select
-                    value={mindMapDecisionCount}
+                    value={Math.min(mindMapDecisionCount, maxMindMapDecisions)}
                     onChange={(e) =>
                       setMindMapDecisionCount(
                         Number(e.target.value) as DecisionCount,
@@ -202,10 +208,15 @@ function DecisionsPageContent() {
                   >
                     <option value={4}>4 decisions</option>
                     <option value={6}>6 decisions</option>
-                    <option value={8}>8 decisions</option>
-                    <option value={12}>12 decisions</option>
-                    <option value={16}>16 decisions</option>
+                    {isPro && <option value={8}>8 decisions</option>}
+                    {isPro && <option value={12}>12 decisions</option>}
+                    {isPro && <option value={16}>16 decisions</option>}
                   </select>
+                  {!isPro && (
+                    <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                      Pro: up to 16
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -237,7 +248,10 @@ function DecisionsPageContent() {
             >
               <MindMapView
                 decisions={filteredDecisions}
-                maxDecisions={mindMapDecisionCount}
+                maxDecisions={Math.min(
+                  mindMapDecisionCount,
+                  maxMindMapDecisions,
+                )}
                 onAddRelationship={() => setShowAddRelationshipModal(true)}
               />
             </Suspense>

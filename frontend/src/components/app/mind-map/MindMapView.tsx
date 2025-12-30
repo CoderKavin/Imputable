@@ -80,9 +80,13 @@ export function MindMapView({
   } | null>(null);
   const [isCreatingConnection, setIsCreatingConnection] = useState(false);
 
-  // Limit to maxDecisions most recent decisions
+  // Limit to maxDecisions most recent decisions (sorted by created_at descending)
   const limitedDecisions = useMemo(() => {
-    return decisions.slice(0, maxDecisions);
+    const sorted = [...decisions].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    return sorted.slice(0, maxDecisions);
   }, [decisions, maxDecisions]);
 
   // Fetch existing relationships

@@ -16,11 +16,18 @@ import React, {
 } from "react";
 import { useAuth } from "./AuthContext";
 
+export type SubscriptionTier =
+  | "free"
+  | "starter"
+  | "professional"
+  | "enterprise";
+
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   role?: string;
+  subscription_tier?: SubscriptionTier;
 }
 
 interface OrganizationContextType {
