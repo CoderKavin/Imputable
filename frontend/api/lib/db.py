@@ -113,6 +113,16 @@ class AuditAction(str, enum.Enum):
     REJECT = "reject"
 
 
+class RelationshipType(str, enum.Enum):
+    INFLUENCED_BY = "influenced_by"  # This decision was influenced by another
+    LED_TO = "led_to"  # This decision led to another
+    RELATED_TO = "related_to"  # General relationship
+    SUPERSEDES = "supersedes"  # This decision replaces another
+    CONFLICTS_WITH = "conflicts_with"  # Decisions are in tension
+    BLOCKED_BY = "blocked_by"  # This decision is blocked by another
+    IMPLEMENTS = "implements"  # This decision implements another
+
+
 # =============================================================================
 # MODELS
 # =============================================================================
@@ -208,3 +218,23 @@ class AuditLog(Base):
     resource_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     details: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DecisionRelationship(Base):
+    """Stores relationships between decisions for mind map visualization."""
+    __tablename__ = "decision_relationships"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    source_decision_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("decisions.id"), nullable=False)
+    target_decision_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("decisions.id"), nullable=False)
+    relationship_type: Mapped[RelationshipType] = mapped_column(
+        Enum(RelationshipType, name="relationship_type", values_callable=lambda x: [e.value for e in x]),
+        nullable=False
+    )
+    description: Mapped[str | None] = mapped_column(Text)  # AI-generated or user description
+    confidence_score: Mapped[float | None] = mapped_column()  # AI confidence (0-1)
+    is_ai_generated: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column()

@@ -9,3 +9,4 @@ export { NotificationsDropdown } from "./notifications-dropdown";
 export { ReviewerPicker } from "./reviewer-picker";
 export { AvatarStack } from "./avatar-stack";
 export { ApprovalProgress } from "./approval-progress";
+export { MindMapView } from "./mind-map";

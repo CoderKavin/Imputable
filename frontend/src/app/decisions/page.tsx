@@ -8,17 +8,39 @@
  * Protected route - requires authentication
  */
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense, lazy } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
 import { AppLayout, DecisionCard } from "@/components/app";
 import { Button } from "@/components/ui/button";
 import { DecisionListSkeleton } from "@/components/ui/skeleton";
-import { Plus, Filter, FileText, Building2 } from "lucide-react";
+import {
+  Plus,
+  Filter,
+  FileText,
+  Building2,
+  List,
+  GitBranch,
+} from "lucide-react";
 import type { DecisionSummary } from "@/types/decision";
 
+// Lazy load MindMapView to avoid SSR issues with React Flow
+const MindMapView = lazy(() =>
+  import("@/components/app/mind-map/MindMapView").then((mod) => ({
+    default: mod.MindMapView,
+  })),
+);
+
+// Lazy load AddRelationshipModal
+const AddRelationshipModal = lazy(() =>
+  import("@/components/app/mind-map/AddRelationshipModal").then((mod) => ({
+    default: mod.AddRelationshipModal,
+  })),
+);
+
 type StatusFilter = "all" | "approved" | "pending_review" | "draft" | "at_risk";
+type ViewMode = "list" | "mindmap";
 
 export default function DecisionsPage() {
   return (
@@ -44,9 +66,12 @@ function DecisionsPageContent() {
   const searchParams = useSearchParams();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [showAddRelationshipModal, setShowAddRelationshipModal] =
+    useState(false);
   const { currentOrganization, loading: orgLoading } = useOrganization();
 
-  // Read status filter from URL query params on mount and when URL changes
+  // Read status filter and view mode from URL query params on mount and when URL changes
   useEffect(() => {
     const statusParam = searchParams.get("status");
     if (
@@ -56,6 +81,10 @@ function DecisionsPageContent() {
       )
     ) {
       setStatusFilter(statusParam as StatusFilter);
+    }
+    const viewParam = searchParams.get("view");
+    if (viewParam === "mindmap") {
+      setViewMode("mindmap");
     }
   }, [searchParams]);
   const { data, isLoading, error } = useDecisionList(page, 100); // Fetch more to filter client-side
@@ -96,31 +125,68 @@ function DecisionsPageContent() {
           {/* Filters Bar */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FilterPill
-                label="All Status"
-                active={statusFilter === "all"}
-                onClick={() => handleFilterChange("all")}
-              />
-              <FilterPill
-                label="Approved"
-                active={statusFilter === "approved"}
-                onClick={() => handleFilterChange("approved")}
-              />
-              <FilterPill
-                label="In Review"
-                active={statusFilter === "pending_review"}
-                onClick={() => handleFilterChange("pending_review")}
-              />
-              <FilterPill
-                label="Draft"
-                active={statusFilter === "draft"}
-                onClick={() => handleFilterChange("draft")}
-              />
-              <FilterPill
-                label="At Risk"
-                active={statusFilter === "at_risk"}
-                onClick={() => handleFilterChange("at_risk")}
-              />
+              {/* View Toggle */}
+              <div className="flex items-center bg-gray-100 rounded-full p-0.5 mr-2">
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200
+                    ${
+                      viewMode === "list"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }
+                  `}
+                >
+                  <List className="w-3.5 h-3.5" />
+                  List
+                </button>
+                <button
+                  onClick={() => setViewMode("mindmap")}
+                  className={`
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200
+                    ${
+                      viewMode === "mindmap"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }
+                  `}
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                  Mind Map
+                </button>
+              </div>
+
+              {/* Status filters - only show in list view */}
+              {viewMode === "list" && (
+                <>
+                  <FilterPill
+                    label="All Status"
+                    active={statusFilter === "all"}
+                    onClick={() => handleFilterChange("all")}
+                  />
+                  <FilterPill
+                    label="Approved"
+                    active={statusFilter === "approved"}
+                    onClick={() => handleFilterChange("approved")}
+                  />
+                  <FilterPill
+                    label="In Review"
+                    active={statusFilter === "pending_review"}
+                    onClick={() => handleFilterChange("pending_review")}
+                  />
+                  <FilterPill
+                    label="Draft"
+                    active={statusFilter === "draft"}
+                    onClick={() => handleFilterChange("draft")}
+                  />
+                  <FilterPill
+                    label="At Risk"
+                    active={statusFilter === "at_risk"}
+                    onClick={() => handleFilterChange("at_risk")}
+                  />
+                </>
+              )}
             </div>
             <Button
               className="rounded-2xl px-4 gap-2"
@@ -136,6 +202,23 @@ function DecisionsPageContent() {
             <DecisionListSkeleton count={6} />
           ) : error ? (
             <ErrorState />
+          ) : viewMode === "mindmap" ? (
+            /* Mind Map View */
+            <Suspense
+              fallback={
+                <div className="h-[600px] flex items-center justify-center bg-gray-50 rounded-2xl border border-gray-200">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-gray-500">Loading mind map...</span>
+                  </div>
+                </div>
+              }
+            >
+              <MindMapView
+                decisions={data?.items || []}
+                onAddRelationship={() => setShowAddRelationshipModal(true)}
+              />
+            </Suspense>
           ) : filteredDecisions.length === 0 ? (
             statusFilter === "all" ? (
               <EmptyState />
@@ -181,6 +264,14 @@ function DecisionsPageContent() {
                 </div>
               )}
             </>
+          )}
+
+          {/* Add Relationship Modal */}
+          {showAddRelationshipModal && (
+            <AddRelationshipModal
+              decisions={data?.items || []}
+              onClose={() => setShowAddRelationshipModal(false)}
+            />
           )}
         </div>
       )}

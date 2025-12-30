@@ -17,11 +17,13 @@ export type DecisionStatus =
 export type ImpactLevel = "low" | "medium" | "high" | "critical";
 
 export type RelationshipType =
-  | "supersedes"
-  | "blocked_by"
+  | "influenced_by"
+  | "led_to"
   | "related_to"
-  | "implements"
-  | "conflicts_with";
+  | "supersedes"
+  | "conflicts_with"
+  | "blocked_by"
+  | "implements";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "abstained";
 
@@ -195,6 +197,41 @@ export interface DecisionRelationship {
   relationship_type: RelationshipType;
   description?: string;
   created_by: UserRef;
+  created_at: string;
+}
+
+// Mind Map specific types
+export interface MindMapRelationship {
+  id: string;
+  source_decision_id: string;
+  target_decision_id: string;
+  relationship_type: RelationshipType;
+  description?: string;
+  confidence_score?: number;
+  is_ai_generated: boolean;
+  created_at: string;
+  source_decision: {
+    id: string;
+    decision_number: number;
+    status: DecisionStatus;
+    title: string;
+    impact_level: ImpactLevel;
+  };
+  target_decision: {
+    id: string;
+    decision_number: number;
+    status: DecisionStatus;
+    title: string;
+    impact_level: ImpactLevel;
+  };
+}
+
+export interface MindMapNode {
+  id: string;
+  decision_number: number;
+  title: string;
+  status: DecisionStatus;
+  impact_level: ImpactLevel;
   created_at: string;
 }
 
