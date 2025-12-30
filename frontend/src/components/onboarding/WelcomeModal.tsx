@@ -43,9 +43,9 @@ const steps = [
     color: "bg-purple-500",
   },
   {
-    title: "Slack & Teams Integration",
+    title: "Works Best with Slack & Teams",
     description:
-      "Create and track decisions directly from Slack or Microsoft Teams. Get notified when decisions need your attention without leaving your workflow.",
+      "Connect Slack or Microsoft Teams to create decisions without leaving your workflow. Get instant notifications when decisions need your review.",
     icon: MessageSquare,
     color: "bg-blue-500",
   },
