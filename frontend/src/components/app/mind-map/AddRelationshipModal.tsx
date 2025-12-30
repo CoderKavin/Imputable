@@ -12,21 +12,58 @@ interface AddRelationshipModalProps {
   onSuccess?: () => void;
 }
 
-const relationshipTypes: { value: RelationshipType; label: string; description: string }[] = [
-  { value: "influenced_by", label: "Influenced by", description: "This decision was influenced by another" },
-  { value: "led_to", label: "Led to", description: "This decision directly led to another" },
-  { value: "related_to", label: "Related to", description: "Decisions share common themes" },
-  { value: "supersedes", label: "Supersedes", description: "This decision replaces another" },
-  { value: "conflicts_with", label: "Conflicts with", description: "Decisions are in tension" },
-  { value: "blocked_by", label: "Blocked by", description: "This decision is blocked by another" },
-  { value: "implements", label: "Implements", description: "This decision implements another" },
+const relationshipTypes: {
+  value: RelationshipType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "influenced_by",
+    label: "Influenced by",
+    description: "This decision was influenced by another",
+  },
+  {
+    value: "led_to",
+    label: "Led to",
+    description: "This decision directly led to another",
+  },
+  {
+    value: "related_to",
+    label: "Related to",
+    description: "Decisions share common themes",
+  },
+  {
+    value: "supersedes",
+    label: "Supersedes",
+    description: "This decision replaces another",
+  },
+  {
+    value: "conflicts_with",
+    label: "Conflicts with",
+    description: "Decisions are in tension",
+  },
+  {
+    value: "blocked_by",
+    label: "Blocked by",
+    description: "This decision is blocked by another",
+  },
+  {
+    value: "implements",
+    label: "Implements",
+    description: "This decision implements another",
+  },
 ];
 
-export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelationshipModalProps) {
+export function AddRelationshipModal({
+  decisions,
+  onClose,
+  onSuccess,
+}: AddRelationshipModalProps) {
   const client = useApiClient();
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
-  const [relationshipType, setRelationshipType] = useState<RelationshipType>("related_to");
+  const [relationshipType, setRelationshipType] =
+    useState<RelationshipType>("related_to");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +104,7 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -75,10 +112,12 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+      <div className="relative z-[201] bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">Add Relationship</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Add Relationship
+          </h2>
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -102,7 +141,8 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
               <option value="">Select a decision...</option>
               {decisions.map((d) => (
                 <option key={d.id} value={d.id}>
-                  DECISION-{d.decision_number}: {d.title.substring(0, 50)}{d.title.length > 50 ? "..." : ""}
+                  DECISION-{d.decision_number}: {d.title.substring(0, 50)}
+                  {d.title.length > 50 ? "..." : ""}
                 </option>
               ))}
             </select>
@@ -120,7 +160,9 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
             </div>
             <select
               value={relationshipType}
-              onChange={(e) => setRelationshipType(e.target.value as RelationshipType)}
+              onChange={(e) =>
+                setRelationshipType(e.target.value as RelationshipType)
+              }
               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               {relationshipTypes.map((rt) => (
@@ -130,7 +172,10 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
               ))}
             </select>
             <p className="mt-1.5 text-xs text-gray-500">
-              {relationshipTypes.find(rt => rt.value === relationshipType)?.description}
+              {
+                relationshipTypes.find((rt) => rt.value === relationshipType)
+                  ?.description
+              }
             </p>
           </div>
 
@@ -147,7 +192,8 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
               <option value="">Select a decision...</option>
               {decisions.map((d) => (
                 <option key={d.id} value={d.id}>
-                  DECISION-{d.decision_number}: {d.title.substring(0, 50)}{d.title.length > 50 ? "..." : ""}
+                  DECISION-{d.decision_number}: {d.title.substring(0, 50)}
+                  {d.title.length > 50 ? "..." : ""}
                 </option>
               ))}
             </select>
@@ -156,7 +202,8 @@ export function AddRelationshipModal({ decisions, onClose, onSuccess }: AddRelat
           {/* Description (optional) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description <span className="text-gray-400 font-normal">(optional)</span>
+              Description{" "}
+              <span className="text-gray-400 font-normal">(optional)</span>
             </label>
             <textarea
               value={description}
