@@ -3215,9 +3215,13 @@ class handler(BaseHTTPRequestHandler):
                         if view_id:
                             try:
                                 # Fetch recent messages
+                                print(f"[SLACK LOG] Fetching messages, elapsed: {_time.time() - _start:.3f}s")
                                 messages = fetch_recent_channel_messages(token, channel_id, limit=50)
+                                print(f"[SLACK LOG] Got {len(messages) if messages else 0} messages, elapsed: {_time.time() - _start:.3f}s")
+
                                 if messages:
                                     messages = resolve_slack_user_names(token, messages)
+                                    print(f"[SLACK LOG] Resolved user names, elapsed: {_time.time() - _start:.3f}s")
 
                                     # Get channel name
                                     channel_name = ""
@@ -3236,7 +3240,9 @@ class handler(BaseHTTPRequestHandler):
                                     # AI analysis
                                     gemini_key = os.environ.get("GEMINI_API_KEY", "")
                                     if gemini_key:
+                                        print(f"[SLACK LOG] Starting AI analysis, elapsed: {_time.time() - _start:.3f}s")
                                         analysis = analyze_with_gemini(messages, channel_name, hint=hint if hint else None)
+                                        print(f"[SLACK LOG] AI analysis done, got result: {bool(analysis)}, elapsed: {_time.time() - _start:.3f}s")
                                         if analysis:
                                             latest_ts = messages[-1].get("timestamp", "") if messages else ""
                                             modal = SlackModals.ai_prefilled_modal(analysis, channel_id, latest_ts, None)
@@ -3244,17 +3250,21 @@ class handler(BaseHTTPRequestHandler):
                                             prefill_title = hint if hint else "Decision from recent conversation"
                                             modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
                                     else:
+                                        print(f"[SLACK LOG] No GEMINI_API_KEY, using basic modal")
                                         prefill_title = hint if hint else "Decision from recent conversation"
                                         modal = SlackModals.log_message(prefill_title, "", channel_id, "", None)
 
                                     # Update modal with results
+                                    print(f"[SLACK LOG] Updating modal, elapsed: {_time.time() - _start:.3f}s")
                                     update_data = json.dumps({"view_id": view_id, "view": modal}).encode()
                                     update_req = urllib.request.Request(
                                         "https://slack.com/api/views.update",
                                         data=update_data,
                                         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                                     )
-                                    urllib.request.urlopen(update_req, timeout=10)
+                                    update_resp = urllib.request.urlopen(update_req, timeout=10)
+                                    update_resp_data = json.loads(update_resp.read().decode())
+                                    print(f"[SLACK LOG] Modal update response: ok={update_resp_data.get('ok')}, error={update_resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
                                 else:
                                     # No messages - show error modal
                                     error_modal = {
@@ -3272,7 +3282,25 @@ class handler(BaseHTTPRequestHandler):
                                     )
                                     urllib.request.urlopen(update_req, timeout=5)
                             except Exception as e:
-                                print(f"[SLACK FAST PATH] AI analysis error: {e}")
+                                print(f"[SLACK LOG] AI analysis error: {e}, elapsed: {_time.time() - _start:.3f}s")
+                                # Update modal with error message so it doesn't stay stuck
+                                try:
+                                    error_modal = {
+                                        "type": "modal",
+                                        "callback_id": "log_error_modal",
+                                        "title": {"type": "plain_text", "text": "Error"},
+                                        "close": {"type": "plain_text", "text": "Close"},
+                                        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": ":warning: *Failed to analyze conversation.*\n\nPlease try again or use `/decision add` to create a decision manually."}}]
+                                    }
+                                    update_data = json.dumps({"view_id": view_id, "view": error_modal}).encode()
+                                    update_req = urllib.request.Request(
+                                        "https://slack.com/api/views.update",
+                                        data=update_data,
+                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                                    )
+                                    urllib.request.urlopen(update_req, timeout=5)
+                                except:
+                                    pass
                         self._send(200, {"response_type": "ephemeral", "text": ""})
                     except Exception as e:
                         print(f"[SLACK FAST PATH] Failed to open log modal: {e}")
