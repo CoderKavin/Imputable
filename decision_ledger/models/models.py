@@ -86,6 +86,20 @@ class ApprovalStatus(str, PyEnum):
     ABSTAINED = "abstained"
 
 
+class MemberStatus(str, PyEnum):
+    """Status of organization member."""
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
+class InvitationStatus(str, PyEnum):
+    """Status of email invitation."""
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
 # =============================================================================
 # ORGANIZATION & USER MODELS
 # =============================================================================
@@ -219,6 +233,11 @@ class User(Base, UUIDMixin, SoftDeleteMixin):
     avatar_url: Mapped[str | None] = mapped_column(String(500))
     auth_provider: Mapped[str] = mapped_column(String(50), default="email")
     auth_provider_id: Mapped[str | None] = mapped_column(String(255))
+    slack_user_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Slack user ID for linking Slack users to Imputable accounts"
+    )
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
@@ -237,6 +256,7 @@ class User(Base, UUIDMixin, SoftDeleteMixin):
 
     __table_args__ = (
         Index("idx_users_email", "email", postgresql_where="deleted_at IS NULL"),
+        Index("idx_users_slack_user_id", "slack_user_id", postgresql_where="slack_user_id IS NOT NULL AND deleted_at IS NULL"),
     )
 
 
@@ -252,6 +272,12 @@ class OrganizationMember(Base, UUIDMixin):
         ForeignKey("users.id"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(50), default="member")
+    status: Mapped[MemberStatus] = mapped_column(
+        Enum(MemberStatus, name="member_status", values_callable=lambda x: [e.value for e in x]),
+        default=MemberStatus.ACTIVE,
+        nullable=False,
+        comment="Member status: active (can use Imputable) or inactive (blocked until activated)"
+    )
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
@@ -268,6 +294,46 @@ class OrganizationMember(Base, UUIDMixin):
         UniqueConstraint("organization_id", "user_id"),
         Index("idx_org_members_org", "organization_id"),
         Index("idx_org_members_user", "user_id"),
+        Index("idx_org_members_active", "organization_id", "status", postgresql_where="status = 'active'"),
+        CheckConstraint("status IN ('active', 'inactive')", name="chk_organization_members_status"),
+    )
+
+
+class Invitation(Base, UUIDMixin):
+    """Email invitation for users to join organizations."""
+
+    __tablename__ = "invitations"
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="member")
+    status: Mapped[InvitationStatus] = mapped_column(
+        Enum(InvitationStatus, name="invitation_status", values_callable=lambda x: [e.value for e in x]),
+        default=InvitationStatus.PENDING,
+        nullable=False,
+    )
+    token: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    invited_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column()
+    accepted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    organization: Mapped["Organization"] = relationship()
+    inviter: Mapped["User"] = relationship(foreign_keys=[invited_by])
+    accepter: Mapped["User | None"] = relationship(foreign_keys=[accepted_by])
+
+    __table_args__ = (
+        CheckConstraint("role IN ('member', 'admin')", name="chk_invitations_role"),
+        CheckConstraint("status IN ('pending', 'accepted', 'expired', 'cancelled')", name="chk_invitations_status"),
+        Index("idx_invitations_token", "token", postgresql_where="status = 'pending'"),
+        Index("idx_invitations_org", "organization_id", "status", "created_at"),
+        Index("idx_invitations_email", "email", "status", postgresql_where="status = 'pending'"),
     )
 
 

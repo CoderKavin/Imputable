@@ -1167,6 +1167,29 @@ def handle_slack_command(form_data: dict, conn) -> dict:
 
     org_id, org_name, slack_token = org[0], org[1], org[2]
 
+    # Check if user is active in the organization
+    result = conn.execute(text("""
+        SELECT om.status, om.role, u.id
+        FROM users u
+        JOIN organization_members om ON om.user_id = u.id AND om.organization_id = :org_id
+        WHERE u.slack_user_id = :slack_id AND u.deleted_at IS NULL
+    """), {"org_id": org_id, "slack_id": user_id})
+    member_row = result.fetchone()
+
+    if member_row:
+        member_status, member_role, db_user_id = member_row[0] or "active", member_row[1], member_row[2]
+        if member_status == "inactive":
+            return {
+                "response_type": "ephemeral",
+                "text": ":no_entry: *You don't have an active seat on Imputable.*\n\nYour organization is on a limited plan and your account is inactive. Ask your admin to activate your account or upgrade the plan.",
+                "blocks": [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": ":no_entry: *You don't have an active seat on Imputable.*"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": "Your organization is on a limited plan and your account is inactive.\n\n*To use Imputable:*\n1. Ask your organization admin to activate your account, or\n2. Ask them to upgrade to Pro for unlimited members"}},
+                    {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Organization: {org_name}"}]}
+                ]
+            }
+    # Note: If user not found in our DB yet, they'll be created on first action (backwards compatible)
+
     # Parse command
     cmd_lower = cmd_text.lower()
 

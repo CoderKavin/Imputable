@@ -135,6 +135,177 @@ def decrypt_token(encrypted: str) -> str:
 
 
 # =============================================================================
+# SLACK MEMBER IMPORT
+# =============================================================================
+
+
+async def import_slack_workspace_members(
+    session: AsyncSession,
+    access_token: str,
+    organization_id: UUID,
+    installer_user_id: UUID,
+) -> int:
+    """
+    Import all members from a Slack workspace into the organization.
+
+    - Installer becomes owner (active)
+    - First 5 members (including owner) are active on free tier
+    - Remaining members are inactive until plan upgrade or manual activation
+    - If workspace has > 28 members, this will still import all but log a warning
+
+    Returns the number of members imported.
+    """
+    from ..models import Organization, User, OrganizationMember, MemberStatus
+
+    # Get org's subscription tier
+    result = await session.execute(
+        select(Organization).where(Organization.id == organization_id)
+    )
+    org = result.scalar_one_or_none()
+    if not org:
+        return 0
+
+    tier = org.subscription_tier.value if org.subscription_tier else "free"
+
+    # Determine member limit
+    if tier in ("professional", "enterprise"):
+        member_limit = -1  # unlimited
+    elif tier == "starter":
+        member_limit = 20
+    else:
+        member_limit = 5  # free tier
+
+    # Fetch all workspace members from Slack
+    slack_members = []
+    cursor = None
+
+    async with httpx.AsyncClient() as client:
+        while True:
+            params = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+
+            response = await client.get(
+                "https://slack.com/api/users.list",
+                params=params,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            data = response.json()
+
+            if not data.get("ok"):
+                logger.error(f"Failed to fetch Slack users: {data.get('error')}")
+                break
+
+            for member in data.get("members", []):
+                # Skip bots, deleted users, and Slackbot
+                if member.get("is_bot") or member.get("deleted") or member.get("id") == "USLACKBOT":
+                    continue
+
+                slack_members.append({
+                    "id": member.get("id"),
+                    "email": member.get("profile", {}).get("email"),
+                    "name": member.get("real_name") or member.get("name") or "Slack User",
+                    "avatar_url": member.get("profile", {}).get("image_192"),
+                })
+
+            # Check for pagination
+            cursor = data.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+
+    if len(slack_members) > 28:
+        logger.warning(f"Large workspace ({len(slack_members)} members) - importing all but consider prompting user")
+
+    # Get existing members to avoid duplicates
+    result = await session.execute(
+        select(OrganizationMember.user_id).where(
+            OrganizationMember.organization_id == organization_id
+        )
+    )
+    existing_user_ids = {row[0] for row in result.fetchall()}
+
+    # Get installer's user to find their email for matching
+    result = await session.execute(
+        select(User).where(User.id == installer_user_id)
+    )
+    installer_user = result.scalar_one_or_none()
+    installer_email = installer_user.email.lower() if installer_user else None
+
+    imported_count = 0
+    active_count = len(existing_user_ids)  # Start with existing members
+
+    for slack_member in slack_members:
+        email = slack_member.get("email")
+        if not email:
+            continue  # Skip users without email (single-channel guests, etc.)
+
+        email_lower = email.lower()
+
+        # Check if user already exists by email
+        result = await session.execute(
+            select(User).where(User.email == email_lower, User.deleted_at.is_(None))
+        )
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user:
+            # Update slack_user_id if not set
+            if not existing_user.slack_user_id:
+                existing_user.slack_user_id = slack_member["id"]
+
+            # Check if already a member
+            if existing_user.id in existing_user_ids:
+                continue
+
+            user_id = existing_user.id
+        else:
+            # Create new user
+            from uuid import uuid4
+            user_id = uuid4()
+            new_user = User(
+                id=user_id,
+                email=email_lower,
+                name=slack_member["name"],
+                avatar_url=slack_member.get("avatar_url"),
+                auth_provider="slack",
+                slack_user_id=slack_member["id"],
+            )
+            session.add(new_user)
+
+        # Determine role and status
+        is_installer = email_lower == installer_email
+        role = "owner" if is_installer else "member"
+
+        # Determine if should be active
+        if member_limit == -1:
+            status = MemberStatus.ACTIVE
+        elif active_count < member_limit:
+            status = MemberStatus.ACTIVE
+            active_count += 1
+        else:
+            status = MemberStatus.INACTIVE
+
+        # Always make installer active
+        if is_installer:
+            status = MemberStatus.ACTIVE
+
+        # Create membership
+        from uuid import uuid4
+        membership = OrganizationMember(
+            id=uuid4(),
+            organization_id=organization_id,
+            user_id=user_id,
+            role=role,
+            status=status,
+            invited_by=installer_user_id,
+        )
+        session.add(membership)
+        imported_count += 1
+
+    await session.commit()
+    return imported_count
+
+
+# =============================================================================
 # SLACK OAUTH ENDPOINTS
 # =============================================================================
 
@@ -166,6 +337,8 @@ async def get_slack_install_url(
         "groups:read",          # List private channels
         "commands",             # Handle slash commands
         "incoming-webhook",     # Webhook for posting
+        "users:read",           # List workspace members
+        "users:read.email",     # Read user emails for matching
     ]
 
     # Include organization ID in state for callback verification
@@ -264,8 +437,22 @@ async def slack_oauth_callback(
 
     logger.info(f"Slack integration installed for org {organization_id} (team: {team_info.get('name')})")
 
+    # Import workspace members
+    imported_count = 0
+    try:
+        imported_count = await import_slack_workspace_members(
+            session=session,
+            access_token=access_token,
+            organization_id=organization_id,
+            installer_user_id=UUID(user_id_str),
+        )
+        logger.info(f"Imported {imported_count} members from Slack workspace")
+    except Exception as e:
+        logger.error(f"Failed to import Slack workspace members: {e}")
+        # Don't fail the whole flow - Slack is connected, members can be imported later
+
     # Redirect to frontend callback page with success params
-    redirect_url = f"{settings.frontend_url}/integrations/slack/callback?success=true&team_name={team_info.get('name', 'Unknown')}"
+    redirect_url = f"{settings.frontend_url}/integrations/slack/callback?success=true&team_name={team_info.get('name', 'Unknown')}&imported={imported_count}"
 
     return RedirectResponse(url=redirect_url, status_code=302)
 
