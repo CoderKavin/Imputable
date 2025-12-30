@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, FileText, GitBranch, Shield, Bell, ArrowRight, Sparkles } from "lucide-react";
+import {
+  X,
+  FileText,
+  GitBranch,
+  Shield,
+  Bell,
+  ArrowRight,
+  Sparkles,
+  MessageSquare,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
@@ -14,31 +23,43 @@ interface WelcomeModalProps {
 const steps = [
   {
     title: "Welcome to Imputable",
-    description: "The decision tracking platform that helps engineering teams document, track, and audit their key decisions.",
+    description:
+      "The decision tracking platform that helps engineering teams document, track, and audit their key decisions.",
     icon: Sparkles,
     color: "bg-indigo-500",
   },
   {
     title: "Create Decisions",
-    description: "Document engineering decisions with context, alternatives considered, and expected outcomes. Every change creates a new version - nothing is ever lost.",
+    description:
+      "Document engineering decisions with context, alternatives considered, and expected outcomes. Every change creates a new version - nothing is ever lost.",
     icon: FileText,
     color: "bg-emerald-500",
   },
   {
     title: "Visualize Relationships",
-    description: "Use the Mind Map view to see how decisions connect. AI can automatically discover relationships between your decisions.",
+    description:
+      "Use the Mind Map view to see how decisions connect. AI can automatically discover relationships between your decisions.",
     icon: GitBranch,
     color: "bg-purple-500",
   },
   {
+    title: "Slack & Teams Integration",
+    description:
+      "Create and track decisions directly from Slack or Microsoft Teams. Get notified when decisions need your attention without leaving your workflow.",
+    icon: MessageSquare,
+    color: "bg-blue-500",
+  },
+  {
     title: "Review & Approve",
-    description: "Set up approval workflows for important decisions. Track who approved what and when with full audit trails.",
+    description:
+      "Set up approval workflows for important decisions. Track who approved what and when with full audit trails.",
     icon: Shield,
     color: "bg-amber-500",
   },
   {
     title: "Risk Monitoring",
-    description: "Get alerted when decisions may need review. The risk dashboard helps you stay on top of decisions that might be impacted by changes.",
+    description:
+      "Get alerted when decisions may need review. The risk dashboard helps you stay on top of decisions that might be impacted by changes.",
     icon: Bell,
     color: "bg-rose-500",
   },
@@ -108,7 +129,9 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
         {/* Content */}
         <div className="p-8 pt-12 text-center">
           {/* Icon */}
-          <div className={`w-16 h-16 ${step.color} rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg`}>
+          <div
+            className={`w-16 h-16 ${step.color} rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg`}
+          >
             <Icon className="w-8 h-8 text-white" />
           </div>
 
@@ -130,11 +153,12 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
                 onClick={() => setCurrentStep(index)}
                 className={`
                   w-2 h-2 rounded-full transition-all duration-300
-                  ${index === currentStep
-                    ? "w-8 bg-indigo-500"
-                    : index < currentStep
-                      ? "bg-indigo-300"
-                      : "bg-gray-200"
+                  ${
+                    index === currentStep
+                      ? "w-8 bg-indigo-500"
+                      : index < currentStep
+                        ? "bg-indigo-300"
+                        : "bg-gray-200"
                   }
                 `}
               />
@@ -162,10 +186,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button
-                onClick={handleNext}
-                className="flex-1 rounded-xl"
-              >
+              <Button onClick={handleNext} className="flex-1 rounded-xl">
                 Next
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
