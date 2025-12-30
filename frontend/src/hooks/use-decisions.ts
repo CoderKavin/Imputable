@@ -97,8 +97,9 @@ export function useDecision(
       ? decisionKeys.version(id, version)
       : decisionKeys.detail(id),
     queryFn: () => getDecision(id, version),
-    staleTime: 5 * 60 * 1000, // 5 minutes - versions are immutable!
-    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    staleTime: 10 * 60 * 1000, // 10 minutes - versions are immutable!
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
+    placeholderData: (prev) => prev, // Show previous data while fetching
     ...options,
   });
 }
@@ -131,7 +132,9 @@ export function useVersionHistory(
   return useQuery({
     queryKey: decisionKeys.versions(decisionId),
     queryFn: () => getVersionHistory(decisionId),
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }

@@ -314,6 +314,35 @@ export const riskDashboardKeys = {
 // QUERY HOOKS
 // =============================================================================
 
+// LocalStorage cache for risk stats
+const RISK_STATS_CACHE_KEY = "imputable_risk_stats";
+
+function getCachedRiskStats(orgId: string): RiskStats | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem(RISK_STATS_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (
+      parsed.orgId === orgId &&
+      Date.now() - parsed.timestamp < 5 * 60 * 1000
+    ) {
+      return parsed.data;
+    }
+  } catch {}
+  return null;
+}
+
+function setCachedRiskStats(orgId: string, data: RiskStats): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      RISK_STATS_CACHE_KEY,
+      JSON.stringify({ orgId, data, timestamp: Date.now() }),
+    );
+  } catch {}
+}
+
 /**
  * Fetch risk dashboard overview statistics
  */
@@ -323,13 +352,23 @@ export function useRiskStats(
   const { getStats } = useRiskDashboardApi();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
+  const orgId = currentOrganization?.id || "";
+
+  // Get cached data for instant load
+  const cachedData = getCachedRiskStats(orgId);
 
   return useQuery({
     queryKey: [...riskDashboardKeys.stats(), currentOrganization?.id],
-    queryFn: getStats,
-    staleTime: 5 * 60 * 1000, // 5 minutes - stats don't change frequently
-    // Removed auto-refetch - was causing unnecessary API calls every minute
+    queryFn: async () => {
+      const data = await getStats();
+      if (orgId) setCachedRiskStats(orgId, data);
+      return data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     enabled: !!user && !!currentOrganization?.id,
+    initialData: cachedData || undefined,
+    placeholderData: cachedData || undefined,
     ...options,
   });
 }
@@ -356,8 +395,10 @@ export function useExpiringDecisions(
   return useQuery({
     queryKey: [...riskDashboardKeys.expiring(filters), currentOrganization?.id],
     queryFn: () => getExpiringDecisions(filters),
-    staleTime: 30 * 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev, // Keep showing old data while fetching
     ...options,
   });
 }
@@ -380,8 +421,10 @@ export function useCalendarData(
       currentOrganization?.id,
     ],
     queryFn: () => getCalendar(startDate, endDate),
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }
@@ -400,8 +443,10 @@ export function useHeatmapData(
   return useQuery({
     queryKey: [...riskDashboardKeys.heatmap(months), currentOrganization?.id],
     queryFn: () => getHeatmap(months),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 10 * 60 * 1000, // 10 minutes - heatmap rarely changes
+    gcTime: 30 * 60 * 1000,
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }
@@ -419,8 +464,10 @@ export function useTeamHeatmap(
   return useQuery({
     queryKey: [...riskDashboardKeys.teamHeatmap(), currentOrganization?.id],
     queryFn: getTeamHeatmap,
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000,
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }
@@ -438,8 +485,10 @@ export function useTagHeatmap(
   return useQuery({
     queryKey: [...riskDashboardKeys.tagHeatmap(), currentOrganization?.id],
     queryFn: getTagHeatmap,
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 15 * 60 * 1000,
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }
@@ -461,8 +510,10 @@ export function useUpdateRequests(
       currentOrganization?.id,
     ],
     queryFn: () => getUpdateRequests(myDecisionsOnly),
-    staleTime: 30 * 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
     enabled: !!user && !!currentOrganization?.id,
+    placeholderData: (prev) => prev,
     ...options,
   });
 }
