@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import {
   LayoutDashboard,
   FileText,
@@ -11,6 +12,7 @@ import {
   Settings,
   HelpCircle,
   Sparkles,
+  Crown,
 } from "lucide-react";
 
 interface NavItem {
@@ -52,6 +54,13 @@ const bottomItems: NavItem[] = [
 
 export function FloatingSidebar() {
   const pathname = usePathname();
+  const { currentOrganization } = useOrganization();
+
+  // Check if user is on a paid plan
+  const isPaidPlan =
+    currentOrganization?.subscription_tier === "professional" ||
+    currentOrganization?.subscription_tier === "enterprise" ||
+    currentOrganization?.subscription_tier === "starter";
 
   return (
     <aside className="fixed left-4 top-4 bottom-4 w-64 z-40">
@@ -111,26 +120,48 @@ export function FloatingSidebar() {
             })}
           </div>
 
-          {/* Upgrade Banner */}
-          <div className="mt-6 mx-1">
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-indigo-500" />
-                <span className="text-sm font-semibold text-gray-900">
-                  Upgrade to Pro
-                </span>
+          {/* Upgrade Banner - only show for free tier */}
+          {!isPaidPlan && (
+            <div className="mt-6 mx-1">
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <span className="text-sm font-semibold text-gray-900">
+                    Upgrade to Pro
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Get unlimited decisions and advanced analytics.
+                </p>
+                <Link
+                  href="/settings?tab=billing"
+                  className="block w-full py-2 px-3 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors text-center"
+                >
+                  View Plans
+                </Link>
               </div>
-              <p className="text-xs text-gray-500 mb-3">
-                Get unlimited decisions and advanced analytics.
-              </p>
-              <Link
-                href="/settings?tab=billing"
-                className="block w-full py-2 px-3 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors text-center"
-              >
-                View Plans
-              </Link>
             </div>
-          </div>
+          )}
+
+          {/* Pro Badge - show for paid users */}
+          {isPaidPlan && (
+            <div className="mt-6 mx-1">
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-4 border border-emerald-100">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-emerald-600" />
+                  <span className="text-sm font-semibold text-gray-900">
+                    {currentOrganization?.subscription_tier === "enterprise"
+                      ? "Enterprise"
+                      : "Pro"}{" "}
+                    Plan
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  You have access to all features.
+                </p>
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Bottom Navigation */}
