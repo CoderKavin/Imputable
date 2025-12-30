@@ -3272,7 +3272,7 @@ class handler(BaseHTTPRequestHandler):
                         resp = urllib.request.urlopen(req, timeout=5)
                         resp_data = json.loads(resp.read().decode())
                         print(f"[SLACK ADD] views.open response: ok={resp_data.get('ok')}, error={resp_data.get('error')}, elapsed: {_time.time() - _start:.3f}s")
-                        self._send(200, {"response_type": "ephemeral", "text": ""})
+                        self._send(200, {})
                     except Exception as e:
                         print(f"[SLACK ADD] Failed to open modal: {e}, elapsed: {_time.time() - _start:.3f}s")
                         self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
@@ -3355,8 +3355,8 @@ class handler(BaseHTTPRequestHandler):
                             except:
                                 pass  # Expected to timeout, that's fine
 
-                        # Respond immediately to Slack
-                        self._send(200, {"response_type": "ephemeral", "text": ""})
+                        # Respond immediately to Slack (empty response = no message shown)
+                        self._send(200, {})
                     except Exception as e:
                         print(f"[SLACK FAST PATH] Failed to open log modal: {e}")
                         self._send(200, {"response_type": "ephemeral", "text": ":warning: Failed to open form. Please try again."})
