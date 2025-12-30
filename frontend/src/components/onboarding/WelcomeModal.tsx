@@ -251,22 +251,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     }
   }, [isOpen, currentStep, stepPhase, updateHighlight]);
 
-  // Handle navigation for multi-phase steps
-  useEffect(() => {
-    if (
-      stepPhase === "animate-cursor" &&
-      step.requiresNavigation &&
-      step.navigationPath
-    ) {
-      // Navigate after cursor animation completes
-      const timer = setTimeout(() => {
-        router.push(step.navigationPath!);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [stepPhase, step, router]);
-
-  // After navigation, show the secondary target
+  // After navigation completes, transition to show-target phase
   useEffect(() => {
     if (
       step.requiresNavigation &&
@@ -274,14 +259,14 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       pathname === step.navigationPath &&
       stepPhase === "animate-cursor"
     ) {
+      // Wait a bit for the page to render, then show the target
       const timer = setTimeout(() => {
         setStepPhase("show-target");
         setShowCursor(false);
-        updateHighlight();
-      }, 500);
+      }, 800);
       return () => clearTimeout(timer);
     }
-  }, [pathname, step, stepPhase, updateHighlight]);
+  }, [pathname, step, stepPhase]);
 
   const handleComplete = () => {
     localStorage.setItem(ONBOARDING_KEY, "true");
@@ -319,12 +304,12 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     router.push("/decisions/new");
   };
 
-  const handleCursorComplete = () => {
+  const handleCursorComplete = useCallback(() => {
     // Cursor finished animating to sidebar, now navigate
-    if (step.navigationPath) {
+    if (step.navigationPath && pathname !== step.navigationPath) {
       router.push(step.navigationPath);
     }
-  };
+  }, [step.navigationPath, pathname, router]);
 
   if (!isOpen) return null;
 
@@ -360,29 +345,38 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     <div className="fixed inset-0 z-[300]">
       {/* Backdrop */}
       {isCentered ? (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       ) : (
         <>
-          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-0 bg-black/70" />
           {activeRect && (
             <>
+              {/* Bright highlight box with glow */}
               <div
-                className="absolute z-[301] rounded-2xl ring-4 ring-indigo-500 ring-offset-4 ring-offset-transparent bg-transparent pointer-events-none transition-all duration-300"
+                className="absolute z-[301] rounded-xl pointer-events-none transition-all duration-300"
                 style={{
                   top: activeRect.top - 8,
                   left: activeRect.left - 8,
                   width: activeRect.width + 16,
                   height: activeRect.height + 16,
-                  boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.6)",
+                  boxShadow: `
+                    0 0 0 9999px rgba(0, 0, 0, 0.75),
+                    0 0 0 4px #6366f1,
+                    0 0 20px 8px rgba(99, 102, 241, 0.6),
+                    0 0 40px 16px rgba(99, 102, 241, 0.4)
+                  `,
+                  border: "2px solid #818cf8",
                 }}
               />
+              {/* Pulsing glow effect */}
               <div
-                className="absolute z-[300] rounded-2xl animate-ping bg-indigo-500/30 pointer-events-none"
+                className="absolute z-[300] rounded-xl animate-pulse pointer-events-none"
                 style={{
-                  top: activeRect.top - 8,
-                  left: activeRect.left - 8,
-                  width: activeRect.width + 16,
-                  height: activeRect.height + 16,
+                  top: activeRect.top - 12,
+                  left: activeRect.left - 12,
+                  width: activeRect.width + 24,
+                  height: activeRect.height + 24,
+                  boxShadow: "0 0 30px 10px rgba(99, 102, 241, 0.5)",
                 }}
               />
             </>
