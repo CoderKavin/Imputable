@@ -199,7 +199,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       }
       // Fallback: find by text content for Mind Map
       if (step.title.includes("Mind Map")) {
-        const buttons = document.querySelectorAll("button");
+        const buttons = Array.from(document.querySelectorAll("button"));
         for (const btn of buttons) {
           if (btn.textContent?.includes("Mind Map")) {
             setSecondaryRect(btn.getBoundingClientRect());
@@ -210,7 +210,7 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       }
       // Fallback for integrations tab
       if (step.title.includes("Slack")) {
-        const buttons = document.querySelectorAll("button");
+        const buttons = Array.from(document.querySelectorAll("button"));
         for (const btn of buttons) {
           if (btn.textContent?.includes("Integrations")) {
             setSecondaryRect(btn.getBoundingClientRect());
