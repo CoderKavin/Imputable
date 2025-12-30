@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { AppLayout } from "@/components/app";
 import { DashboardContent } from "./dashboard-content";
+import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 
 /**
  * Dashboard Page
@@ -40,11 +41,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <AppLayout
-      title="Dashboard"
-      subtitle="Welcome back! Here's what's happening."
-    >
-      <DashboardContent hasOrg={!!currentOrganization} />
-    </AppLayout>
+    <>
+      <WelcomeModal />
+      <AppLayout
+        title="Dashboard"
+        subtitle="Welcome back! Here's what's happening."
+      >
+        <DashboardContent hasOrg={!!currentOrganization} />
+      </AppLayout>
+    </>
   );
 }
