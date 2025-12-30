@@ -71,10 +71,18 @@ export function useDecisionApi() {
     async (
       page = 1,
       pageSize = 20,
+      statusFilter?: string,
     ): Promise<PaginatedResponse<DecisionSummary>> => {
+      const params: Record<string, string | number> = {
+        page,
+        page_size: pageSize,
+      };
+      if (statusFilter) {
+        params.status = statusFilter;
+      }
       const response = await client.get<PaginatedResponse<DecisionSummary>>(
         "/decisions",
-        { params: { page, page_size: pageSize } },
+        { params },
       );
       return response.data;
     },

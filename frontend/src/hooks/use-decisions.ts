@@ -115,17 +115,25 @@ export function useVersionComparison(
 export const useVersionCompare = useVersionComparison;
 
 /**
- * Fetch decision list with pagination
+ * Fetch decision list with pagination and optional status filter
  */
-export function useDecisionList(page = 1, pageSize = 20) {
+export function useDecisionList(
+  page = 1,
+  pageSize = 20,
+  statusFilter?: string,
+) {
   const { listDecisions } = useDecisionApi();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
 
   return useQuery({
-    queryKey: [...decisionKeys.list(page, pageSize), currentOrganization?.id],
-    queryFn: () => listDecisions(page, pageSize),
-    staleTime: 30 * 1000, // 30 seconds
+    queryKey: [
+      ...decisionKeys.list(page, pageSize),
+      currentOrganization?.id,
+      statusFilter,
+    ],
+    queryFn: () => listDecisions(page, pageSize, statusFilter),
+    staleTime: 2 * 60 * 1000, // 2 minutes - lists don't change that frequently
     enabled: !!user && !!currentOrganization?.id, // Only fetch when signed in with org
   });
 }

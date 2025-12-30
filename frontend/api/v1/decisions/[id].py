@@ -8,6 +8,7 @@ from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 from datetime import datetime
 import urllib.request
+import threading
 
 
 # Email sending via Resend
@@ -1000,46 +1001,11 @@ class handler(BaseHTTPRequestHandler):
                         new_decision_status = "approved"
                         decision_became_approved = True
 
-                    conn.commit()
-
-                    # Send notifications
-                    try:
-                        if slack_token and slack_channel_id:
-                            send_slack_approval_notification(slack_token, slack_channel_id, decision_number, decision_id, decision_title, user_name, approval_status, comment, approved_count, required_count, decision_became_approved)
-                    except Exception:
-                        pass
-                    try:
-                        if teams_webhook_url:
-                            send_teams_approval_notification(teams_webhook_url, decision_number, decision_id, decision_title, user_name, approval_status, comment, approved_count, required_count, decision_became_approved)
-                    except Exception:
-                        pass
-
-                    # Send email notifications for approval
-                    try:
-                        # Get org name and creator_id for email notifications
-                        org_info = conn.execute(text("""
-                            SELECT o.name, d.created_by FROM organizations o
-                            JOIN decisions d ON d.organization_id = o.id
-                            WHERE d.id = :did
-                        """), {"did": decision_id}).fetchone()
-                        org_name = org_info[0] if org_info else "Your Organization"
-                        creator_id = str(org_info[1]) if org_info else ""
-
-                        send_approval_emails(
-                            conn=conn, org_id=org_id, decision_id=decision_id,
-                            decision_number=decision_number, title=decision_title,
-                            approver_name=user_name, approver_id=str(user_id),
-                            approval_status=approval_status, comment=comment,
-                            org_name=org_name, decision_became_approved=decision_became_approved,
-                            creator_id=creator_id
-                        )
-                    except Exception:
-                        pass
-
-                    # Update approval DM if this user was sent one via Slack
+                    # Get DM info before committing (need DB connection)
+                    dm_channel_id = None
+                    dm_message_ts = None
                     try:
                         if slack_token:
-                            # Query the DM info stored in required_role field
                             dm_info_result = conn.execute(text("""
                                 SELECT required_role FROM required_reviewers
                                 WHERE decision_version_id = :version_id AND user_id = :user_id
@@ -1050,22 +1016,57 @@ class handler(BaseHTTPRequestHandler):
                                     dm_info = json.loads(dm_info_row[0]) if isinstance(dm_info_row[0], str) else dm_info_row[0]
                                     dm_channel_id = dm_info.get("dm_channel_id")
                                     dm_message_ts = dm_info.get("dm_message_ts")
-                                    if dm_channel_id and dm_message_ts:
-                                        update_slack_approval_dm(
-                                            slack_token=slack_token,
-                                            dm_channel_id=dm_channel_id,
-                                            dm_message_ts=dm_message_ts,
-                                            decision_number=decision_number,
-                                            decision_id=decision_id,
-                                            title=decision_title,
-                                            approver_name=user_name,
-                                            approval_status=approval_status,
-                                            comment=comment
-                                        )
                                 except (json.JSONDecodeError, TypeError):
                                     pass
                     except Exception:
                         pass
+
+                    # Get org name and creator_id for email notifications before commit
+                    org_name = "Your Organization"
+                    creator_id = ""
+                    try:
+                        org_info = conn.execute(text("""
+                            SELECT o.name, d.created_by FROM organizations o
+                            JOIN decisions d ON d.organization_id = o.id
+                            WHERE d.id = :did
+                        """), {"did": decision_id}).fetchone()
+                        if org_info:
+                            org_name = org_info[0]
+                            creator_id = str(org_info[1])
+                    except Exception:
+                        pass
+
+                    conn.commit()
+
+                    # Send all notifications in background thread (non-blocking)
+                    def send_approval_notifications():
+                        try:
+                            if slack_token and slack_channel_id:
+                                send_slack_approval_notification(slack_token, slack_channel_id, decision_number, decision_id, decision_title, user_name, approval_status, comment, approved_count, required_count, decision_became_approved)
+                        except Exception:
+                            pass
+                        try:
+                            if teams_webhook_url:
+                                send_teams_approval_notification(teams_webhook_url, decision_number, decision_id, decision_title, user_name, approval_status, comment, approved_count, required_count, decision_became_approved)
+                        except Exception:
+                            pass
+                        try:
+                            if dm_channel_id and dm_message_ts and slack_token:
+                                update_slack_approval_dm(
+                                    slack_token=slack_token,
+                                    dm_channel_id=dm_channel_id,
+                                    dm_message_ts=dm_message_ts,
+                                    decision_number=decision_number,
+                                    decision_id=decision_id,
+                                    title=decision_title,
+                                    approver_name=user_name,
+                                    approval_status=approval_status,
+                                    comment=comment
+                                )
+                        except Exception:
+                            pass
+
+                    threading.Thread(target=send_approval_notifications, daemon=True).start()
 
                     self._send(200, {
                         "success": True,

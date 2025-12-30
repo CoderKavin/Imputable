@@ -37,14 +37,14 @@ def get_engine():
 
         _engine = create_async_engine(
             db_url_async,
-            pool_size=1,
-            max_overflow=2,
+            pool_size=5,
+            max_overflow=10,
             pool_pre_ping=True,
             pool_recycle=300,
             connect_args={
                 "ssl": ssl_context,
-                "prepared_statement_cache_size": 0,
-                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 100,
+                "statement_cache_size": 100,
             },
         )
     return _engine

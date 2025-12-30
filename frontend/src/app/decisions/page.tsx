@@ -8,7 +8,7 @@
  * Protected route - requires authentication
  */
 
-import { useState, useMemo, useEffect, Suspense, lazy } from "react";
+import { useState, useEffect, Suspense, lazy } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useDecisionList } from "@/hooks/use-decisions";
@@ -96,25 +96,19 @@ function DecisionsPageContent() {
       setViewMode("mindmap");
     }
   }, [searchParams]);
-  const { data, isLoading, error } = useDecisionList(page, 100); // Fetch more to filter client-side
+  // Use server-side filtering when a status is selected, otherwise fetch a reasonable page size
+  const { data, isLoading, error } = useDecisionList(
+    page,
+    20, // Reduced from 100 - server handles filtering, no need to overfetch
+    statusFilter !== "all" ? statusFilter : undefined,
+  );
 
   // Show message if no organization selected
   const noOrganization = !orgLoading && !currentOrganization;
 
-  // Filter decisions based on selected status
-  const filteredDecisions = useMemo(() => {
-    if (!data?.items) return [];
-    if (statusFilter === "all") return data.items;
-    return data.items.filter((d) => d.status === statusFilter);
-  }, [data?.items, statusFilter]);
-
-  // Paginate filtered results
-  const pageSize = 20;
-  const totalPages = Math.ceil(filteredDecisions.length / pageSize);
-  const paginatedDecisions = filteredDecisions.slice(
-    (page - 1) * pageSize,
-    page * pageSize,
-  );
+  // Server handles filtering now, just use the data directly
+  const decisions = data?.items || [];
+  const totalPages = data?.total_pages || 1;
 
   // Reset to page 1 when filter changes
   const handleFilterChange = (filter: StatusFilter) => {
@@ -247,7 +241,7 @@ function DecisionsPageContent() {
               }
             >
               <MindMapView
-                decisions={filteredDecisions}
+                decisions={decisions}
                 maxDecisions={Math.min(
                   mindMapDecisionCount,
                   maxMindMapDecisions,
@@ -255,7 +249,7 @@ function DecisionsPageContent() {
                 onAddRelationship={() => setShowAddRelationshipModal(true)}
               />
             </Suspense>
-          ) : filteredDecisions.length === 0 ? (
+          ) : decisions.length === 0 ? (
             statusFilter === "all" ? (
               <EmptyState />
             ) : (
@@ -268,7 +262,7 @@ function DecisionsPageContent() {
             <>
               {/* Decision Cards Stack */}
               <div className="space-y-4">
-                {paginatedDecisions.map((decision: DecisionSummary) => (
+                {decisions.map((decision: DecisionSummary) => (
                   <DecisionCard key={decision.id} decision={decision} />
                 ))}
               </div>

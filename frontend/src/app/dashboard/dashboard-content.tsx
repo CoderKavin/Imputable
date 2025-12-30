@@ -23,9 +23,10 @@ interface DashboardContentProps {
 }
 
 export function DashboardContent({ hasOrg }: DashboardContentProps) {
+  // Only fetch 10 decisions for dashboard - we only display 5 anyway
   const { data: decisionData, isLoading: decisionsLoading } = useDecisionList(
     1,
-    100,
+    10,
   );
   const { data: riskStats, isLoading: riskLoading } = useRiskStats();
   const { organizations, currentOrganization } = useOrganization();

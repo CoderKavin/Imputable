@@ -327,8 +327,8 @@ export function useRiskStats(
   return useQuery({
     queryKey: [...riskDashboardKeys.stats(), currentOrganization?.id],
     queryFn: getStats,
-    staleTime: 30 * 1000, // 30 seconds
-    refetchInterval: 60 * 1000, // Refresh every minute
+    staleTime: 5 * 60 * 1000, // 5 minutes - stats don't change frequently
+    // Removed auto-refetch - was causing unnecessary API calls every minute
     enabled: !!user && !!currentOrganization?.id,
     ...options,
   });

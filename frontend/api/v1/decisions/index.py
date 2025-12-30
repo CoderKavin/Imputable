@@ -8,6 +8,7 @@ from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 from datetime import datetime
 import urllib.request
+import threading
 
 # Email sending via Resend
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
@@ -447,65 +448,61 @@ class handler(BaseHTTPRequestHandler):
                     """), query_params)
                     total = count_result.fetchone()[0]
 
-                    # Get items
+                    # Get items with version counts and reviewer aggregates in single query
                     offset = (page - 1) * page_size
                     query_params["limit"] = page_size
                     query_params["offset"] = offset
 
                     result = conn.execute(text(f"""
+                        WITH decision_data AS (
+                            SELECT
+                                d.id, d.organization_id, d.decision_number, d.status,
+                                d.created_at,
+                                dv.id as version_id, dv.title, dv.impact_level, dv.tags,
+                                u.id as user_id, u.name as user_name, u.email as user_email,
+                                (SELECT COUNT(*) FROM decision_versions WHERE decision_id = d.id) as version_count
+                            FROM decisions d
+                            JOIN decision_versions dv ON d.current_version_id = dv.id
+                            JOIN users u ON d.created_by = u.id
+                            WHERE {where_sql}
+                            ORDER BY d.created_at DESC
+                            LIMIT :limit OFFSET :offset
+                        ),
+                        reviewer_data AS (
+                            SELECT
+                                dd.id as decision_id,
+                                dd.version_id,
+                                json_agg(json_build_object(
+                                    'id', rr.user_id::text,
+                                    'name', ru.name,
+                                    'email', ru.email,
+                                    'status', COALESCE(a.status, 'pending')
+                                )) FILTER (WHERE rr.user_id IS NOT NULL) as reviewers,
+                                COUNT(rr.user_id) as reviewer_count,
+                                COUNT(CASE WHEN a.status = 'approved' THEN 1 END) as approved_count,
+                                COUNT(CASE WHEN a.status = 'rejected' THEN 1 END) as rejected_count
+                            FROM decision_data dd
+                            LEFT JOIN required_reviewers rr ON rr.decision_version_id = dd.version_id
+                            LEFT JOIN users ru ON rr.user_id = ru.id
+                            LEFT JOIN approvals a ON a.decision_version_id = rr.decision_version_id
+                                                 AND a.user_id = rr.user_id
+                            GROUP BY dd.id, dd.version_id
+                        )
                         SELECT
-                            d.id, d.organization_id, d.decision_number, d.status,
-                            d.created_at,
-                            dv.id as version_id, dv.title, dv.impact_level, dv.tags,
-                            u.id as user_id, u.name as user_name, u.email as user_email
-                        FROM decisions d
-                        JOIN decision_versions dv ON d.current_version_id = dv.id
-                        JOIN users u ON d.created_by = u.id
-                        WHERE {where_sql}
-                        ORDER BY d.created_at DESC
-                        LIMIT :limit OFFSET :offset
+                            dd.*,
+                            rd.reviewers,
+                            rd.reviewer_count,
+                            rd.approved_count,
+                            rd.rejected_count
+                        FROM decision_data dd
+                        LEFT JOIN reviewer_data rd ON dd.id = rd.decision_id
+                        ORDER BY dd.created_at DESC
                     """), query_params)
 
                     items = []
                     for row in result.fetchall():
-                        decision_id = row[0]
-                        version_id = row[5]
-
-                        # Get version count
-                        vc_result = conn.execute(text("""
-                            SELECT COUNT(*) FROM decision_versions WHERE decision_id = :did
-                        """), {"did": decision_id})
-                        version_count = vc_result.fetchone()[0]
-
-                        # Get reviewers and their approval status
-                        reviewers_result = conn.execute(text("""
-                            SELECT rr.user_id, u.name, u.email,
-                                   COALESCE(a.status, 'pending') as approval_status
-                            FROM required_reviewers rr
-                            JOIN users u ON rr.user_id = u.id
-                            LEFT JOIN approvals a ON a.decision_version_id = rr.decision_version_id
-                                                 AND a.user_id = rr.user_id
-                            WHERE rr.decision_version_id = :version_id
-                        """), {"version_id": version_id})
-
-                        reviewers = []
-                        approved_count = 0
-                        rejected_count = 0
-                        for r in reviewers_result.fetchall():
-                            status = r[3]
-                            reviewers.append({
-                                "id": str(r[0]),
-                                "name": r[1],
-                                "email": r[2],
-                                "status": status
-                            })
-                            if status == "approved":
-                                approved_count += 1
-                            elif status == "rejected":
-                                rejected_count += 1
-
                         item = {
-                            "id": str(decision_id),
+                            "id": str(row[0]),
                             "organization_id": str(row[1]),
                             "decision_number": row[2],
                             "status": row[3],
@@ -518,16 +515,18 @@ class handler(BaseHTTPRequestHandler):
                                 "name": row[10],
                                 "email": row[11]
                             },
-                            "version_count": version_count
+                            "version_count": row[12]
                         }
 
                         # Only include reviewer data if there are reviewers
-                        if reviewers:
+                        reviewers = row[13]
+                        reviewer_count = row[14] or 0
+                        if reviewers and reviewer_count > 0:
                             item["reviewers"] = reviewers
                             item["approval_progress"] = {
-                                "required": len(reviewers),
-                                "approved": approved_count,
-                                "rejected": rejected_count
+                                "required": reviewer_count,
+                                "approved": row[15] or 0,
+                                "rejected": row[16] or 0
                             }
 
                         items.append(item)
@@ -653,54 +652,41 @@ class handler(BaseHTTPRequestHandler):
 
                     conn.commit()
 
-                    # Send notifications to Slack and Teams (non-blocking)
-                    try:
-                        if slack_token and slack_channel_id:
-                            send_slack_decision_created(
-                                slack_token=slack_token,
-                                channel_id=slack_channel_id,
-                                decision_number=decision_number,
-                                decision_id=decision_id,
-                                title=title,
-                                impact_level=impact_level,
-                                creator_name=user_name,
-                                org_name=org_name,
-                                tags=tags,
-                            )
-                    except Exception:
-                        pass
+                    # Send notifications in background threads (truly non-blocking)
+                    def send_notifications():
+                        try:
+                            if slack_token and slack_channel_id:
+                                send_slack_decision_created(
+                                    slack_token=slack_token,
+                                    channel_id=slack_channel_id,
+                                    decision_number=decision_number,
+                                    decision_id=decision_id,
+                                    title=title,
+                                    impact_level=impact_level,
+                                    creator_name=user_name,
+                                    org_name=org_name,
+                                    tags=tags,
+                                )
+                        except Exception:
+                            pass
 
-                    try:
-                        if teams_webhook_url:
-                            send_teams_decision_created(
-                                webhook_url=teams_webhook_url,
-                                decision_number=decision_number,
-                                decision_id=decision_id,
-                                title=title,
-                                impact_level=impact_level,
-                                creator_name=user_name,
-                                org_name=org_name,
-                                tags=tags,
-                            )
-                    except Exception:
-                        pass
+                        try:
+                            if teams_webhook_url:
+                                send_teams_decision_created(
+                                    webhook_url=teams_webhook_url,
+                                    decision_number=decision_number,
+                                    decision_id=decision_id,
+                                    title=title,
+                                    impact_level=impact_level,
+                                    creator_name=user_name,
+                                    org_name=org_name,
+                                    tags=tags,
+                                )
+                        except Exception:
+                            pass
 
-                    # Send email notifications to org members (non-blocking)
-                    try:
-                        send_decision_created_emails(
-                            conn=conn,
-                            org_id=org_id,
-                            decision_id=decision_id,
-                            decision_number=decision_number,
-                            title=title,
-                            impact_level=impact_level,
-                            creator_name=user_name,
-                            creator_id=str(user_id),
-                            org_name=org_name,
-                            tags=tags,
-                        )
-                    except Exception:
-                        pass
+                    # Start notifications in background thread
+                    threading.Thread(target=send_notifications, daemon=True).start()
 
                     self._send(201, {
                         "id": decision_id,
