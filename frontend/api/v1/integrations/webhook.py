@@ -2689,7 +2689,68 @@ class handler(BaseHTTPRequestHandler):
                         response_url = payload.get("response_url", "")
 
                         if decision_id and vote_type in ("agree", "concern", "block"):
-                            # Fire async request to process vote
+                            # Get current message blocks to extract votes for optimistic update
+                            message = payload.get("message", {})
+                            blocks = message.get("blocks", [])
+
+                            # Parse current votes from context block (format: ":white_check_mark: user1, user2 | :warning: user3")
+                            votes = {"agree": [], "concern": [], "block": []}
+                            title = ""
+                            channel_member_count = 0
+                            creator_slack_id = ""
+
+                            for block in blocks:
+                                # Get title from header
+                                if block.get("type") == "header":
+                                    title = block.get("text", {}).get("text", "")
+
+                                # Parse votes from context block
+                                if block.get("type") == "context":
+                                    elements = block.get("elements", [])
+                                    for elem in elements:
+                                        text = elem.get("text", "")
+                                        if ":white_check_mark:" in text and "View" not in text:
+                                            # Agree votes
+                                            parts = text.replace(":white_check_mark:", "").strip()
+                                            if parts:
+                                                votes["agree"] = [n.strip() for n in parts.split(",") if n.strip()]
+                                        if ":warning:" in text:
+                                            # Concern votes - extract from section after |
+                                            if "|" in text:
+                                                for section in text.split("|"):
+                                                    if ":warning:" in section:
+                                                        parts = section.replace(":warning:", "").strip()
+                                                        if parts:
+                                                            votes["concern"] = [n.strip() for n in parts.split(",") if n.strip()]
+                                            else:
+                                                parts = text.replace(":warning:", "").strip()
+                                                if parts:
+                                                    votes["concern"] = [n.strip() for n in parts.split(",") if n.strip()]
+                                        if ":no_entry:" in text:
+                                            # Block votes
+                                            if "|" in text:
+                                                for section in text.split("|"):
+                                                    if ":no_entry:" in section:
+                                                        parts = section.replace(":no_entry:", "").strip()
+                                                        if parts:
+                                                            votes["block"] = [n.strip() for n in parts.split(",") if n.strip()]
+                                            else:
+                                                parts = text.replace(":no_entry:", "").strip()
+                                                if parts:
+                                                    votes["block"] = [n.strip() for n in parts.split(",") if n.strip()]
+
+                                # Get creator from approve button value
+                                if block.get("type") == "section" and block.get("accessory", {}).get("action_id") == "poll_approve_decision":
+                                    val = block.get("accessory", {}).get("value", "")
+                                    if "|" in val:
+                                        creator_slack_id = val.split("|")[1]
+
+                            # Remove user from all vote types first, then add to new type
+                            for vt in votes:
+                                votes[vt] = [n for n in votes[vt] if n != user_name]
+                            votes[vote_type].append(user_name)
+
+                            # Fire async request to process vote in DB
                             webhook_base = os.environ.get("WEBHOOK_URL", "https://imputable.vercel.app")
                             vote_url = f"{webhook_base}/api/v1/integrations/webhook?platform=slack&type=async_poll_vote"
 
@@ -2712,8 +2773,13 @@ class handler(BaseHTTPRequestHandler):
                             except:
                                 pass  # Expected to timeout
 
-                            # Respond immediately
-                            self._send(200, {})
+                            # Respond immediately with optimistic update
+                            # Use decision_number 0 since we don't need it in the card anymore
+                            optimistic_blocks = SlackBlocks.consensus_poll(decision_id, 0, title, votes, "pending_review", channel_member_count, creator_slack_id)
+                            self._send(200, {
+                                "replace_original": True,
+                                "blocks": optimistic_blocks
+                            })
                             return
 
                     # DEAD CODE BELOW - keeping for reference but async_poll_vote handles this now
