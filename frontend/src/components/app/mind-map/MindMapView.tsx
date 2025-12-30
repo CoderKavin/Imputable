@@ -37,23 +37,19 @@ const nodeTypes: NodeTypes = {
 
 // Edge colors based on relationship type
 const edgeColors: Record<RelationshipType, string> = {
-  influenced_by: "#8b5cf6", // purple
-  led_to: "#10b981", // green
-  related_to: "#6b7280", // gray
   supersedes: "#ef4444", // red
-  conflicts_with: "#f59e0b", // amber
   blocked_by: "#dc2626", // dark red
+  related_to: "#6b7280", // gray
   implements: "#3b82f6", // blue
+  conflicts_with: "#f59e0b", // amber
 };
 
 const edgeLabels: Record<RelationshipType, string> = {
-  influenced_by: "influenced by",
-  led_to: "led to",
-  related_to: "related to",
   supersedes: "supersedes",
-  conflicts_with: "conflicts with",
   blocked_by: "blocked by",
+  related_to: "related to",
   implements: "implements",
+  conflicts_with: "conflicts with",
 };
 
 interface MindMapViewProps {

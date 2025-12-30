@@ -17,13 +17,11 @@ export type DecisionStatus =
 export type ImpactLevel = "low" | "medium" | "high" | "critical";
 
 export type RelationshipType =
-  | "influenced_by"
-  | "led_to"
-  | "related_to"
   | "supersedes"
-  | "conflicts_with"
   | "blocked_by"
-  | "implements";
+  | "related_to"
+  | "implements"
+  | "conflicts_with";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "abstained";
 

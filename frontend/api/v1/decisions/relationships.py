@@ -22,14 +22,12 @@ AI_RELATIONSHIP_PROMPT = """You are an AI assistant that analyzes engineering de
 
 Given a list of decisions with their titles, context, choices, and dates, identify meaningful relationships.
 
-RELATIONSHIP TYPES:
-- "influenced_by": Decision A was influenced by or built upon Decision B
-- "led_to": Decision A directly caused or led to Decision B being made
-- "related_to": Decisions share common themes, technologies, or concerns
+RELATIONSHIP TYPES (you MUST only use these exact values):
 - "supersedes": Decision A replaces or overrides Decision B
-- "conflicts_with": Decisions are in tension or contradict each other
 - "blocked_by": Decision A cannot proceed until Decision B is resolved
+- "related_to": Decisions share common themes, technologies, or concerns
 - "implements": Decision A is an implementation detail of Decision B
+- "conflicts_with": Decisions are in tension or contradict each other
 
 ANALYSIS GUIDELINES:
 1. Look for temporal relationships (decisions close in time may be related)
@@ -484,8 +482,7 @@ class handler(BaseHTTPRequestHandler):
                             self._send(400, {"error": "source_decision_id, target_decision_id, and relationship_type required"})
                             return
 
-                        valid_types = ["influenced_by", "led_to", "related_to", "supersedes",
-                                      "conflicts_with", "blocked_by", "implements"]
+                        valid_types = ["supersedes", "blocked_by", "related_to", "implements", "conflicts_with"]
                         if rel_type not in valid_types:
                             self._send(400, {"error": f"Invalid relationship_type. Must be one of: {valid_types}"})
                             return

@@ -18,29 +18,9 @@ const relationshipTypes: {
   description: string;
 }[] = [
   {
-    value: "influenced_by",
-    label: "Influenced by",
-    description: "This decision was influenced by another",
-  },
-  {
-    value: "led_to",
-    label: "Led to",
-    description: "This decision directly led to another",
-  },
-  {
-    value: "related_to",
-    label: "Related to",
-    description: "Decisions share common themes",
-  },
-  {
     value: "supersedes",
     label: "Supersedes",
     description: "This decision replaces another",
-  },
-  {
-    value: "conflicts_with",
-    label: "Conflicts with",
-    description: "Decisions are in tension",
   },
   {
     value: "blocked_by",
@@ -48,9 +28,19 @@ const relationshipTypes: {
     description: "This decision is blocked by another",
   },
   {
+    value: "related_to",
+    label: "Related to",
+    description: "Decisions share common themes",
+  },
+  {
     value: "implements",
     label: "Implements",
     description: "This decision implements another",
+  },
+  {
+    value: "conflicts_with",
+    label: "Conflicts with",
+    description: "Decisions are in tension",
   },
 ];
 
