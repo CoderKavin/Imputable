@@ -94,26 +94,47 @@ const steps: TourStep[] = [
   },
 ];
 
+// State machine for animation phases
+type AnimationPhase =
+  | "idle" // Normal state, showing modal
+  | "fading-out" // Fading out modal before cursor animation
+  | "cursor-moving" // Cursor moving to target
+  | "cursor-clicking" // Cursor click animation
+  | "navigating" // Navigation in progress
+  | "waiting-for-page" // Waiting for new page to load
+  | "fading-in"; // Fading in modal after navigation
+
 export function WelcomeModal({ onComplete }: WelcomeModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [showCursor, setShowCursor] = useState(false);
+  const [phase, setPhase] = useState<AnimationPhase>("idle");
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [cursorClicking, setCursorClicking] = useState(false);
-  const [contentVisible, setContentVisible] = useState(true);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const navigationPendingRef = useRef(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const step = steps[currentStep];
 
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
   // Find element to highlight
   const findElement = useCallback((selector: string): Element | null => {
-    // Direct selector
-    const direct = document.querySelector(selector);
-    if (direct) return direct;
+    if (!selector) return null;
+
+    // Direct CSS selector
+    try {
+      const direct = document.querySelector(selector);
+      if (direct) return direct;
+    } catch {
+      // Invalid selector
+    }
 
     // Fallback for Mind Map button
     if (selector === "mind-map-button") {
@@ -140,35 +161,27 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
 
   // Update highlight position
   const updateHighlight = useCallback(() => {
-    if (!step.highlightSelector && !step.secondarySelector) {
+    // Determine which selector to use
+    let selector: string | undefined;
+
+    if (hasNavigated && step.secondarySelector) {
+      selector = step.secondarySelector;
+    } else if (step.highlightSelector) {
+      selector = step.highlightSelector;
+    }
+
+    if (!selector) {
       setHighlightRect(null);
       return;
     }
 
-    // If we navigated and have a secondary selector, use that
-    if (
-      step.requiresNavigation &&
-      step.navigationPath === pathname &&
-      step.secondarySelector
-    ) {
-      const element = findElement(step.secondarySelector);
-      if (element) {
-        setHighlightRect(element.getBoundingClientRect());
-        return;
-      }
+    const element = findElement(selector);
+    if (element) {
+      setHighlightRect(element.getBoundingClientRect());
+    } else {
+      setHighlightRect(null);
     }
-
-    // Otherwise use primary selector
-    if (step.highlightSelector) {
-      const element = findElement(step.highlightSelector);
-      if (element) {
-        setHighlightRect(element.getBoundingClientRect());
-        return;
-      }
-    }
-
-    setHighlightRect(null);
-  }, [step, pathname, findElement]);
+  }, [step, hasNavigated, findElement]);
 
   // Check if onboarding should show
   useEffect(() => {
@@ -180,36 +193,43 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     }
   }, []);
 
-  // Update highlight when step or path changes
+  // Update highlight when relevant state changes
   useEffect(() => {
-    if (isOpen && !isAnimating) {
-      // Small delay to let DOM settle after navigation
-      const timer = setTimeout(updateHighlight, 100);
+    if (isOpen && phase === "idle") {
+      const timer = setTimeout(updateHighlight, 150);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, currentStep, pathname, isAnimating, updateHighlight]);
+  }, [isOpen, currentStep, phase, hasNavigated, updateHighlight]);
 
   // Handle resize
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && phase === "idle") {
       window.addEventListener("resize", updateHighlight);
       return () => window.removeEventListener("resize", updateHighlight);
     }
-  }, [isOpen, updateHighlight]);
+  }, [isOpen, phase, updateHighlight]);
 
-  // Handle navigation completion
+  // Handle navigation completion - detect when we arrive at target page
   useEffect(() => {
-    if (navigationPendingRef.current && step.navigationPath === pathname) {
-      navigationPendingRef.current = false;
-      // Navigation complete, show the secondary element
-      setTimeout(() => {
-        setIsAnimating(false);
-        setShowCursor(false);
-        setContentVisible(true);
-        updateHighlight();
-      }, 300);
+    if (phase === "waiting-for-page" && step.navigationPath) {
+      // Check if we're on the right page
+      if (
+        pathname === step.navigationPath ||
+        pathname.startsWith(step.navigationPath)
+      ) {
+        // Wait for page to render, then show the secondary element
+        timeoutRef.current = setTimeout(() => {
+          setHasNavigated(true);
+          setPhase("fading-in");
+          // After fade in completes
+          timeoutRef.current = setTimeout(() => {
+            setPhase("idle");
+            updateHighlight();
+          }, 300);
+        }, 500);
+      }
     }
-  }, [pathname, step.navigationPath, updateHighlight]);
+  }, [pathname, phase, step.navigationPath, updateHighlight]);
 
   const handleComplete = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, "true");
@@ -218,16 +238,18 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
     onComplete?.();
   }, [router, onComplete]);
 
-  const animateCursorAndNavigate = useCallback(() => {
-    if (!step.highlightSelector) return;
+  const startCursorAnimation = useCallback(() => {
+    const element = findElement(step.highlightSelector || "");
 
-    const element = findElement(step.highlightSelector);
     if (!element) {
-      // No element found, skip animation and just navigate
-      setIsAnimating(false);
-      setContentVisible(true);
+      // No element found - skip cursor animation, just navigate
+      setPhase("navigating");
       if (step.navigationPath) {
         router.push(step.navigationPath);
+        setPhase("waiting-for-page");
+      } else {
+        setPhase("idle");
+        setHasNavigated(true);
       }
       return;
     }
@@ -238,28 +260,30 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
 
     // Start cursor from center of screen
     setCursorPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    setShowCursor(true);
-    setContentVisible(false);
+    setPhase("cursor-moving");
 
-    // Animate to target
-    setTimeout(() => {
+    // Move cursor to target
+    timeoutRef.current = setTimeout(() => {
       setCursorPos({ x: targetX, y: targetY });
+
+      // Click animation
+      timeoutRef.current = setTimeout(() => {
+        setPhase("cursor-clicking");
+
+        // Navigate after click
+        timeoutRef.current = setTimeout(() => {
+          setPhase("navigating");
+
+          if (step.navigationPath) {
+            router.push(step.navigationPath);
+            setPhase("waiting-for-page");
+          } else {
+            setPhase("idle");
+            setHasNavigated(true);
+          }
+        }, 200);
+      }, 500);
     }, 100);
-
-    // Click animation
-    setTimeout(() => {
-      setCursorClicking(true);
-    }, 600);
-
-    // Navigate and hide cursor
-    setTimeout(() => {
-      setCursorClicking(false);
-      setShowCursor(false);
-      navigationPendingRef.current = true;
-      if (step.navigationPath) {
-        router.push(step.navigationPath);
-      }
-    }, 800);
   }, [step, findElement, router]);
 
   const handleNext = useCallback(() => {
@@ -270,55 +294,69 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
 
     const nextStep = steps[currentStep + 1];
 
-    // Fade out content
-    setContentVisible(false);
+    // Start fade out
+    setPhase("fading-out");
+    setHighlightRect(null);
 
-    setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
       setCurrentStep(currentStep + 1);
+      setHasNavigated(false);
 
       if (nextStep.requiresNavigation) {
-        setIsAnimating(true);
-        // Start cursor animation after step updates
-        setTimeout(() => {
-          animateCursorAndNavigate();
-        }, 50);
+        // Start cursor animation for navigation steps
+        startCursorAnimation();
       } else {
-        setContentVisible(true);
+        // Simple step transition
+        setPhase("fading-in");
+        timeoutRef.current = setTimeout(() => {
+          setPhase("idle");
+        }, 200);
       }
     }, 200);
-  }, [currentStep, handleComplete, animateCursorAndNavigate]);
+  }, [currentStep, handleComplete, startCursorAnimation]);
 
   const handleBack = useCallback(() => {
-    setContentVisible(false);
-    setTimeout(() => {
+    setPhase("fading-out");
+    setHighlightRect(null);
+
+    timeoutRef.current = setTimeout(() => {
       setCurrentStep(currentStep - 1);
-      setContentVisible(true);
+      setHasNavigated(false);
       router.push("/dashboard");
+
+      setPhase("fading-in");
+      timeoutRef.current = setTimeout(() => {
+        setPhase("idle");
+      }, 300);
     }, 200);
   }, [currentStep, router]);
-
-  const handleSkip = useCallback(() => {
-    handleComplete();
-  }, [handleComplete]);
 
   if (!isOpen) return null;
 
   const isLastStep = currentStep === steps.length - 1;
   const isFirstStep = currentStep === 0;
+  const showModal =
+    phase === "idle" || phase === "fading-out" || phase === "fading-in";
+  const showCursor = phase === "cursor-moving" || phase === "cursor-clicking";
+  const isAnimating = phase !== "idle";
+  const modalVisible = phase === "idle" || phase === "fading-in";
   const isCentered = step.position === "center" || !highlightRect;
   const Icon = step.icon;
 
   return (
     <div className="fixed inset-0 z-[9999]">
-      {/* Dark overlay */}
-      <div className="absolute inset-0 bg-black/75 transition-opacity duration-300" />
+      {/* Dark overlay - always visible */}
+      <div
+        className="absolute inset-0 bg-black/75 transition-opacity duration-300"
+        style={{ opacity: showCursor ? 0.85 : 1 }}
+      />
 
-      {/* Highlight cutout - uses clip-path to cut out the highlighted area */}
-      {highlightRect && !isAnimating && (
+      {/* Highlight cutout */}
+      {highlightRect && phase === "idle" && (
         <>
           {/* Border around highlighted element */}
           <div
-            className="absolute pointer-events-none z-[10000] transition-all duration-500 ease-out"
+            className="absolute pointer-events-none z-[10000] transition-all duration-300 ease-out"
             style={{
               top: highlightRect.top - 4,
               left: highlightRect.left - 4,
@@ -349,13 +387,13 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
       {/* Animated cursor */}
       {showCursor && (
         <div
-          className="fixed pointer-events-none z-[10000]"
+          className="fixed pointer-events-none z-[10002]"
           style={{
             left: cursorPos.x,
             top: cursorPos.y,
-            transform: `translate(-50%, -50%) scale(${cursorClicking ? 0.8 : 1})`,
+            transform: `translate(-50%, -50%) scale(${phase === "cursor-clicking" ? 0.8 : 1})`,
             transition:
-              "left 0.5s ease-out, top 0.5s ease-out, transform 0.1s ease-out",
+              "left 0.5s ease-out, top 0.5s ease-out, transform 0.15s ease-out",
           }}
         >
           <MousePointer2
@@ -363,135 +401,141 @@ export function WelcomeModal({ onComplete }: WelcomeModalProps) {
             fill="white"
             style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
           />
-          {cursorClicking && (
-            <div className="absolute top-0 left-0 w-8 h-8 rounded-full bg-indigo-400/40 animate-ping" />
+          {phase === "cursor-clicking" && (
+            <div className="absolute top-0 left-0 w-8 h-8 rounded-full bg-indigo-400/50 animate-ping" />
           )}
         </div>
       )}
 
       {/* Modal */}
-      <div
-        className="fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[340px] transition-all duration-300"
-        style={{
-          ...(isCentered
-            ? {
-                top: "50%",
-                left: "50%",
-                transform: `translate(-50%, -50%) scale(${contentVisible ? 1 : 0.95})`,
-              }
-            : highlightRect
+      {showModal && (
+        <div
+          className="fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[340px] transition-all duration-200 ease-out"
+          style={{
+            ...(isCentered
               ? {
-                  top: highlightRect.top + highlightRect.height / 2,
-                  left: highlightRect.right + 24,
-                  transform: `translateY(-50%) scale(${contentVisible ? 1 : 0.95})`,
-                }
-              : {
                   top: "50%",
                   left: "50%",
-                  transform: `translate(-50%, -50%) scale(${contentVisible ? 1 : 0.95})`,
-                }),
-          opacity: contentVisible ? 1 : 0,
-        }}
-      >
-        {/* Arrow */}
-        {!isCentered && highlightRect && (
-          <div
-            className="absolute w-3 h-3 bg-white rotate-45 -left-1.5 top-1/2 -translate-y-1/2"
-            style={{ boxShadow: "-1px 1px 2px rgba(0,0,0,0.1)" }}
-          />
-        )}
-
-        {/* Close button */}
-        <button
-          onClick={handleSkip}
-          className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  transform: `translate(-50%, -50%) scale(${modalVisible ? 1 : 0.95})`,
+                }
+              : highlightRect
+                ? {
+                    top: highlightRect.top + highlightRect.height / 2,
+                    left: highlightRect.right + 24,
+                    transform: `translateY(-50%) scale(${modalVisible ? 1 : 0.95})`,
+                  }
+                : {
+                    top: "50%",
+                    left: "50%",
+                    transform: `translate(-50%, -50%) scale(${modalVisible ? 1 : 0.95})`,
+                  }),
+            opacity: modalVisible ? 1 : 0,
+          }}
         >
-          <X className="w-4 h-4 text-gray-400" />
-        </button>
-
-        {/* Content */}
-        <div className="p-5 text-center">
-          <div
-            className={`w-11 h-11 ${step.color} rounded-xl flex items-center justify-center mx-auto mb-3 shadow-md`}
-          >
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-
-          <h2 className="text-base font-semibold text-gray-900 mb-1.5">
-            {step.title}
-          </h2>
-
-          <p className="text-gray-500 text-sm leading-relaxed mb-4">
-            {step.description}
-          </p>
-
-          {/* Progress dots */}
-          <div className="flex items-center justify-center gap-1.5 mb-4">
-            {steps.map((_, index) => (
-              <div
-                key={index}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  index === currentStep
-                    ? "w-5 bg-indigo-500"
-                    : index < currentStep
-                      ? "w-1.5 bg-indigo-300"
-                      : "w-1.5 bg-gray-200"
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Buttons */}
-          <div className="flex gap-2">
-            {currentStep > 0 && !isAnimating && (
-              <Button
-                variant="outline"
-                onClick={handleBack}
-                className="flex-1 h-9 text-sm rounded-lg"
-                size="sm"
-              >
-                Back
-              </Button>
-            )}
-
-            {isAnimating ? (
-              <div className="flex-1 flex items-center justify-center h-9 text-sm text-gray-400">
-                <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mr-2" />
-              </div>
-            ) : isLastStep ? (
-              <Button
-                onClick={() => {
-                  handleComplete();
-                  router.push("/decisions/new");
-                }}
-                className="flex-1 h-9 text-sm rounded-lg bg-indigo-500 hover:bg-indigo-600"
-                size="sm"
-              >
-                Get Started
-                <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            ) : (
-              <Button
-                onClick={handleNext}
-                className="flex-1 h-9 text-sm rounded-lg"
-                size="sm"
-              >
-                {isFirstStep ? "Take a Tour" : "Next"}
-                <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            )}
-          </div>
-
-          {!isLastStep && !isAnimating && (
-            <button
-              onClick={handleSkip}
-              className="mt-2.5 text-xs text-gray-400 hover:text-gray-500 transition-colors"
-            >
-              Skip tour
-            </button>
+          {/* Arrow */}
+          {!isCentered && highlightRect && (
+            <div
+              className="absolute w-3 h-3 bg-white rotate-45 -left-1.5 top-1/2 -translate-y-1/2"
+              style={{ boxShadow: "-1px 1px 2px rgba(0,0,0,0.1)" }}
+            />
           )}
+
+          {/* Close button */}
+          <button
+            onClick={handleComplete}
+            className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+
+          {/* Content */}
+          <div className="p-5 text-center">
+            <div
+              className={`w-11 h-11 ${step.color} rounded-xl flex items-center justify-center mx-auto mb-3 shadow-md`}
+            >
+              <Icon className="w-5 h-5 text-white" />
+            </div>
+
+            <h2 className="text-base font-semibold text-gray-900 mb-1.5">
+              {step.title}
+            </h2>
+
+            <p className="text-gray-500 text-sm leading-relaxed mb-4">
+              {step.description}
+            </p>
+
+            {/* Progress dots */}
+            <div className="flex items-center justify-center gap-1.5 mb-4">
+              {steps.map((_, index) => (
+                <div
+                  key={index}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    index === currentStep
+                      ? "w-5 bg-indigo-500"
+                      : index < currentStep
+                        ? "w-1.5 bg-indigo-300"
+                        : "w-1.5 bg-gray-200"
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-2">
+              {currentStep > 0 && !isAnimating && (
+                <Button
+                  variant="outline"
+                  onClick={handleBack}
+                  className="flex-1 h-9 text-sm rounded-lg"
+                  size="sm"
+                >
+                  Back
+                </Button>
+              )}
+
+              {isLastStep ? (
+                <Button
+                  onClick={() => {
+                    handleComplete();
+                    router.push("/decisions/new");
+                  }}
+                  className="flex-1 h-9 text-sm rounded-lg bg-indigo-500 hover:bg-indigo-600"
+                  size="sm"
+                >
+                  Get Started
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleNext}
+                  disabled={isAnimating}
+                  className="flex-1 h-9 text-sm rounded-lg"
+                  size="sm"
+                >
+                  {isFirstStep ? "Take a Tour" : "Next"}
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              )}
+            </div>
+
+            {!isLastStep && (
+              <button
+                onClick={handleComplete}
+                className="mt-2.5 text-xs text-gray-400 hover:text-gray-500 transition-colors"
+              >
+                Skip tour
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Loading state during navigation */}
+      {(phase === "navigating" || phase === "waiting-for-page") && (
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10001]">
+          <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
     </div>
   );
 }
