@@ -251,7 +251,7 @@ export default function AuditExportPage() {
     );
   }, []);
 
-  // Generate report (client-side for now - creates a summary JSON)
+  // Generate report as PDF
   const handleGenerate = useCallback(async () => {
     if (!startDate || !endDate) {
       setError("Please select a date range");
@@ -269,36 +269,28 @@ export default function AuditExportPage() {
     setError(null);
 
     try {
-      // Create a comprehensive audit report
-      const report = {
-        metadata: {
-          organization: currentOrganization?.name || "Unknown",
-          generated_at: new Date().toISOString(),
-          generated_by: user?.email || "Unknown",
-          date_range: {
-            start: startDate,
-            end: endDate,
-          },
-          filters: {
-            statuses: selectedStatuses.length > 0 ? selectedStatuses : "All",
-            tags: selectedTags.length > 0 ? selectedTags : "All",
-          },
-        },
-        summary: {
-          total_decisions: filteredDecisions.length,
-          by_status: decisionStats,
-        },
-        decisions: filteredDecisions.map((d) => ({
-          decision_number: d.decision_number,
-          title: d.title,
-          status: d.status,
-          created_at: d.created_at,
-          tags: d.tags || [],
-        })),
-      };
+      // Dynamically import PDF generator to avoid SSR issues
+      const { generateAuditPDF } = await import(
+        "@/components/audit/AuditReportPDF"
+      );
+
+      // Prepare decisions data
+      const decisionsForReport = filteredDecisions.map((d) => ({
+        decision_number: d.decision_number,
+        title: d.title,
+        status: d.status,
+        created_at: d.created_at,
+        tags: d.tags || [],
+      }));
 
       // Generate a hash for verification
-      const reportString = JSON.stringify(report);
+      const reportData = {
+        org: currentOrganization?.name,
+        dates: { start: startDate, end: endDate },
+        decisions: decisionsForReport,
+        generated: new Date().toISOString(),
+      };
+      const reportString = JSON.stringify(reportData);
       const encoder = new TextEncoder();
       const data = encoder.encode(reportString);
       const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -307,14 +299,29 @@ export default function AuditExportPage() {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-      // Download the report as JSON
-      const blob = new Blob([JSON.stringify(report, null, 2)], {
-        type: "application/json",
+      // Generate PDF
+      const pdfBlob = await generateAuditPDF({
+        organizationName: currentOrganization?.name || "Organization",
+        generatedBy: user?.email || "Unknown",
+        generatedAt: new Date().toISOString(),
+        dateRange: {
+          start: startDate,
+          end: endDate,
+        },
+        filters: {
+          statuses: selectedStatuses.length > 0 ? selectedStatuses : "All",
+          tags: selectedTags.length > 0 ? selectedTags : "All",
+        },
+        stats: decisionStats,
+        decisions: decisionsForReport,
+        verificationHash: hash,
       });
-      const url = URL.createObjectURL(blob);
+
+      // Download the PDF
+      const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `audit_report_${currentOrganization?.slug || "org"}_${startDate}_${endDate}.json`;
+      link.download = `audit_report_${currentOrganization?.slug || "org"}_${startDate}_${endDate}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
