@@ -108,6 +108,9 @@ export function SettingsContent({ hasOrg }: SettingsContentProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                data-onboarding={
+                  tab.id === "integrations" ? "integrations-tab" : undefined
+                }
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200",
                   isActive

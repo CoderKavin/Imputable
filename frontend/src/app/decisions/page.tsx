@@ -149,6 +149,7 @@ function DecisionsPageContent() {
                 </button>
                 <button
                   onClick={() => setViewMode("mindmap")}
+                  data-onboarding="mind-map-button"
                   className={`
                     flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200
                     ${
