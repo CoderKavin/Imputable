@@ -3,6 +3,7 @@
 import { ReactNode } from "react";
 import { FloatingSidebar } from "./floating-sidebar";
 import { AppHeader } from "./app-header";
+import { WelcomeModal } from "@/components/onboarding/WelcomeModal";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -11,9 +12,17 @@ interface AppLayoutProps {
   actions?: ReactNode;
 }
 
-export function AppLayout({ children, title, subtitle, actions }: AppLayoutProps) {
+export function AppLayout({
+  children,
+  title,
+  subtitle,
+  actions,
+}: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50/50">
+      {/* Onboarding Modal - rendered here so it persists across page navigations */}
+      <WelcomeModal />
+
       {/* Floating Sidebar */}
       <FloatingSidebar />
 
@@ -23,9 +32,7 @@ export function AppLayout({ children, title, subtitle, actions }: AppLayoutProps
         <AppHeader title={title} subtitle={subtitle} actions={actions} />
 
         {/* Page Content */}
-        <main className="p-8">
-          {children}
-        </main>
+        <main className="p-8">{children}</main>
       </div>
     </div>
   );
