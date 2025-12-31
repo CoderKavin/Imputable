@@ -39,7 +39,7 @@ const steps: TourStep[] = [
       "All your engineering decisions live here. Create, search, and manage decision records in one place.",
     icon: FileText,
     gradient: "from-emerald-500 to-teal-600",
-    highlightSelector: '[href="/decisions"]',
+    highlightSelector: '[data-onboarding="decisions-link"]',
   },
   {
     title: "Mind Map Visualization",
@@ -65,7 +65,7 @@ const steps: TourStep[] = [
       "Every action is logged for compliance. View the full history of all decisions and changes.",
     icon: Shield,
     gradient: "from-amber-500 to-orange-600",
-    highlightSelector: '[href="/audit"]',
+    highlightSelector: '[data-onboarding="audit-link"]',
     navigateTo: "/dashboard",
   },
   {

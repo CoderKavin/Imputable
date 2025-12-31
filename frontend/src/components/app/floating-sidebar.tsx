@@ -19,6 +19,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
+  onboardingId?: string;
 }
 
 const navItems: NavItem[] = [
@@ -31,11 +32,13 @@ const navItems: NavItem[] = [
     href: "/decisions",
     label: "Decisions",
     icon: <FileText className="w-5 h-5" />,
+    onboardingId: "decisions-link",
   },
   {
     href: "/audit",
     label: "Audit Log",
     icon: <ClipboardList className="w-5 h-5" />,
+    onboardingId: "audit-link",
   },
 ];
 
@@ -97,6 +100,7 @@ export function FloatingSidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-onboarding={item.onboardingId}
                   className={cn(
                     "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200",
                     isActive
