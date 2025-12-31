@@ -10,7 +10,6 @@ import {
   ArrowRight,
   Sparkles,
   ChevronLeft,
-  MousePointer2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
@@ -23,10 +22,7 @@ interface TourStep {
   icon: React.ElementType;
   gradient: string;
   highlightSelector?: string;
-  requiresNavigation?: boolean;
-  navigationPath?: string;
-  secondarySelector?: string;
-  secondaryLabel?: string;
+  navigateTo?: string;
 }
 
 const steps: TourStep[] = [
@@ -48,26 +44,20 @@ const steps: TourStep[] = [
   {
     title: "Mind Map Visualization",
     description:
-      "See how decisions connect with an interactive mind map. AI can automatically discover relationships between decisions!",
+      "Switch to Mind Map view to see how decisions connect. AI can automatically discover relationships!",
     icon: GitBranch,
     gradient: "from-purple-500 to-pink-600",
-    highlightSelector: '[href="/decisions"]',
-    requiresNavigation: true,
-    navigationPath: "/decisions",
-    secondarySelector: "mind-map-button",
-    secondaryLabel: "Mind Map",
+    highlightSelector: '[data-onboarding="mind-map-button"]',
+    navigateTo: "/decisions",
   },
   {
     title: "Slack & Teams Integration",
     description:
-      "Create decisions directly from Slack or Microsoft Teams. Capture context without leaving your workflow.",
+      "Connect Slack or Microsoft Teams to create decisions without leaving your workflow.",
     icon: MessageSquare,
     gradient: "from-blue-500 to-cyan-600",
-    highlightSelector: '[href="/settings"]',
-    requiresNavigation: true,
-    navigationPath: "/settings",
-    secondarySelector: "integrations-tab",
-    secondaryLabel: "Integrations",
+    highlightSelector: '[data-onboarding="integrations-tab"]',
+    navigateTo: "/settings",
   },
   {
     title: "Complete Audit Trail",
@@ -76,237 +66,131 @@ const steps: TourStep[] = [
     icon: Shield,
     gradient: "from-amber-500 to-orange-600",
     highlightSelector: '[href="/audit"]',
+    navigateTo: "/dashboard",
   },
   {
     title: "You're Ready!",
     description:
-      "Start by creating your first decision. You can revisit this tour anytime from the help menu.",
+      "Start by creating your first decision. You can revisit this tour anytime from settings.",
     icon: Sparkles,
     gradient: "from-rose-500 to-red-600",
   },
 ];
 
-type Phase =
-  | "idle"
-  | "transitioning"
-  | "cursor-animating"
-  | "navigating"
-  | "arriving";
-
 export function WelcomeModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [showCursor, setShowCursor] = useState(false);
-  const [hasNavigated, setHasNavigated] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const router = useRouter();
   const pathname = usePathname();
-  const animationRef = useRef<number | null>(null);
-  const timeoutRefs = useRef<NodeJS.Timeout[]>([]);
+  const retryRef = useRef<NodeJS.Timeout | null>(null);
 
   const step = steps[currentStep];
-  const isCentered = !step.highlightSelector || !highlightRect;
   const isLastStep = currentStep === steps.length - 1;
   const isFirstStep = currentStep === 0;
+  const hasHighlight = !!step.highlightSelector;
   const Icon = step.icon;
 
-  // Cleanup all timeouts
-  const clearTimeouts = useCallback(() => {
-    timeoutRefs.current.forEach(clearTimeout);
-    timeoutRefs.current = [];
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-  }, []);
-
-  // Add timeout with tracking
-  const addTimeout = useCallback((fn: () => void, delay: number) => {
-    const id = setTimeout(fn, delay);
-    timeoutRefs.current.push(id);
-    return id;
-  }, []);
-
-  // Find element by selector or data attribute
-  const findElement = useCallback((selector: string): HTMLElement | null => {
-    if (!selector) return null;
-
-    // First try data-onboarding attribute (most reliable)
-    const dataEl = document.querySelector<HTMLElement>(
-      `[data-onboarding="${selector}"]`,
-    );
-    if (dataEl) return dataEl;
-
-    // Direct CSS selector
-    try {
-      const el = document.querySelector<HTMLElement>(selector);
-      if (el) return el;
-    } catch {
-      // Invalid selector, try text search
-    }
-
-    // Fallback: Find Mind Map button by text
-    if (selector === "mind-map-button") {
-      const allButtons = document.querySelectorAll("button");
-      for (let i = 0; i < allButtons.length; i++) {
-        const text = allButtons[i].textContent?.trim() || "";
-        if (text === "Mind Map" || text.includes("Mind Map")) {
-          return allButtons[i] as HTMLElement;
-        }
-      }
-    }
-
-    // Fallback: Find Integrations tab by text
-    if (selector === "integrations-tab") {
-      const allButtons = document.querySelectorAll("button");
-      for (let i = 0; i < allButtons.length; i++) {
-        const text = allButtons[i].textContent?.trim() || "";
-        if (text === "Integrations" || text.includes("Integrations")) {
-          return allButtons[i] as HTMLElement;
-        }
-      }
-    }
-
-    return null;
-  }, []);
-
-  // Update highlight rectangle
-  const updateHighlight = useCallback(() => {
-    if (phase !== "idle") return;
-
-    const selector =
-      hasNavigated && step.secondarySelector
-        ? step.secondarySelector
-        : step.highlightSelector;
-
-    if (!selector) {
+  // Find and highlight element with retries
+  const findAndHighlight = useCallback(() => {
+    if (!step.highlightSelector) {
       setHighlightRect(null);
       return;
     }
 
-    const el = findElement(selector);
+    const el = document.querySelector<HTMLElement>(step.highlightSelector);
     if (el) {
       const rect = el.getBoundingClientRect();
       setHighlightRect(rect);
+      if (retryRef.current) {
+        clearInterval(retryRef.current);
+        retryRef.current = null;
+      }
     } else {
       setHighlightRect(null);
     }
-  }, [step, hasNavigated, findElement, phase]);
+  }, [step.highlightSelector]);
 
-  // Initialize
+  // Check onboarding status on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const completed = localStorage.getItem(ONBOARDING_KEY);
       if (!completed) {
-        addTimeout(() => setIsOpen(true), 300);
+        const timer = setTimeout(() => setIsOpen(true), 500);
+        return () => clearTimeout(timer);
       }
     }
-    return clearTimeouts;
-  }, [addTimeout, clearTimeouts]);
+  }, []);
 
-  // Update highlight on changes
+  // Update highlight when step changes or after navigation
   useEffect(() => {
-    if (isOpen && phase === "idle") {
-      addTimeout(updateHighlight, 100);
-      window.addEventListener("resize", updateHighlight);
-      window.addEventListener("scroll", updateHighlight);
-      return () => {
-        window.removeEventListener("resize", updateHighlight);
-        window.removeEventListener("scroll", updateHighlight);
-      };
+    if (!isOpen || isTransitioning) return;
+
+    // Clear any existing retry interval
+    if (retryRef.current) {
+      clearInterval(retryRef.current);
     }
-  }, [isOpen, currentStep, phase, hasNavigated, updateHighlight, addTimeout]);
 
-  // Handle page arrival after navigation
-  useEffect(() => {
-    if (phase === "navigating" && step.navigationPath) {
-      const isOnTargetPage =
-        pathname === step.navigationPath ||
-        pathname.startsWith(step.navigationPath + "/");
+    // Try immediately
+    findAndHighlight();
 
-      if (isOnTargetPage) {
-        setPhase("arriving");
-        // Wait for page to render, then find secondary element
-        addTimeout(() => {
-          setHasNavigated(true);
-          setShowCursor(false);
-          setPhase("idle");
-          addTimeout(updateHighlight, 200);
-        }, 600);
+    // Keep retrying for elements that might not be rendered yet
+    let attempts = 0;
+    retryRef.current = setInterval(() => {
+      attempts++;
+      findAndHighlight();
+      if (attempts > 20) {
+        // Stop after ~2 seconds
+        if (retryRef.current) {
+          clearInterval(retryRef.current);
+          retryRef.current = null;
+        }
       }
-    }
-  }, [pathname, phase, step.navigationPath, addTimeout, updateHighlight]);
+    }, 100);
+
+    // Handle resize/scroll
+    const handleUpdate = () => findAndHighlight();
+    window.addEventListener("resize", handleUpdate);
+    window.addEventListener("scroll", handleUpdate);
+
+    return () => {
+      if (retryRef.current) {
+        clearInterval(retryRef.current);
+        retryRef.current = null;
+      }
+      window.removeEventListener("resize", handleUpdate);
+      window.removeEventListener("scroll", handleUpdate);
+    };
+  }, [isOpen, currentStep, isTransitioning, findAndHighlight, pathname]);
 
   const completeOnboarding = useCallback(() => {
-    clearTimeouts();
     localStorage.setItem(ONBOARDING_KEY, "true");
     setIsOpen(false);
-  }, [clearTimeouts]);
-
-  const animateCursorTo = useCallback(
-    (targetEl: HTMLElement, onComplete: () => void) => {
-      const rect = targetEl.getBoundingClientRect();
-      const targetX = rect.left + rect.width / 2;
-      const targetY = rect.top + rect.height / 2;
-
-      // Start from center
-      const startX = window.innerWidth / 2;
-      const startY = window.innerHeight / 2;
-      setCursorPos({ x: startX, y: startY });
-      setShowCursor(true);
-
-      // Animate to target
-      addTimeout(() => {
-        setCursorPos({ x: targetX, y: targetY });
-
-        // Click effect then complete
-        addTimeout(() => {
-          onComplete();
-        }, 600);
-      }, 50);
-    },
-    [addTimeout],
-  );
+  }, []);
 
   const goToStep = useCallback(
-    (nextStepIndex: number) => {
-      if (nextStepIndex < 0 || nextStepIndex >= steps.length) return;
+    (stepIndex: number) => {
+      if (stepIndex < 0 || stepIndex >= steps.length) return;
 
-      clearTimeouts();
-      const nextStep = steps[nextStepIndex];
+      const targetStep = steps[stepIndex];
 
-      setPhase("transitioning");
+      setIsTransitioning(true);
       setHighlightRect(null);
 
-      addTimeout(() => {
-        setCurrentStep(nextStepIndex);
-        setHasNavigated(false);
+      // Navigate if needed
+      if (targetStep.navigateTo && pathname !== targetStep.navigateTo) {
+        router.push(targetStep.navigateTo);
+      }
 
-        if (nextStep.requiresNavigation && nextStep.navigationPath) {
-          // Find element to animate cursor to
-          const targetEl = findElement(nextStep.highlightSelector || "");
-
-          if (targetEl) {
-            setPhase("cursor-animating");
-            animateCursorTo(targetEl, () => {
-              setPhase("navigating");
-              router.push(nextStep.navigationPath!);
-            });
-          } else {
-            // No element found, just navigate
-            setPhase("navigating");
-            router.push(nextStep.navigationPath);
-          }
-        } else {
-          // Simple step change
-          setPhase("idle");
-        }
-      }, 200);
+      // Wait for transition, then update step
+      setTimeout(() => {
+        setCurrentStep(stepIndex);
+        setIsTransitioning(false);
+      }, 300);
     },
-    [clearTimeouts, addTimeout, findElement, animateCursorTo, router],
+    [pathname, router],
   );
 
   const handleNext = () => {
@@ -320,20 +204,7 @@ export function WelcomeModal() {
 
   const handleBack = () => {
     if (currentStep > 0) {
-      clearTimeouts();
-      setPhase("transitioning");
-      setHighlightRect(null);
-      setShowCursor(false);
-
-      addTimeout(() => {
-        setCurrentStep(currentStep - 1);
-        setHasNavigated(false);
-        router.push("/dashboard");
-
-        addTimeout(() => {
-          setPhase("idle");
-        }, 200);
-      }, 150);
+      goToStep(currentStep - 1);
     }
   };
 
@@ -344,261 +215,203 @@ export function WelcomeModal() {
 
   if (!isOpen) return null;
 
-  const showModal = phase === "idle" || phase === "transitioning";
-  const modalOpacity = phase === "idle" ? 1 : 0;
-
-  // Calculate modal position
-  const getModalStyle = (): React.CSSProperties => {
-    if (isCentered) {
+  // Modal position - centered if no highlight, otherwise to the side
+  const getModalPosition = (): React.CSSProperties => {
+    if (!hasHighlight || !highlightRect) {
       return {
-        position: "fixed",
         top: "50%",
         left: "50%",
-        transform: `translate(-50%, -50%) scale(${modalOpacity})`,
-        opacity: modalOpacity,
+        transform: "translate(-50%, -50%)",
       };
     }
 
-    if (!highlightRect) {
-      return {
-        position: "fixed",
-        top: "50%",
-        left: "50%",
-        transform: `translate(-50%, -50%) scale(${modalOpacity})`,
-        opacity: modalOpacity,
-      };
+    const modalWidth = 380;
+    const gap = 24;
+    const viewportWidth =
+      typeof window !== "undefined" ? window.innerWidth : 1200;
+
+    // Try to position to the right
+    let left = highlightRect.right + gap;
+
+    // If it goes off screen, position to the left
+    if (left + modalWidth > viewportWidth - 20) {
+      left = highlightRect.left - modalWidth - gap;
     }
 
-    // Position to the right of highlighted element
-    const modalWidth = 360;
-    const padding = 20;
-    let left = highlightRect.right + padding;
-    let top = highlightRect.top + highlightRect.height / 2;
-
-    // Keep within viewport
-    if (left + modalWidth > window.innerWidth - 20) {
-      left = highlightRect.left - modalWidth - padding;
+    // If still off screen, center it
+    if (left < 20) {
+      return {
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+      };
     }
 
     return {
-      position: "fixed",
-      top: top,
+      top: Math.max(20, highlightRect.top + highlightRect.height / 2),
       left: left,
-      transform: `translateY(-50%) scale(${modalOpacity === 1 ? 1 : 0.95})`,
-      opacity: modalOpacity,
+      transform: "translateY(-50%)",
     };
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] pointer-events-none">
-      {/* Backdrop - semi-transparent with blur */}
+    <div className="fixed inset-0 z-[9999]">
+      {/* Dark overlay */}
       <div
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto"
-        style={{ opacity: phase === "cursor-animating" ? 0.8 : 1 }}
-        onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 bg-black/70 transition-opacity duration-300"
+        style={{ opacity: isTransitioning ? 0.5 : 1 }}
       />
 
-      {/* Spotlight effect for highlighted element */}
-      {highlightRect && phase === "idle" && (
-        <>
-          {/* Bright spotlight cutout */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: `radial-gradient(ellipse ${highlightRect.width + 80}px ${highlightRect.height + 80}px at ${highlightRect.left + highlightRect.width / 2}px ${highlightRect.top + highlightRect.height / 2}px, transparent 0%, transparent 50%, rgba(15, 23, 42, 0.85) 100%)`,
-            }}
-          />
-
-          {/* Glowing border around element */}
-          <div
-            className="absolute pointer-events-none z-[10000] transition-all duration-300"
-            style={{
-              top: highlightRect.top - 6,
-              left: highlightRect.left - 6,
-              width: highlightRect.width + 12,
-              height: highlightRect.height + 12,
-              borderRadius: 12,
-              border: "2px solid rgba(255, 255, 255, 0.9)",
-              boxShadow: `
-                0 0 0 4px rgba(99, 102, 241, 0.4),
-                0 0 20px 8px rgba(99, 102, 241, 0.5),
-                0 0 40px 16px rgba(99, 102, 241, 0.3),
-                inset 0 0 20px rgba(255, 255, 255, 0.1)
-              `,
-              animation: "pulse-glow 2s ease-in-out infinite",
-            }}
-          />
-
-          {/* Inner bright overlay on the element */}
-          <div
-            className="absolute pointer-events-none z-[9999]"
-            style={{
-              top: highlightRect.top,
-              left: highlightRect.left,
-              width: highlightRect.width,
-              height: highlightRect.height,
-              borderRadius: 8,
-              background: "rgba(255, 255, 255, 0.08)",
-              backdropFilter: "brightness(1.2)",
-            }}
-          />
-        </>
-      )}
-
-      {/* Animated cursor */}
-      {showCursor && (
+      {/* Spotlight cutout - creates a hole in the overlay */}
+      {highlightRect && !isTransitioning && (
         <div
-          className="fixed pointer-events-none z-[10003] transition-all duration-500 ease-out"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            left: cursorPos.x,
-            top: cursorPos.y,
-            transform: "translate(-8px, -4px)",
+            background: `radial-gradient(
+              ellipse ${Math.max(highlightRect.width, highlightRect.height) + 100}px ${Math.max(highlightRect.width, highlightRect.height) + 100}px
+              at ${highlightRect.left + highlightRect.width / 2}px ${highlightRect.top + highlightRect.height / 2}px,
+              transparent 0%,
+              transparent 40%,
+              rgba(0, 0, 0, 0.7) 100%
+            )`,
           }}
-        >
-          <MousePointer2
-            className="w-8 h-8 text-white drop-shadow-lg"
-            fill="white"
-            strokeWidth={1}
-          />
-          {/* Click ripple effect */}
-          <div
-            className="absolute top-1 left-1 w-6 h-6 rounded-full bg-white/40 animate-ping"
-            style={{ animationDuration: "1s" }}
-          />
-        </div>
+        />
       )}
 
-      {/* Modal Card */}
-      {showModal && (
+      {/* Highlight border with glow */}
+      {highlightRect && !isTransitioning && (
         <div
-          className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-[360px] overflow-hidden transition-all duration-300 ease-out z-[10001]"
-          style={getModalStyle()}
-        >
-          {/* Arrow pointing to highlighted element */}
-          {!isCentered && highlightRect && (
-            <div className="absolute w-3 h-3 bg-white rotate-45 -left-1.5 top-1/2 -translate-y-1/2 shadow-sm" />
-          )}
+          className="absolute pointer-events-none z-[10000]"
+          style={{
+            top: highlightRect.top - 8,
+            left: highlightRect.left - 8,
+            width: highlightRect.width + 16,
+            height: highlightRect.height + 16,
+            borderRadius: 16,
+            border: "3px solid white",
+            boxShadow: `
+              0 0 0 3px rgba(99, 102, 241, 0.8),
+              0 0 30px 10px rgba(99, 102, 241, 0.6),
+              0 0 60px 20px rgba(99, 102, 241, 0.4),
+              inset 0 0 30px rgba(255, 255, 255, 0.2)
+            `,
+            animation: "onboarding-pulse 2s ease-in-out infinite",
+          }}
+        />
+      )}
 
-          {/* Gradient header */}
-          <div className={`bg-gradient-to-r ${step.gradient} px-6 py-5`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-white">
-                    {step.title}
-                  </h2>
-                  <div className="text-white/70 text-xs">
-                    Step {currentStep + 1} of {steps.length}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={handleSkip}
-                className="p-2 rounded-lg hover:bg-white/20 transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-white/80" />
-              </button>
+      {/* Modal */}
+      <div
+        className={`fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden transition-all duration-300 ${
+          isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"
+        }`}
+        style={getModalPosition()}
+      >
+        {/* Arrow pointing to element */}
+        {hasHighlight && highlightRect && !isTransitioning && (
+          <div
+            className="absolute w-4 h-4 bg-white rotate-45 -left-2 top-1/2 -translate-y-1/2 shadow-lg"
+            style={{ boxShadow: "-2px 2px 5px rgba(0,0,0,0.1)" }}
+          />
+        )}
+
+        {/* Gradient header */}
+        <div className={`bg-gradient-to-r ${step.gradient} px-6 py-5 relative`}>
+          <button
+            onClick={handleSkip}
+            className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4 text-white/80" />
+          </button>
+
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <Icon className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">{step.title}</h2>
+              <p className="text-white/70 text-sm">
+                Step {currentStep + 1} of {steps.length}
+              </p>
             </div>
           </div>
+        </div>
 
-          {/* Content */}
-          <div className="p-5">
-            <p className="text-gray-600 text-sm leading-relaxed mb-5">
-              {step.description}
-            </p>
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-gray-600 text-base leading-relaxed mb-6">
+            {step.description}
+          </p>
 
-            {/* Progress bar */}
-            <div className="flex gap-1.5 mb-5">
-              {steps.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-                    i < currentStep
-                      ? "bg-indigo-500"
-                      : i === currentStep
-                        ? "bg-indigo-500"
-                        : "bg-gray-200"
-                  }`}
-                />
-              ))}
-            </div>
+          {/* Progress dots */}
+          <div className="flex justify-center gap-2 mb-6">
+            {steps.map((_, i) => (
+              <div
+                key={i}
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  i === currentStep
+                    ? "w-6 bg-indigo-500"
+                    : i < currentStep
+                      ? "w-2 bg-indigo-300"
+                      : "w-2 bg-gray-200"
+                }`}
+              />
+            ))}
+          </div>
 
-            {/* Navigation buttons */}
-            <div className="flex gap-2">
-              {!isFirstStep && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBack}
-                  className="gap-1 text-gray-600"
-                  disabled={phase !== "idle"}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Back
-                </Button>
-              )}
-
+          {/* Buttons */}
+          <div className="flex gap-3">
+            {!isFirstStep && (
               <Button
-                onClick={handleNext}
-                size="sm"
-                className={`flex-1 gap-2 bg-gradient-to-r ${step.gradient} hover:opacity-90 border-0 text-white`}
-                disabled={phase !== "idle"}
+                variant="outline"
+                onClick={handleBack}
+                className="gap-1.5"
+                disabled={isTransitioning}
               >
-                {isFirstStep
-                  ? "Start Tour"
-                  : isLastStep
-                    ? "Create First Decision"
-                    : "Next"}
-                <ArrowRight className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" />
+                Back
               </Button>
-            </div>
-
-            {/* Skip link */}
-            {!isLastStep && (
-              <button
-                onClick={handleSkip}
-                className="w-full mt-3 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Skip tour
-              </button>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* Loading indicator during navigation */}
-      {(phase === "navigating" || phase === "arriving") && (
-        <div className="fixed inset-0 flex items-center justify-center z-[10002] pointer-events-none">
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-6 py-4 shadow-xl flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-gray-600">
-              {phase === "arriving" ? "Almost there..." : "Navigating..."}
-            </span>
+            <Button
+              onClick={handleNext}
+              className={`flex-1 gap-2 bg-gradient-to-r ${step.gradient} hover:opacity-90 border-0 text-white`}
+              disabled={isTransitioning}
+            >
+              {isFirstStep ? "Start Tour" : isLastStep ? "Get Started" : "Next"}
+              <ArrowRight className="w-4 h-4" />
+            </Button>
           </div>
-        </div>
-      )}
 
-      {/* CSS for pulse animation */}
+          {!isLastStep && (
+            <button
+              onClick={handleSkip}
+              className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Skip tour
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Global styles for animation */}
       <style jsx global>{`
-        @keyframes pulse-glow {
+        @keyframes onboarding-pulse {
           0%,
           100% {
             box-shadow:
-              0 0 0 4px rgba(99, 102, 241, 0.4),
-              0 0 20px 8px rgba(99, 102, 241, 0.5),
-              0 0 40px 16px rgba(99, 102, 241, 0.3),
-              inset 0 0 20px rgba(255, 255, 255, 0.1);
+              0 0 0 3px rgba(99, 102, 241, 0.8),
+              0 0 30px 10px rgba(99, 102, 241, 0.6),
+              0 0 60px 20px rgba(99, 102, 241, 0.4),
+              inset 0 0 30px rgba(255, 255, 255, 0.2);
           }
           50% {
             box-shadow:
-              0 0 0 6px rgba(99, 102, 241, 0.5),
-              0 0 30px 12px rgba(99, 102, 241, 0.6),
-              0 0 60px 24px rgba(99, 102, 241, 0.4),
-              inset 0 0 30px rgba(255, 255, 255, 0.15);
+              0 0 0 5px rgba(99, 102, 241, 1),
+              0 0 40px 15px rgba(99, 102, 241, 0.7),
+              0 0 80px 30px rgba(99, 102, 241, 0.5),
+              inset 0 0 40px rgba(255, 255, 255, 0.3);
           }
         }
       `}</style>
