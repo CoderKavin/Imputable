@@ -10,11 +10,13 @@ import {
   ArrowRight,
   Sparkles,
   ChevronLeft,
+  MousePointer2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter, usePathname } from "next/navigation";
 
 const ONBOARDING_KEY = "imputable_onboarding_complete";
+const ONBOARDING_STEP_KEY = "imputable_onboarding_step";
 
 interface TourStep {
   title: string;
@@ -79,9 +81,18 @@ const steps: TourStep[] = [
 
 export function WelcomeModal() {
   const [isOpen, setIsOpen] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem(ONBOARDING_STEP_KEY);
+      return saved ? parseInt(saved, 10) : 0;
+    }
+    return 0;
+  });
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const [showCursor, setShowCursor] = useState(false);
+  const [cursorClicking, setCursorClicking] = useState(false);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -93,21 +104,28 @@ export function WelcomeModal() {
   const isFirstStep = currentStep === 0;
   const Icon = step.icon;
 
+  // Save step to sessionStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(ONBOARDING_STEP_KEY, currentStep.toString());
+    }
+  }, [currentStep]);
+
   // Find and highlight element
   const findAndHighlight = useCallback(() => {
     if (!step.highlightSelector) {
       setHighlightRect(null);
-      return true; // No element needed
+      return true;
     }
 
     const el = document.querySelector<HTMLElement>(step.highlightSelector);
     if (el) {
       const rect = el.getBoundingClientRect();
       setHighlightRect(rect);
-      return true; // Found
+      return true;
     }
     setHighlightRect(null);
-    return false; // Not found
+    return false;
   }, [step.highlightSelector]);
 
   // Check onboarding status on mount
@@ -128,18 +146,18 @@ export function WelcomeModal() {
         pathname === expectedPathRef.current ||
         pathname.startsWith(expectedPathRef.current + "/")
       ) {
-        // We've arrived at the expected path
         expectedPathRef.current = null;
 
-        // Start looking for the element with retries
         let attempts = 0;
-        const maxAttempts = 30; // 3 seconds
+        const maxAttempts = 30;
 
         const tryFind = () => {
           attempts++;
           const found = findAndHighlight();
 
           if (found || attempts >= maxAttempts) {
+            setShowCursor(false);
+            setCursorClicking(false);
             setIsNavigating(false);
             if (retryRef.current) {
               clearInterval(retryRef.current);
@@ -148,10 +166,7 @@ export function WelcomeModal() {
           }
         };
 
-        // Try immediately
         tryFind();
-
-        // Keep retrying
         if (retryRef.current) clearInterval(retryRef.current);
         retryRef.current = setInterval(tryFind, 100);
       }
@@ -162,13 +177,11 @@ export function WelcomeModal() {
   useEffect(() => {
     if (!isOpen || isNavigating) return;
 
-    // Clear existing interval
     if (retryRef.current) {
       clearInterval(retryRef.current);
       retryRef.current = null;
     }
 
-    // Try to find element
     let attempts = 0;
     const tryFind = () => {
       attempts++;
@@ -184,7 +197,6 @@ export function WelcomeModal() {
     tryFind();
     retryRef.current = setInterval(tryFind, 100);
 
-    // Handle resize/scroll
     const handleUpdate = () => {
       if (!isNavigating) findAndHighlight();
     };
@@ -213,30 +225,75 @@ export function WelcomeModal() {
   const completeOnboarding = useCallback(() => {
     if (retryRef.current) clearInterval(retryRef.current);
     localStorage.setItem(ONBOARDING_KEY, "true");
+    sessionStorage.removeItem(ONBOARDING_STEP_KEY);
     setIsOpen(false);
   }, []);
+
+  const animateCursorAndNavigate = useCallback(
+    (targetStep: TourStep, stepIndex: number) => {
+      // Find the current highlighted element to animate cursor to
+      const currentSelector = step.highlightSelector;
+      const el = currentSelector
+        ? document.querySelector<HTMLElement>(currentSelector)
+        : null;
+
+      if (el && targetStep.navigateTo) {
+        const rect = el.getBoundingClientRect();
+        const targetX = rect.left + rect.width / 2;
+        const targetY = rect.top + rect.height / 2;
+
+        // Start cursor from center of viewport
+        setCursorPos({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+        setShowCursor(true);
+        setIsNavigating(true);
+
+        // Animate cursor to element
+        setTimeout(() => {
+          setCursorPos({ x: targetX, y: targetY });
+
+          // Click animation
+          setTimeout(() => {
+            setCursorClicking(true);
+
+            // Navigate after click
+            setTimeout(() => {
+              setCurrentStep(stepIndex);
+              expectedPathRef.current = targetStep.navigateTo!;
+              router.push(targetStep.navigateTo!);
+            }, 300);
+          }, 600);
+        }, 100);
+      } else if (targetStep.navigateTo) {
+        // No element to animate to, just navigate
+        setIsNavigating(true);
+        setCurrentStep(stepIndex);
+        expectedPathRef.current = targetStep.navigateTo;
+        router.push(targetStep.navigateTo);
+      } else {
+        // No navigation needed
+        setCurrentStep(stepIndex);
+      }
+    },
+    [step.highlightSelector, router],
+  );
 
   const goToStep = useCallback(
     (stepIndex: number) => {
       if (stepIndex < 0 || stepIndex >= steps.length) return;
 
       const targetStep = steps[stepIndex];
-
-      // Clear highlight immediately
       setHighlightRect(null);
 
-      // Check if we need to navigate
       if (targetStep.navigateTo && pathname !== targetStep.navigateTo) {
-        setIsNavigating(true);
-        expectedPathRef.current = targetStep.navigateTo;
-        setCurrentStep(stepIndex);
-        router.push(targetStep.navigateTo);
+        animateCursorAndNavigate(targetStep, stepIndex);
       } else {
-        // No navigation needed, just change step
         setCurrentStep(stepIndex);
       }
     },
-    [pathname, router],
+    [pathname, animateCursorAndNavigate],
   );
 
   const handleNext = () => {
@@ -250,15 +307,17 @@ export function WelcomeModal() {
 
   const handleBack = () => {
     if (currentStep > 0) {
-      // Go back to previous step, navigate to dashboard if needed
       const prevStep = steps[currentStep - 1];
+      setHighlightRect(null);
+      setShowCursor(false);
+      setCursorClicking(false);
+
       if (prevStep.navigateTo) {
         setIsNavigating(true);
         expectedPathRef.current = prevStep.navigateTo;
         setCurrentStep(currentStep - 1);
         router.push(prevStep.navigateTo);
       } else {
-        // For steps without navigateTo (like step 1), go to dashboard
         setIsNavigating(true);
         expectedPathRef.current = "/dashboard";
         setCurrentStep(currentStep - 1);
@@ -285,7 +344,6 @@ export function WelcomeModal() {
     const right = highlightRect.right + padding;
     const bottom = highlightRect.bottom + padding;
 
-    // Polygon that covers full screen with a rectangular hole
     return `polygon(
       0% 0%,
       0% 100%,
@@ -300,7 +358,7 @@ export function WelcomeModal() {
     )`;
   };
 
-  // Modal position
+  // Modal position - adjusted to be more centered vertically
   const getModalPosition = (): React.CSSProperties => {
     if (!showHighlight) {
       return {
@@ -311,8 +369,10 @@ export function WelcomeModal() {
     }
 
     const modalWidth = 380;
+    const modalHeight = 320;
     const gap = 24;
     const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
 
     // Try to position to the right
     let left = highlightRect!.right + gap;
@@ -322,17 +382,29 @@ export function WelcomeModal() {
       left = highlightRect!.left - modalWidth - gap;
     }
 
-    // If still off screen (element is very wide), center below
+    // If still off screen, center below
     if (left < 20) {
       return {
-        top: Math.min(highlightRect!.bottom + gap, window.innerHeight - 400),
+        top: Math.min(
+          highlightRect!.bottom + gap,
+          viewportHeight - modalHeight - 20,
+        ),
         left: "50%",
         transform: "translateX(-50%)",
       };
     }
 
+    // Vertical centering - align with element but keep in viewport
+    const elementCenterY = highlightRect!.top + highlightRect!.height / 2;
+    let top = elementCenterY;
+
+    // Ensure modal stays within viewport
+    const minTop = modalHeight / 2 + 20;
+    const maxTop = viewportHeight - modalHeight / 2 - 20;
+    top = Math.max(minTop, Math.min(maxTop, top));
+
     return {
-      top: Math.max(100, highlightRect!.top + highlightRect!.height / 2),
+      top: top,
       left: left,
       transform: "translateY(-50%)",
     };
@@ -345,7 +417,7 @@ export function WelcomeModal() {
         className="absolute inset-0 bg-black/75 transition-all duration-300"
         style={{
           clipPath: showHighlight ? getClipPath() : undefined,
-          opacity: isNavigating ? 0.5 : 1,
+          opacity: isNavigating && !showCursor ? 0.5 : 1,
         }}
       />
 
@@ -370,8 +442,34 @@ export function WelcomeModal() {
         />
       )}
 
-      {/* Loading indicator during navigation */}
-      {isNavigating && (
+      {/* Animated cursor */}
+      {showCursor && (
+        <div
+          className="fixed pointer-events-none z-[10003] transition-all ease-out"
+          style={{
+            left: cursorPos.x,
+            top: cursorPos.y,
+            transform: `translate(-4px, -4px) scale(${cursorClicking ? 0.8 : 1})`,
+            transitionDuration:
+              cursorPos.x === window.innerWidth / 2 ? "0ms" : "600ms",
+          }}
+        >
+          <MousePointer2
+            className="w-8 h-8 text-white drop-shadow-lg"
+            fill="white"
+            strokeWidth={1.5}
+            style={{
+              filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+            }}
+          />
+          {cursorClicking && (
+            <div className="absolute top-1 left-1 w-6 h-6 rounded-full bg-indigo-400/60 animate-ping" />
+          )}
+        </div>
+      )}
+
+      {/* Loading indicator during navigation (when cursor is not shown) */}
+      {isNavigating && !showCursor && (
         <div className="absolute inset-0 flex items-center justify-center z-[10002]">
           <div className="bg-white rounded-2xl px-6 py-4 shadow-2xl flex items-center gap-3">
             <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -509,6 +607,7 @@ export function useOnboardingStatus() {
 
   const resetOnboarding = useCallback(() => {
     localStorage.removeItem(ONBOARDING_KEY);
+    sessionStorage.removeItem(ONBOARDING_STEP_KEY);
     setShouldShowOnboarding(true);
     window.location.reload();
   }, []);
