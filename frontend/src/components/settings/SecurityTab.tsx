@@ -16,7 +16,13 @@ import {
   MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
@@ -56,7 +62,7 @@ export function SecurityTab() {
 
   async function fetchSecurityData() {
     try {
-      setLoading(true);
+      if (sessions.length === 0) setLoading(true);
       // For now, we'll show mock session data since Firebase handles auth
       // In a real implementation, you'd track sessions in your database
       setSessions([
@@ -150,7 +156,9 @@ export function SecurityTab() {
       <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg">Account Security</CardTitle>
-          <CardDescription>Your authentication and login settings</CardDescription>
+          <CardDescription>
+            Your authentication and login settings
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Auth Provider */}
@@ -160,13 +168,15 @@ export function SecurityTab() {
                 <Key className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
               </div>
               <div>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">Sign-in Method</p>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Sign-in Method
+                </p>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   {user?.providerData?.[0]?.providerId === "google.com"
                     ? "Google Account"
                     : user?.providerData?.[0]?.providerId === "github.com"
-                    ? "GitHub Account"
-                    : "Email & Password"}
+                      ? "GitHub Account"
+                      : "Email & Password"}
                 </p>
               </div>
             </div>
@@ -183,8 +193,12 @@ export function SecurityTab() {
                 <Shield className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
               </div>
               <div>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">Account Email</p>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">{user?.email}</p>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Account Email
+                </p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {user?.email}
+                </p>
               </div>
             </div>
             {user?.emailVerified && (
@@ -202,7 +216,9 @@ export function SecurityTab() {
                 <Smartphone className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
               </div>
               <div>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">Two-Factor Authentication</p>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Two-Factor Authentication
+                </p>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   Add an extra layer of security to your account
                 </p>
@@ -220,7 +236,9 @@ export function SecurityTab() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-lg">Active Sessions</CardTitle>
-            <CardDescription>Devices where you&apos;re currently logged in</CardDescription>
+            <CardDescription>
+              Devices where you&apos;re currently logged in
+            </CardDescription>
           </div>
           {sessions.length > 1 && (
             <Button

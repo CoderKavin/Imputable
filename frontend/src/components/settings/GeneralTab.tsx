@@ -13,7 +13,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
@@ -32,7 +38,8 @@ export function GeneralTab() {
   const { getToken } = useAuth();
   const { currentOrganization, refreshOrganizations } = useOrganization();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [saving, setSaving] = useState(false);
   const [orgDetails, setOrgDetails] = useState<OrgDetails | null>(null);
   const [name, setName] = useState("");
@@ -63,7 +70,7 @@ export function GeneralTab() {
     if (!currentOrganization?.id) return;
 
     try {
-      setLoading(true);
+      if (!orgDetails) setLoading(true);
       const token = await getToken();
 
       const response = await fetch(`${API_BASE_URL}/me/organization`, {
@@ -86,6 +93,7 @@ export function GeneralTab() {
       setError("Failed to load organization details");
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   }
 
@@ -112,7 +120,10 @@ export function GeneralTab() {
           "Content-Type": "application/json",
           "X-Organization-ID": currentOrganization.id,
         },
-        body: JSON.stringify({ name: name.trim(), slug: slug.trim().toLowerCase() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          slug: slug.trim().toLowerCase(),
+        }),
       });
 
       if (!response.ok) {
@@ -124,7 +135,9 @@ export function GeneralTab() {
       await refreshOrganizations();
     } catch (err) {
       console.error("Error updating org:", err);
-      setError(err instanceof Error ? err.message : "Failed to update organization");
+      setError(
+        err instanceof Error ? err.message : "Failed to update organization",
+      );
     } finally {
       setSaving(false);
     }
@@ -159,7 +172,9 @@ export function GeneralTab() {
       window.location.href = "/dashboard";
     } catch (err) {
       console.error("Error deleting org:", err);
-      setError(err instanceof Error ? err.message : "Failed to delete organization");
+      setError(
+        err instanceof Error ? err.message : "Failed to delete organization",
+      );
       setDeleting(false);
     }
   }
@@ -203,7 +218,9 @@ export function GeneralTab() {
       <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg">Organization Information</CardTitle>
-          <CardDescription>Basic details about your organization</CardDescription>
+          <CardDescription>
+            Basic details about your organization
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -225,7 +242,11 @@ export function GeneralTab() {
               </label>
               <Input
                 value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                onChange={(e) =>
+                  setSlug(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                  )
+                }
                 placeholder="my-organization"
                 disabled={!isAdmin}
                 className="rounded-xl"
@@ -264,13 +285,17 @@ export function GeneralTab() {
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-4">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Members</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                Members
+              </p>
               <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
                 {orgDetails?.member_count || 0}
               </p>
             </div>
             <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-4">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Decisions</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                Decisions
+              </p>
               <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
                 {orgDetails?.decision_count || 0}
               </p>
@@ -294,14 +319,18 @@ export function GeneralTab() {
       {isOwner && (
         <Card className="rounded-2xl border-red-200 dark:border-red-900/50">
           <CardHeader>
-            <CardTitle className="text-lg text-red-600 dark:text-red-400">Danger Zone</CardTitle>
+            <CardTitle className="text-lg text-red-600 dark:text-red-400">
+              Danger Zone
+            </CardTitle>
             <CardDescription>Irreversible actions</CardDescription>
           </CardHeader>
           <CardContent>
             {!showDeleteConfirm ? (
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-zinc-900 dark:text-zinc-100">Delete Organization</p>
+                  <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                    Delete Organization
+                  </p>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     Permanently delete this organization and all its data
                   </p>
@@ -319,8 +348,10 @@ export function GeneralTab() {
               <div className="space-y-4">
                 <div className="rounded-xl bg-red-50 dark:bg-red-950/30 p-4">
                   <p className="text-sm text-red-700 dark:text-red-400">
-                    This action cannot be undone. This will permanently delete the organization
-                    <strong> {currentOrganization?.name}</strong>, all decisions, and remove all members.
+                    This action cannot be undone. This will permanently delete
+                    the organization
+                    <strong> {currentOrganization?.name}</strong>, all
+                    decisions, and remove all members.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -348,7 +379,10 @@ export function GeneralTab() {
                   <Button
                     variant="destructive"
                     onClick={handleDelete}
-                    disabled={deleting || deleteConfirmText !== currentOrganization?.name}
+                    disabled={
+                      deleting ||
+                      deleteConfirmText !== currentOrganization?.name
+                    }
                     className="rounded-xl"
                   >
                     {deleting ? (

@@ -104,14 +104,31 @@ class handler(BaseHTTPRequestHandler):
                     self._send(404, {"error": "Organization not found"})
                     return
 
-                # For now, return empty integration status
-                # In a real implementation, you'd query an integrations table
+                # Check actual Slack connection status from organization
+                result = conn.execute(text("""
+                    SELECT slack_team_id, slack_access_token, slack_team_name, slack_channel_name, slack_connected_at
+                    FROM organizations WHERE id = :org_id AND deleted_at IS NULL
+                """), {"org_id": org_id})
+                org_data = result.fetchone()
+
+                slack_connected = False
+                slack_team_name = None
+                slack_channel_name = None
+                slack_connected_at = None
+
+                if org_data and org_data[0] and org_data[1]:
+                    # Has team_id and access_token = connected
+                    slack_connected = True
+                    slack_team_name = org_data[2] if len(org_data) > 2 else None
+                    slack_channel_name = org_data[3] if len(org_data) > 3 else None
+                    slack_connected_at = str(org_data[4]) if len(org_data) > 4 and org_data[4] else None
+
                 self._send(200, {
                     "slack": {
-                        "connected": False,
-                        "team_name": None,
-                        "channel_name": None,
-                        "installed_at": None
+                        "connected": slack_connected,
+                        "team_name": slack_team_name,
+                        "channel_name": slack_channel_name,
+                        "installed_at": slack_connected_at
                     },
                     "teams": {
                         "connected": False,

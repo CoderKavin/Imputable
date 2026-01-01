@@ -130,7 +130,7 @@ export function IntegrationsTab() {
     }
 
     try {
-      setLoading(true);
+      if (!status) setLoading(true);
       setError(null);
       const token = await getToken();
 

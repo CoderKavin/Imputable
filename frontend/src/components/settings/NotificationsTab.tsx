@@ -15,7 +15,13 @@ import {
   Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
@@ -41,7 +47,8 @@ export function NotificationsTab() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<NotificationSettings>(defaultSettings);
+  const [settings, setSettings] =
+    useState<NotificationSettings>(defaultSettings);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -65,7 +72,7 @@ export function NotificationsTab() {
     if (!currentOrganization?.id) return;
 
     try {
-      setLoading(true);
+      if (!settings) setLoading(true);
       const token = await getToken();
 
       const response = await fetch(`${API_BASE_URL}/me/notifications`, {
@@ -134,31 +141,36 @@ export function NotificationsTab() {
       key: "email_new_decision" as const,
       icon: FileText,
       title: "New Decisions",
-      description: "Get notified when a new decision is created in your organization",
+      description:
+        "Get notified when a new decision is created in your organization",
     },
     {
       key: "email_decision_updated" as const,
       icon: MessageSquare,
       title: "Decision Updates",
-      description: "Get notified when a decision you're involved with is updated",
+      description:
+        "Get notified when a decision you're involved with is updated",
     },
     {
       key: "email_status_change" as const,
       icon: Check,
       title: "Status Changes",
-      description: "Get notified when a decision's status changes (approved, deprecated, etc.)",
+      description:
+        "Get notified when a decision's status changes (approved, deprecated, etc.)",
     },
     {
       key: "email_review_reminder" as const,
       icon: Clock,
       title: "Review Reminders",
-      description: "Get reminded when decisions are due for review (tech debt alerts)",
+      description:
+        "Get reminded when decisions are due for review (tech debt alerts)",
     },
     {
       key: "email_weekly_digest" as const,
       icon: Mail,
       title: "Weekly Digest",
-      description: "Receive a weekly summary of all decision activity in your organization",
+      description:
+        "Receive a weekly summary of all decision activity in your organization",
     },
   ];
 
@@ -195,7 +207,9 @@ export function NotificationsTab() {
             </div>
             <div>
               <CardTitle className="text-lg">Email Notifications</CardTitle>
-              <CardDescription>Choose which emails you want to receive</CardDescription>
+              <CardDescription>
+                Choose which emails you want to receive
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -211,8 +225,12 @@ export function NotificationsTab() {
                   <div className="flex items-center gap-3">
                     <Icon className="h-5 w-5 text-zinc-400" />
                     <div>
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100">{option.title}</p>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">{option.description}</p>
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {option.title}
+                      </p>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        {option.description}
+                      </p>
                     </div>
                   </div>
                   <button
@@ -235,7 +253,11 @@ export function NotificationsTab() {
           </div>
 
           <div className="mt-6 flex justify-end">
-            <Button onClick={handleSave} disabled={saving} className="rounded-xl">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-xl"
+            >
               {saving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -253,9 +275,9 @@ export function NotificationsTab() {
           About Notifications
         </h3>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Email notifications are sent to your account email address. You can also connect
-          Slack or Microsoft Teams in the Integrations tab to receive real-time notifications
-          in your team channels.
+          Email notifications are sent to your account email address. You can
+          also connect Slack or Microsoft Teams in the Integrations tab to
+          receive real-time notifications in your team channels.
         </p>
       </div>
     </div>

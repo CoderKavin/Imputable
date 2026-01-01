@@ -134,7 +134,7 @@ export function BillingTab() {
     if (!currentOrganization?.id) return;
 
     try {
-      setLoading(true);
+      if (!billingInfo) setLoading(true);
       const token = await getToken();
 
       const response = await fetch(`${API_BASE_URL}/me/organization`, {
