@@ -257,21 +257,6 @@ export function MindMapView({
     setEdges(computedEdges);
   }, [computedEdges, setEdges]);
 
-  // Update edge styling when selection changes (separate effect to avoid render loop)
-  useEffect(() => {
-    if (selectedEdge) {
-      setEdges((currentEdges) =>
-        currentEdges.map((edge) => ({
-          ...edge,
-          style: {
-            ...edge.style,
-            strokeWidth: edge.id === selectedEdge ? 3 : 2,
-          },
-        })),
-      );
-    }
-  }, [selectedEdge, setEdges]);
-
   // Generate AI relationships
   const [aiMessage, setAiMessage] = useState<{
     type: "success" | "info" | "error";
