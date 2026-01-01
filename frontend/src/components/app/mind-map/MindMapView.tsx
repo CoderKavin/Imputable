@@ -205,15 +205,15 @@ export function MindMapView({
     setNodes(newNodes);
   }, [limitedDecisions, calculateNodePositions, setNodes]);
 
-  // Build edges from relationships
-  useEffect(() => {
-    const decisionIds = new Set(limitedDecisions.map((d) => d.id));
+  // Build edges from relationships (memoized to avoid state updates during render)
+  const computedEdges = useMemo(() => {
+    const decisionIdSet = new Set(limitedDecisions.map((d) => d.id));
 
-    const newEdges: Edge[] = relationships
+    return relationships
       .filter(
         (rel: MindMapRelationship) =>
-          decisionIds.has(rel.source_decision_id) &&
-          decisionIds.has(rel.target_decision_id),
+          decisionIdSet.has(rel.source_decision_id) &&
+          decisionIdSet.has(rel.target_decision_id),
       )
       .map((rel: MindMapRelationship) => {
         const relType = rel.relationship_type as RelationshipType;
@@ -237,7 +237,7 @@ export function MindMapView({
           labelBgBorderRadius: 4,
           style: {
             stroke: edgeColors[relType],
-            strokeWidth: selectedEdge === rel.id ? 3 : 2,
+            strokeWidth: 2,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -250,9 +250,27 @@ export function MindMapView({
           },
         };
       });
+  }, [relationships, limitedDecisions]);
 
-    setEdges(newEdges);
-  }, [relationships, limitedDecisions, setEdges, selectedEdge]);
+  // Update edges when computed edges change
+  useEffect(() => {
+    setEdges(computedEdges);
+  }, [computedEdges, setEdges]);
+
+  // Update edge styling when selection changes (separate effect to avoid render loop)
+  useEffect(() => {
+    if (selectedEdge) {
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => ({
+          ...edge,
+          style: {
+            ...edge.style,
+            strokeWidth: edge.id === selectedEdge ? 3 : 2,
+          },
+        })),
+      );
+    }
+  }, [selectedEdge, setEdges]);
 
   // Generate AI relationships
   const [aiMessage, setAiMessage] = useState<{

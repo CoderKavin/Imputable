@@ -106,7 +106,8 @@ export function SearchCommand({ className }: SearchCommandProps) {
         setOpen(false);
         router.push("/decisions?status=at_risk");
       },
-      shortcut: "R",
+      // No shortcut - R conflicts with browser refresh (Cmd+R)
+      shortcut: undefined,
     },
     {
       id: "audit-export",
@@ -419,17 +420,21 @@ export function SearchCommand({ className }: SearchCommandProps) {
       {/* Modal Overlay */}
       {open && (
         <>
-          {/* Backdrop */}
+          {/* Dialog Container - click outside to close */}
           <div
-            className="fixed inset-0 bg-black/50 z-[200] animate-in fade-in duration-200"
-            onClick={() => {
-              setOpen(false);
-              setQuery("");
+            className="fixed inset-0 z-[200] flex items-start justify-center pt-[12vh] px-4"
+            onClick={(e) => {
+              // Close if clicking on the backdrop (not the modal itself)
+              if (e.target === e.currentTarget) {
+                setOpen(false);
+                setQuery("");
+              }
             }}
-          />
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 animate-in fade-in duration-200 -z-10" />
 
-          {/* Dialog */}
-          <div className="fixed inset-0 z-[201] flex items-start justify-center pt-[12vh] px-4">
+            {/* Dialog */}
             <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-top-4 duration-300">
               {/* Search Input */}
               <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">

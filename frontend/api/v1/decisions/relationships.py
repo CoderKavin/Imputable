@@ -255,6 +255,27 @@ class handler(BaseHTTPRequestHandler):
                 parsed = urlparse(self.path)
                 params = parse_qs(parsed.query)
 
+                # Check if decision_relationships table exists
+                try:
+                    table_check = conn.execute(text("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables
+                            WHERE table_name = 'decision_relationships'
+                        )
+                    """))
+                    table_exists = table_check.fetchone()[0]
+                except:
+                    table_exists = False
+
+                if not table_exists:
+                    # Table doesn't exist - return empty for GET, error for POST
+                    if method == "GET":
+                        self._send(200, {"relationships": []})
+                        return
+                    else:
+                        self._send(500, {"error": "Relationships table not yet created. Please run the migration."})
+                        return
+
                 # GET /api/v1/decisions/relationships - List all relationships
                 if method == "GET":
                     # Get optional decision_ids filter (for showing subset in mind map)

@@ -25,6 +25,8 @@ interface TourStep {
   gradient: string;
   highlightSelector?: string;
   navigateTo?: string;
+  cursorTargetSelector?: string; // What the cursor should click (if different from highlight)
+  showCursorAnimation?: boolean; // Whether to show cursor animation for this step
 }
 
 const steps: TourStep[] = [
@@ -51,6 +53,8 @@ const steps: TourStep[] = [
     gradient: "from-purple-500 to-pink-600",
     highlightSelector: '[data-onboarding="mind-map-button"]',
     navigateTo: "/decisions",
+    cursorTargetSelector: '[data-onboarding="settings-link"]', // Cursor clicks Settings to go to next step
+    showCursorAnimation: true,
   },
   {
     title: "Slack & Teams Integration",
@@ -231,13 +235,17 @@ export function WelcomeModal() {
 
   const animateCursorAndNavigate = useCallback(
     (targetStep: TourStep, stepIndex: number) => {
-      // Find the current highlighted element to animate cursor to
-      const currentSelector = step.highlightSelector;
-      const el = currentSelector
-        ? document.querySelector<HTMLElement>(currentSelector)
+      // Only show cursor animation if the CURRENT step has showCursorAnimation enabled
+      const shouldShowCursor = step.showCursorAnimation === true;
+
+      // Find the element to animate cursor to (use cursorTargetSelector if available, else highlightSelector)
+      const cursorSelector =
+        step.cursorTargetSelector || step.highlightSelector;
+      const el = cursorSelector
+        ? document.querySelector<HTMLElement>(cursorSelector)
         : null;
 
-      if (el && targetStep.navigateTo) {
+      if (shouldShowCursor && el && targetStep.navigateTo) {
         const rect = el.getBoundingClientRect();
         const targetX = rect.left + rect.width / 2;
         const targetY = rect.top + rect.height / 2;
@@ -267,7 +275,7 @@ export function WelcomeModal() {
           }, 600);
         }, 100);
       } else if (targetStep.navigateTo) {
-        // No element to animate to, just navigate
+        // No cursor animation, just navigate
         setIsNavigating(true);
         setCurrentStep(stepIndex);
         expectedPathRef.current = targetStep.navigateTo;
@@ -277,7 +285,12 @@ export function WelcomeModal() {
         setCurrentStep(stepIndex);
       }
     },
-    [step.highlightSelector, router],
+    [
+      step.showCursorAnimation,
+      step.cursorTargetSelector,
+      step.highlightSelector,
+      router,
+    ],
   );
 
   const goToStep = useCallback(
@@ -412,14 +425,16 @@ export function WelcomeModal() {
 
   return (
     <div className="fixed inset-0 z-[9999]">
-      {/* Dark overlay with cutout for highlighted element */}
-      <div
-        className="absolute inset-0 bg-black/75 transition-all duration-300"
-        style={{
-          clipPath: showHighlight ? getClipPath() : undefined,
-          opacity: isNavigating && !showCursor ? 0.5 : 1,
-        }}
-      />
+      {/* Dark overlay with cutout for highlighted element - hide when cursor is animating */}
+      {!showCursor && (
+        <div
+          className="absolute inset-0 bg-black/75 transition-all duration-300"
+          style={{
+            clipPath: showHighlight ? getClipPath() : undefined,
+            opacity: isNavigating ? 0.5 : 1,
+          }}
+        />
+      )}
 
       {/* Glowing border around highlighted element */}
       {showHighlight && (
@@ -468,110 +483,106 @@ export function WelcomeModal() {
         </div>
       )}
 
-      {/* Loading indicator during navigation (when cursor is not shown) */}
-      {isNavigating && !showCursor && (
-        <div className="absolute inset-0 flex items-center justify-center z-[10002]">
-          <div className="bg-white rounded-2xl px-6 py-4 shadow-2xl flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-700 font-medium">Loading...</span>
+      {/* Modal - always visible, buttons disabled during navigation */}
+      <div
+        className="fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden transition-all duration-300"
+        style={getModalPosition()}
+      >
+        {/* Arrow pointing to element */}
+        {showHighlight && (
+          <div
+            className="absolute w-4 h-4 bg-white rotate-45 -left-2 top-1/2 -translate-y-1/2"
+            style={{ boxShadow: "-2px 2px 8px rgba(0,0,0,0.15)" }}
+          />
+        )}
+
+        {/* Gradient header */}
+        <div className={`bg-gradient-to-r ${step.gradient} px-6 py-5 relative`}>
+          <button
+            onClick={handleSkip}
+            className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4 text-white/80" />
+          </button>
+
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <Icon className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">{step.title}</h2>
+              <p className="text-white/70 text-sm">
+                Step {currentStep + 1} of {steps.length}
+              </p>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Modal */}
-      {!isNavigating && (
-        <div
-          className="fixed z-[10001] bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden transition-all duration-300"
-          style={getModalPosition()}
-        >
-          {/* Arrow pointing to element */}
-          {showHighlight && (
-            <div
-              className="absolute w-4 h-4 bg-white rotate-45 -left-2 top-1/2 -translate-y-1/2"
-              style={{ boxShadow: "-2px 2px 8px rgba(0,0,0,0.15)" }}
-            />
-          )}
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-gray-600 text-base leading-relaxed mb-6">
+            {step.description}
+          </p>
 
-          {/* Gradient header */}
-          <div
-            className={`bg-gradient-to-r ${step.gradient} px-6 py-5 relative`}
-          >
+          {/* Progress bar */}
+          <div className="flex gap-1.5 mb-6">
+            {steps.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                  i <= currentStep ? "bg-indigo-500" : "bg-gray-200"
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-3">
+            {!isFirstStep && (
+              <Button
+                variant="outline"
+                onClick={handleBack}
+                disabled={isNavigating}
+                className="gap-1.5"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </Button>
+            )}
+
+            <Button
+              onClick={handleNext}
+              disabled={isNavigating}
+              className={`flex-1 gap-2 bg-gradient-to-r ${step.gradient} hover:opacity-90 border-0 text-white`}
+            >
+              {isNavigating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Loading...
+                </>
+              ) : isFirstStep ? (
+                "Start Tour"
+              ) : isLastStep ? (
+                "Get Started"
+              ) : (
+                "Next"
+              )}
+              {!isNavigating && <ArrowRight className="w-4 h-4" />}
+            </Button>
+          </div>
+
+          {!isLastStep && (
             <button
               onClick={handleSkip}
-              className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-white/20 transition-colors"
-              aria-label="Close"
+              disabled={isNavigating}
+              className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
             >
-              <X className="w-4 h-4 text-white/80" />
+              Skip tour
             </button>
-
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <Icon className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-white">{step.title}</h2>
-                <p className="text-white/70 text-sm">
-                  Step {currentStep + 1} of {steps.length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="p-6">
-            <p className="text-gray-600 text-base leading-relaxed mb-6">
-              {step.description}
-            </p>
-
-            {/* Progress bar */}
-            <div className="flex gap-1.5 mb-6">
-              {steps.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
-                    i <= currentStep ? "bg-indigo-500" : "bg-gray-200"
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3">
-              {!isFirstStep && (
-                <Button
-                  variant="outline"
-                  onClick={handleBack}
-                  className="gap-1.5"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Back
-                </Button>
-              )}
-
-              <Button
-                onClick={handleNext}
-                className={`flex-1 gap-2 bg-gradient-to-r ${step.gradient} hover:opacity-90 border-0 text-white`}
-              >
-                {isFirstStep
-                  ? "Start Tour"
-                  : isLastStep
-                    ? "Get Started"
-                    : "Next"}
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-
-            {!isLastStep && (
-              <button
-                onClick={handleSkip}
-                className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Skip tour
-              </button>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Animation styles */}
       <style jsx global>{`
